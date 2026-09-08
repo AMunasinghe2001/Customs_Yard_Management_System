@@ -18,6 +18,7 @@ import '../../services/services.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
+import '../executive/unsold_shared.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
 /// Re-exported / Other). Reads warehouse entries tagged "[FINAL:<TAG>]".
@@ -49,12 +50,14 @@ class _DispositionCategoryScreenState
   DateTimeRange? _dateRange;
   String? _yearFilter;
   int _page = 0;
-  // Delivery sub-filter (Sold / Destroyed pages): null = all, true = delivered,
-  // false = pending.
+  // Delivery sub-filter (Sold / Destroyed / Re-exported pages): null = all,
+  // true = delivered, false = pending.
   bool? _deliveryFilter;
 
   bool get _hasDelivery =>
-      widget.finalTag == 'SOLD' || widget.finalTag == 'DESTROYED';
+      widget.finalTag == 'SOLD' ||
+      widget.finalTag == 'DESTROYED' ||
+      widget.finalTag == 'RE-EXPORTED';
 
   /// Everything this page is asking the database for.
   ///
@@ -124,6 +127,7 @@ class _DispositionCategoryScreenState
         proposal: r.isTopManagement ? _proposalFor(r) : null,
         forfeited: r.isTopManagement ? _forfeitedFor(r) : null,
         fromTopManagement: r.isTopManagement,
+        delivered: r.delivered,
       ));
     }
     return out;
@@ -478,7 +482,8 @@ class _DispositionCategoryScreenState
                               DataColumn2(
                                   label: Text('Sold Price'),
                                   size: ColumnSize.M),
-                            if (widget.finalTag == 'SOLD')
+                            if (widget.finalTag == 'SOLD' ||
+                                widget.finalTag == 'RE-EXPORTED')
                               // Same width as the Destroyed Goods status
                               // column: both hold the same fixed-size pill, so
                               // a narrower box here would clip it.
@@ -577,6 +582,26 @@ class _DispositionCategoryScreenState
                                         receipt: _parseSaleReceipt(
                                             row.entry?.returnNotes),
                                       ))),
+                                    if (widget.finalTag == 'RE-EXPORTED')
+                                      DataCell(Center(
+                                        child: row.fromTopManagement
+                                            ? UnsoldDeliveryCell(
+                                                proposal: row.proposal)
+                                            // ⚠️ A yard-decided re-export used
+                                            // to render a CONSTANT pill --
+                                            // `delivered: true`, `onMark:
+                                            // null` -- so all 17 read
+                                            // Delivered from the moment the
+                                            // disposition was recorded and
+                                            // no officer could say
+                                            // otherwise. Ruling a re-export
+                                            // and the goods actually leaving
+                                            // are two events; this cell is
+                                            // the second one.
+                                            : _ReexportDeliveryCell(
+                                                entry: row.entry,
+                                                delivered: row.delivered),
+                                      )),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(DestructionExpenseCell(
                                           srNumber: row.package.srNumber)),
@@ -809,6 +834,14 @@ class _CategoryRow {
   /// reader's eyes. The view answered this question when it built the row.
   final bool fromTopManagement;
 
+  /// The delivery answer straight from `disposition_rows`.
+  ///
+  /// ⚠️ Read from the VIEW, not derived here. The view knows which of the
+  /// four delivery sources applies to this row -- a sale's is_delivered, a
+  /// destruction's, a proposal's, or a re-export entry's -- and a second
+  /// answer computed in Dart would be a second story to keep in step.
+  final bool? delivered;
+
   const _CategoryRow({
     required this.package,
     this.entry,
@@ -819,6 +852,7 @@ class _CategoryRow {
     this.proposal,
     this.forfeited,
     this.fromTopManagement = false,
+    this.delivered,
   });
 
   bool get isDestroyed {
@@ -912,6 +946,76 @@ class _DeliveryStatusCellState extends ConsumerState<_DeliveryStatusCell> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Delivery status for a YARD-DECIDED re-export, and the action that
+/// changes it.
+///
+/// ⚠️ Mirrors [_DeliveryStatusCell] deliberately -- one pill, one action,
+/// no revert. Goods that have left the country cannot un-leave, and a
+/// re-export that has not yet been collected is still the yard's to store.
+class _ReexportDeliveryCell extends ConsumerStatefulWidget {
+  final WarehouseEntryModel? entry;
+
+  /// The view's answer, so the pill is right on first paint rather than
+  /// after a second fetch this cell would otherwise have to make.
+  final bool? delivered;
+  const _ReexportDeliveryCell({required this.entry, this.delivered});
+
+  @override
+  ConsumerState<_ReexportDeliveryCell> createState() =>
+      _ReexportDeliveryCellState();
+}
+
+class _ReexportDeliveryCellState
+    extends ConsumerState<_ReexportDeliveryCell> {
+  bool _saving = false;
+  bool? _optimistic;
+
+  Future<void> _mark() async {
+    final id = widget.entry?.id;
+    if (id == null) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(disposalServiceProvider).toggleReexportDelivery(id, true);
+      // ⚠️ Hold the answer locally as well as refreshing. The table
+      // rebuilds from `disposition_rows`, and until that round-trip lands
+      // the pill would snap back to Pending under the reader's eyes.
+      if (mounted) setState(() => _optimistic = true);
+      ref.read(tenderSaleItemsRefreshProvider.notifier).trigger();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Marked as Delivered'),
+          backgroundColor: context.colors.successGreen,
+        ));
+      }
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e, action: 'Confirming delivery');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final delivered = _optimistic ?? widget.delivered ?? false;
+    // Only a yard confirms delivery; Central Disposal watches.
+    final profile = ref.watch(currentProfileProvider);
+    final canEdit =
+        profile != null && !profile.isDisposal && widget.entry != null;
+    return Tooltip(
+      message: delivered
+          ? 'The goods have left for their country of origin'
+          : (canEdit
+              ? 'Confirm the goods have left the yard'
+              : 'Awaiting the yard to confirm departure'),
+      child: DeliveryStatusPill(
+        delivered: delivered,
+        busy: _saving,
+        onMark: (canEdit && !delivered) ? _mark : null,
+      ),
     );
   }
 }

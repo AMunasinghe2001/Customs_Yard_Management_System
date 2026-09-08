@@ -8329,6 +8329,28 @@ class DisposalService {
   /// a window where the goods are marked gone but still counted in zone
   /// capacity and still accruing storage, and a failure between the two writes
   /// would leave them that way for good.
+  /// Record that YARD-DECIDED re-exported goods have actually left.
+  ///
+  /// ⚠️ A re-export has two events, and they are not the same one: the
+  /// yard RULES it (the [FINAL:RE-EXPORTED] tag) and later the goods LEAVE.
+  /// The view used to answer the second by asserting `true` for every row,
+  /// so the page showed a green Delivered pill on all 17 with nothing to
+  /// press -- goods still standing in the yard were indistinguishable from
+  /// goods that had gone weeks earlier.
+  ///
+  /// ⚠️ Unlike [toggleOutcomeDelivery] this does NOT close the warehouse
+  /// entry: writing the tag already closed it, on the day the disposition
+  /// was recorded. Re-closing would overwrite `returned_at` with today.
+  Future<void> toggleReexportDelivery(String entryId, bool delivered) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'yard_toggle_reexport_delivery',
+          params: {
+            'p_entry_id': entryId,
+            'p_delivered': delivered,
+          },
+        ));
+  }
+
   Future<void> toggleOutcomeDelivery(String proposalId, bool delivered) async {
     await AuthService._withNetworkRetry(() => supabase.rpc(
           'disposal_toggle_outcome_delivery',
@@ -8884,8 +8906,21 @@ class DisposalService {
       }
     }
 
-    // 3. Fall back to package-level lookup.
-    return getTenderSaleItemForPackage(packageId);
+    // 3. No sale for THIS item.
+    //
+    // ⚠️ Return null -- do NOT fall back to the package. A package holds
+    // several items with separate histories, and the package-level lookup
+    // returns the newest sale row for ANY of them. CED/GL1/OA/07/2026 is
+    // exactly that: Truck Tyres was re-exported with no tender at all, and
+    // the popup showed it the two rounds, three re-valuations and bids that
+    // belong to Ceramic Floor Tiles, the abandoned item still sitting in the
+    // yard. Goods that never went to tender were given somebody else's
+    // valuation, silently and with no way to tell from the screen.
+    //
+    // A caller that genuinely wants the package's newest sale can call
+    // getTenderSaleItemForPackage directly; asking for one ITEM must not
+    // quietly answer about another.
+    return null;
   }
 
   Future<void> deleteTax(String id) async {

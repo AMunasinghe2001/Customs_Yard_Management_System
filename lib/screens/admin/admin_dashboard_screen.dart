@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -805,7 +805,7 @@ class _ForfeitLifecycleSection extends StatelessWidget {
         // disposal request -- and has been removed. And "Forwarded" counted
         // 135 goods of which 113 appeared again under At Tender, so the same
         // lot was on the panel twice.
-        const _SectionHeader(title: 'Forfeit & Disposal Lifecycle'),
+        const _SectionHeader(title: 'Disposal Operations & Lifecycle'),
         const Gap(12),
         Expanded(
           child: async.when(
@@ -972,27 +972,7 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                       tiles: [
                         // ⚠️ The rail's "Final Outcomes" section, one tile
                         // per page, in the rail's own order. These are the
-                        // DG's rulings on goods nothing could sell, and they
-                        // all read `unsold_proposals.proposal`.
-                        //
-                        // ⚠️ Re-export is NOT here, though the rail lists
-                        // it in this section. Its 2 ruled goods are already
-                        // inside the 19 on the Re-exported tile below --
-                        // measured, not assumed: both proposals resolve to a
-                        // `disposition_rows` row tagged RE-EXPORTED. A tile
-                        // for them would count the same goods twice on one
-                        // panel, and the Re-exported Goods page already
-                        // separates the two routes with its Decided By
-                        // column -- which is the right place for a split
-                        // between ROWS rather than between pages.
-                        //
-                        // The other four are disjoint: goods taken into
-                        // government service, sent to auction, converted or
-                        // removed appear on no other tile.
-                        //
-                        // `delivered` on a proposal is NOT NULL DEFAULT
-                        // false, so every one is delivered or pending --
-                        // there is no third state here, unlike the pages.
+                        // DG's rulings on goods nothing could sell.
                         _SplitTile(
                             label: 'Government use',
                             total: (d['proposal_government_use_total'] ?? 0)
@@ -1021,6 +1001,18 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                             icon: Icons.gavel_rounded,
                             route: '/auction-packages'),
                         _SplitTile(
+                            label: 'Re-exported',
+                            total: (d['outcomeReexportTotal'] ?? 0) as int,
+                            delivered:
+                                (d['outcomeReexportDelivered'] ?? 0) as int,
+                            pending:
+                                (d['outcomeReexportPending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.accentLightBlue,
+                            icon: Icons.flight_takeoff_rounded,
+                            route: '/reexported-packages'),
+                        _SplitTile(
                             label: 'Converted',
                             total: (d['proposal_convert_total'] ?? 0) as int,
                             delivered:
@@ -1048,37 +1040,6 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                             color: context.colors.textMuted,
                             icon: Icons.logout_rounded,
                             route: '/removed-packages'),
-                      ],
-                    ),
-                    const Gap(16),
-                    _LifecycleGroup(
-                      title: 'Re-exported · goods',
-                      icon: Icons.flight_takeoff_rounded,
-                      tiles: [
-                        // ⚠️ ONE tile for every re-export, whichever route
-                        // recorded it: 17 sent straight back by the yard's
-                        // Final Disposition, 2 ruled by the DG after every
-                        // tender round failed. The rail lists those 2 under
-                        // Final Outcomes, but they are a SUBSET of these 19,
-                        // not a separate population -- a second tile would
-                        // count the same goods twice.
-                        //
-                        // Where the split matters it already exists: the
-                        // Re-exported Goods page carries a Decided By
-                        // column, because the difference is between ROWS on
-                        // one page, not between two counts.
-                        _SplitTile(
-                            label: 'Re-exported',
-                            total: (d['outcomeReexportTotal'] ?? 0) as int,
-                            delivered:
-                                (d['outcomeReexportDelivered'] ?? 0) as int,
-                            pending:
-                                (d['outcomeReexportPending'] ?? 0) as int,
-                            deliveredLabel: 'delivered',
-                            pendingLabel: 'awaiting',
-                            color: context.colors.accentLightBlue,
-                            icon: Icons.flight_takeoff_rounded,
-                            route: '/reexported-packages'),
                       ],
                     ),
                     const Gap(16),

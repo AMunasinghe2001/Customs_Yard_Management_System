@@ -1042,6 +1042,19 @@ class DispositionRow {
   /// confirmed it; false means it is marked for destruction and waiting.
   final bool? isDestroyed;
 
+  /// Has this been handed over? Null where there is no hand-over step.
+  ///
+  /// ⚠️ The VIEW decides which of four sources answers it -- a sale's
+  /// `is_delivered`, a destruction's `delivered`, a DG proposal's, or a
+  /// yard re-export entry's `re_export_delivered`. Recomputing it in Dart
+  /// would be a second story to keep in step with the first, and the pages
+  /// already filter on this column in SQL.
+  ///
+  /// ⚠️ Null is not false. A row with no hand-over step -- an entry tagged
+  /// final with nothing behind it -- has nobody coming to collect, and
+  /// reading null as pending would put it in the Pending filter forever.
+  final bool? delivered;
+
   /// The one date the page sorts on, whichever source the row came from.
   final DateTime happenedAt;
 
@@ -1064,6 +1077,7 @@ class DispositionRow {
     this.holdReason,
     this.receiptNo,
     this.isDestroyed,
+    this.delivered,
     required this.happenedAt,
   });
 
@@ -1086,6 +1100,7 @@ class DispositionRow {
         holdReason: json['hold_reason']?.toString(),
         receiptNo: json['receipt_no']?.toString(),
         isDestroyed: json['is_destroyed'] as bool?,
+        delivered: json['delivered'] as bool?,
         happenedAt: parseDbDate(json['happened_at']) ?? DateTime(1970),
       );
 
