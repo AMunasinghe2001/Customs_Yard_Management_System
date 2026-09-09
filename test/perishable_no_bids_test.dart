@@ -239,6 +239,74 @@ void main() {
     });
   });
 
+  group('every tender page shows its rounds', () {
+    final disposal = code(
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync());
+    final perish = code(File('lib/screens/packages/perishable_goods_screen.dart')
+        .readAsStringSync());
+
+    test('Unsold Tenders and Committees carry the history', () {
+      // ⚠️ Every row on those tabs failed at least one tender. Unsold
+      // Tenders showed the current price with no history behind it -- the
+      // one thing that says whether it is falling fast enough to sell -- and
+      // a committee prices goods that failed FOUR or more rounds, which are
+      // the whole case for its figure.
+      expect('tenderHistoryFor: f,'.allMatches(disposal).length,
+          greaterThanOrEqualTo(2));
+    });
+
+    test('a perishable popup shows its one round', () {
+      // ⚠️ A perishable gets a single special tender sale. The popup
+      // showed nothing of it, so the price the sale was held at appeared
+      // nowhere. The section labels it "Special Tender Sale" and draws no
+      // bids, because a perishable takes none.
+      expect(perish, contains('tenderHistoryFor: fp'));
+      expect(perish, contains('forfeitedByItemProvider'));
+    });
+  });
+
+  group('a delivery reads as work, not as an error', () {
+    final c = code(dialog);
+
+    test('the sale popup LEADS with its delivery', () {
+      // ⚠️ It was a row reading "Pending" in RED, between a receipt
+      // number and a tax figure -- the one thing a reader opens this popup
+      // to check was the least visible thing on it.
+      expect(c, contains('class DeliveryStatusBanner'));
+      expect(c, contains('DeliveryStatusBanner( delivered: delivered'));
+    });
+
+    test('amber while waiting, never red', () {
+      // ⚠️ Red is the colour of something wrong. Goods waiting to be
+      // collected are not wrong -- they are the yard's outstanding work,
+      // which is what amber means here and on every delivery pill in the
+      // tables beside this popup.
+      final i = c.indexOf('class DeliveryStatusBanner');
+      final body = c.substring(i, i + 3000);
+      expect(body, contains('warningAmber'));
+      expect(body.contains('dangerRed'), isFalse,
+          reason: 'a pending delivery is red again');
+    });
+
+    test('it says what the goods are waiting FOR', () {
+      // ⚠️ "Pending" is the same word for three different jobs: a sale
+      // waits for a buyer, a re-export for a ship, a release for its owner.
+      expect(c, contains("waitingFor: 'collection by the buyer'"));
+      expect(c, contains("'Awaiting \$waitingFor'"));
+    });
+
+    test('the receipt rides with the hand-over', () {
+      // ⚠️ It is the RECORD of the money collected, so it belongs beside
+      // the fact that the goods went -- not three fields away.
+      final models = code(File('lib/models/models.dart').readAsStringSync());
+      expect(models, contains('handoverReceiptNo'));
+      expect(models,
+          contains("handoverCharge: parseDbNum(json['handover_charge'])"));
+      expect(c, contains('receiptNo: saleItem.handoverReceiptNo'));
+    });
+  });
+
   group('a portal opens packages in its own colour', () {
     test('the card takes an accent instead of inferring one from readOnly', () {
       // ⚠️ `readOnly` means "cannot mark an item sold" — true of the yard AND

@@ -894,6 +894,166 @@ class _FinalOutcomeTile extends StatelessWidget {
   }
 }
 
+/// Whether the goods have actually left, as a banner.
+///
+/// ⚠️ This was a row in a list of fields reading "Pending" in RED. Red is
+/// the colour of something wrong, and goods waiting to be collected are not
+/// wrong -- they are the yard's outstanding work. It also sat between a
+/// receipt number and a tax figure, where the one thing a reader opens this
+/// popup to check was the least visible thing on it.
+///
+/// ⚠️ It says WHAT IS WAITING, not just "Pending". A sale waits for a
+/// buyer to collect; a re-export waits for a ship; a release waits for its
+/// owner. "Pending" is the same word for three different jobs.
+class DeliveryStatusBanner extends StatelessWidget {
+  const DeliveryStatusBanner({
+    super.key,
+    required this.delivered,
+    this.deliveredAt,
+    this.waitingFor = 'collection',
+    this.doneLabel = 'Delivered',
+    this.receiptNo,
+    this.charge,
+  });
+
+  final bool delivered;
+  final DateTime? deliveredAt;
+
+  /// What the goods are waiting FOR, in a word: 'collection', 'shipment'.
+  final String waitingFor;
+
+  /// The past-tense word for this ending: 'Delivered', 'Shipped',
+  /// 'Collected'.
+  final String doneLabel;
+
+  /// The receipt written for the storage charge, when one was taken.
+  final String? receiptNo;
+
+  /// What was collected, when it was.
+  final double? charge;
+
+  @override
+  Widget build(BuildContext context) {
+    // ⚠️ GREEN when gone, AMBER while waiting -- never red. Amber is the
+    // colour this app uses for work outstanding, and the delivery pill on
+    // every table beside this popup already uses exactly these two.
+    final tint = delivered
+        ? context.colors.successGreen
+        : context.colors.warningAmber;
+    final money = NumberFormat('#,##0.00');
+    final d = DateFormat('dd MMM yyyy');
+
+    return material.Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: material.Alignment.centerLeft,
+          end: material.Alignment.centerRight,
+          colors: [tint.withOpacity(0.14), tint.withOpacity(0.04)],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tint.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          material.Container(
+            width: 40,
+            height: 40,
+            alignment: material.Alignment.center,
+            decoration: BoxDecoration(
+              color: tint.withOpacity(0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+                delivered
+                    ? Icons.check_circle_rounded
+                    : Icons.local_shipping_rounded,
+                size: 21,
+                color: tint),
+          ),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                    delivered
+                        ? (deliveredAt == null
+                            ? doneLabel
+                            : '$doneLabel on ${d.format(deliveredAt!)}')
+                        : 'Awaiting $waitingFor',
+                    style: material.TextStyle(
+                      color: tint,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                    )),
+                const Gap(2),
+                Text(
+                    delivered
+                        ? 'The goods have left the yard.'
+                        : 'The goods are still in the yard, and still take '
+                            'up its space.',
+                    style: material.TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 11.5,
+                        height: 1.3)),
+                // The receipt is the RECORD of the money, so it belongs
+                // with the hand-over rather than three fields away.
+                if (delivered &&
+                    ((receiptNo ?? '').isNotEmpty || (charge ?? 0) > 0)) ...[
+                  const Gap(6),
+                  Wrap(spacing: 8, runSpacing: 4, children: [
+                    if ((receiptNo ?? '').isNotEmpty)
+                      _MiniTag(
+                          icon: Icons.receipt_long_rounded,
+                          label: 'Receipt ${receiptNo!}',
+                          tint: tint),
+                    if ((charge ?? 0) > 0)
+                      _MiniTag(
+                          icon: Icons.payments_rounded,
+                          label: 'Storage LKR ${money.format(charge)}',
+                          tint: tint),
+                  ]),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small icon+text tag, for facts that ride along with a banner.
+class _MiniTag extends StatelessWidget {
+  const _MiniTag(
+      {required this.icon, required this.label, required this.tint});
+
+  final IconData icon;
+  final String label;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) => material.Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: tint.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: tint.withOpacity(0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 11, color: tint),
+          const Gap(4),
+          Text(label,
+              style: material.TextStyle(
+                  color: tint, fontSize: 10.5, fontWeight: FontWeight.w700)),
+        ]),
+      );
+}
+
 /// One appointed committee officer, shown under the committee round.
 class _CommitteeMemberChip extends StatelessWidget {
   final int no;
@@ -5552,6 +5712,22 @@ class _SaleFinancialsSectionState
             ),
             child: Column(
               children: [
+                // ⚠️ FIRST, and as a banner. It was a row reading
+                // "Pending" in RED, sitting between a receipt number and
+                // a tax figure -- the one thing a reader opens this
+                // popup to check was the least visible thing on it, and
+                // red is the colour of something wrong. Goods waiting to
+                // be collected are not wrong; they are the yard's
+                // outstanding work, which is what amber means here and
+                // on every delivery pill in the tables beside it.
+                DeliveryStatusBanner(
+                  delivered: delivered,
+                  deliveredAt: saleItem.deliveredAt,
+                  waitingFor: 'collection by the buyer',
+                  doneLabel: 'Delivered',
+                  receiptNo: saleItem.handoverReceiptNo,
+                  charge: saleItem.handoverCharge,
+                ),
                 if (saleItem.receiptNumber?.trim().isNotEmpty == true)
                   _DetailItem(
                     icon: Icons.receipt_long_rounded,
@@ -5606,24 +5782,6 @@ class _SaleFinancialsSectionState
                   value: (saleItem.soldPrice + taxSum).toStringAsFixed(2),
                   valueColor: context.colors.primaryGold,
                 ),
-                _DetailItem(
-                  icon: Icons.local_shipping_rounded,
-                  label: 'Delivery Status',
-                  value: delivered ? 'Delivered' : 'Pending',
-                  valueColor: delivered
-                      ? context.colors.successGreen
-                      : context.colors.dangerRed,
-                ),
-                // Delivery date shown ONLY once delivered — the timestamp is
-                // captured automatically when Mark Delivered is pressed.
-                if (delivered && saleItem.deliveredAt != null)
-                  _DetailItem(
-                    icon: Icons.event_available_rounded,
-                    label: 'Delivery Date',
-                    value:
-                        DateFormat('yyyy-MM-dd').format(saleItem.deliveredAt!),
-                    valueColor: context.colors.successGreen,
-                  ),
                 // ⚠️ No Mark Delivered button here. Confirming delivery is
                 // the yard's ONE routine action on a sold row, and doing it
                 // from a popup meant open, scroll, press, watch it close. It

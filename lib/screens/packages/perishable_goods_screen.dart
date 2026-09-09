@@ -647,7 +647,25 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                                 color: context
                                                     .colors.accentLightBlue,
                                                 size: 18),
-                                            onPressed: () => showDialog(
+                                            onPressed: () {
+                                              // ⚠️ The ONE round these goods
+                                              // ran. A perishable gets a
+                                              // single special tender sale
+                                              // -- no re-valuation, no
+                                              // second round -- and the
+                                              // popup showed nothing of it,
+                                              // so the price the sale was
+                                              // held at appeared nowhere.
+                                              //
+                                              // The section labels it
+                                              // "Special Tender Sale" and
+                                              // draws no bids, because a
+                                              // perishable takes none.
+                                              final fp = ref
+                                                  .read(forfeitedByItemProvider(
+                                                      r.package.id))
+                                                  .valueOrNull?[r.item.id];
+                                              showDialog(
                                               context: context,
                                               builder: (_) =>
                                                   PackageDetailsDialog(
@@ -655,6 +673,8 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                                 storageRate: storageRate,
                                                 highlightItemId: r.item.id,
                                                 useLegacySummary: true,
+                                                tenderHistoryFor: fp,
+                                                valuationQty: r.item.quantity,
                                                 // ⚠️ Central Disposal tints
                                                 // every one of its dialogs
                                                 // with the portal's green.
@@ -673,7 +693,8 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                                         r.package.srNumber))
                                                     : null,
                                               ),
-                                            ),
+                                              );
+                                            },
                                           ),
                                         )),
                                       ]))

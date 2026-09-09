@@ -2972,6 +2972,13 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                                           ? f.valuationCost! * (f.entryQty ?? 1)
                                           : null,
                                       valuationQty: f.entryQty,
+                                      // ⚠️ The ROUNDS. Every row on this tab
+                                      // failed at least one tender, and
+                                      // the popup showed the current price
+                                      // with no history behind it -- the
+                                      // one thing that says whether it is
+                                      // falling fast enough to sell.
+                                      tenderHistoryFor: f,
                                       // Sealed while the newest round is open.
                                       valuationSealedUntilSale:
                                           info.latestSale?.saleEnded == false,
@@ -4995,6 +5002,11 @@ class _CommitteeCard extends StatelessWidget {
                                   ? f.valuationCost! * (qty ?? 1)
                                   : null,
                               valuationQty: qty,
+                              // ⚠️ A committee prices goods that failed four
+                              // or more rounds. Those rounds ARE the case
+                              // for its figure, and this popup showed none
+                              // of them.
+                              tenderHistoryFor: f,
                             ),
                           );
                         },

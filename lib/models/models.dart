@@ -2686,6 +2686,19 @@ class TenderSaleItemModel {
   final double soldPrice;
   final List<dynamic> appliedTaxes;
   final bool isDelivered;
+
+  /// The receipt written for the storage charge at hand-over.
+  ///
+  /// ⚠️ Null on every row delivered BEFORE the form existed -- those
+  /// hand-overs happened, and inventing a receipt number for them would
+  /// put a fiction in the record. A delivered row with no receipt is
+  /// expected; a receipt with no delivery is impossible, and migration 61
+  /// enforces that half.
+  final String? handoverReceiptNo;
+
+  /// What was collected at hand-over -- the figure ON the receipt, stored
+  /// rather than recomputed, because rates are a history ICT edits.
+  final double? handoverCharge;
   final DateTime? deliveredAt;
 
   const TenderSaleItemModel({
@@ -2702,6 +2715,8 @@ class TenderSaleItemModel {
     this.soldPrice = 0.0,
     this.appliedTaxes = const [],
     this.isDelivered = false,
+    this.handoverReceiptNo,
+    this.handoverCharge,
     this.deliveredAt,
   });
 
@@ -2727,6 +2742,8 @@ class TenderSaleItemModel {
       soldPrice: parseDbNum(json['sold_price']) ?? 0.0,
       appliedTaxes: json['applied_taxes'] as List<dynamic>? ?? const [],
       isDelivered: json['is_delivered'] as bool? ?? false,
+      handoverReceiptNo: json['handover_receipt_no'] as String?,
+      handoverCharge: parseDbNum(json['handover_charge']),
       deliveredAt: json['delivered_at'] != null
           ? DateTime.tryParse(json['delivered_at'].toString())
           : null,
