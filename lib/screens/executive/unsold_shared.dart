@@ -45,19 +45,44 @@ int unsoldQty(ForfeitedPackageModel f) {
   return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
 }
 
-String? unsoldHsCode(ForfeitedPackageModel f) {
-  final items = f.packageDetails?.items ?? const [];
-  if (f.itemId != null) {
-    final m = items.where((i) => i.id == f.itemId).firstOrNull;
-    if (m != null) return m.hsCode;
+/// A forfeited row's HS code.
+///
+/// ⚠️ Delegates, so there is ONE rule. This had its own copy with an
+/// `items.first` fallback -- on a package of three items with no item_id
+/// that stamped every row with the first item's code, which is a wrong
+/// answer where the shared version gives none.
+String? unsoldHsCodeOf(ForfeitedPackageModel f) =>
+    unsoldHsCode(f.packageDetails, f.itemId);
+
+/// This row's HS code, resolved from ITS OWN item.
+///
+/// ⚠️ Forfeiture is recorded per item, so a three-item package makes
+/// three rows -- falling through to `items.first` would stamp all three
+/// with one code. Several items and no way to say which returns null: a
+/// code that might be wrong is worse than none.
+String? unsoldHsCode(PackageModel? pkg, String? itemId) {
+  final items = pkg?.items ?? const <PackageItem>[];
+  if (itemId != null) {
+    final match = items.where((i) => i.id == itemId).firstOrNull;
+    if (match != null) return match.hsCode;
   }
-  return items.isNotEmpty ? items.first.hsCode : null;
+  if (items.length == 1) return items.first.hsCode;
+  return null;
+}
+
+/// This row's consignee, straight off the package.
+String unsoldConsignee(PackageModel? pkg, String? fallback) {
+  final name = (pkg?.consigneeName ?? '').trim();
+  if (name.isNotEmpty) return name;
+  final f = (fallback ?? '').trim();
+  return f.isEmpty ? '\u2014' : f;
 }
 
 /// Yard · Warehouse · zone the item currently sits in (latest entry).
 ///
-/// [yard] is the forfeited package's yard code — prepended so the directorate
-/// tables (which show packages from every yard) identify where each one is.
+/// [yard] is the forfeited package's yard code — prepended so the
+/// directorate tables (which show packages from every yard) identify
+/// where each one is.
 String unsoldLocation(PackageModel? pkg, String? itemId, [String? yard]) {
   final yName = (yard != null && yard.isNotEmpty) ? yardName(yard) : null;
   if (pkg == null) return yName ?? '—';

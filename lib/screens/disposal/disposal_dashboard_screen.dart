@@ -36,6 +36,7 @@ import '../../widgets/destruction_status_pill.dart';
 import '../executive/unsold_shared.dart';
 import '../../widgets/perishable_tag.dart';
 import '../../widgets/source_chip.dart';
+import '../../widgets/storage_charge_note.dart';
 import '../../widgets/yard_chip.dart';
 
 /// The quantity actually forfeited & sent for disposal for a request row.
@@ -1394,6 +1395,15 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                 label: Text('Total Amount'),
                                 size: ColumnSize.M),
                             // Fits the shared status pill, like the yard's.
+                            // ⚠️ What the goods cost the yard while they
+                            // waited. It is collected at hand-over, on
+                            // the form the Delivery button opens -- so
+                            // the figure and the button that collects
+                            // it belong side by side.
+                            DataColumn2(
+                                label: Center(child: Text('Storage')),
+                                size: ColumnSize.S,
+                                fixedWidth: 132),
                             DataColumn2(
                                 label: Center(child: Text('Delivery')),
                                 fixedWidth: kDestructionStatusColumnWidth),
@@ -1431,6 +1441,18 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                     DataCell(_SaleFinancialsCell(
                                         saleItemKey: r.saleItemKey,
                                         field: _SaleField.total)),
+                                    // ⚠️ The COMPACT note -- one line, in a
+                                    // table that already carries five
+                                    // money columns. It says whether the
+                                    // figure is a charge still owed or a
+                                    // cost nobody is billed for.
+                                    DataCell(Center(
+                                      child: StorageChargeNote(
+                                          packageId: r.package.id,
+                                          packageItemId:
+                                              r.entry.packageItemId,
+                                          compact: true),
+                                    )),
                                     DataCell(Center(
                                         child: _DeliveryStatusCell(
                                             package: r.package,
@@ -1805,11 +1827,27 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                             DataColumn2(
                                 label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Qty'),
-                                size: ColumnSize.S,
-                                fixedWidth: 60),
+                                label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Date'), size: ColumnSize.M),
+                                label: Text('HS Code'),
+                                size: ColumnSize.S,
+                                fixedWidth: 106),
+                            DataColumn2(
+                                label: Text('Location'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Center(child: Text('Qty')),
+                                size: ColumnSize.S,
+                                fixedWidth: 64),
+                            // ⚠️ The day destruction was DECIDED, not the
+                            // day it was carried out. It is the
+                            // [FINAL:DESTROYED] tag's own date -- the
+                            // moment an officer ruled the goods
+                            // condemned -- and "Date" alone let a
+                            // reader take it for the burn date, which
+                            // for the rows still pending has not
+                            // happened.
+                            DataColumn2(
+                                label: Text('Decided On'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Destruction Expenses'),
                                 size: ColumnSize.M),
@@ -1839,7 +1877,34 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                     DataCell(TooltipText(r.itemName,
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(TooltipText(
-                                        '${r.entry?.itemCount ?? r.item?.quantity ?? 0}')),
+                                        r.package.consigneeName,
+                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(TooltipText(
+                                        unsoldHsCode(r.package,
+                                                r.item?.id ??
+                                                    r.entry?.packageItemId) ??
+                                            '—',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            color: context
+                                                .colors.textSecondary,
+                                            fontSize: 12))),
+                                    DataCell(TooltipText(
+                                        unsoldLocation(
+                                            r.package,
+                                            r.item?.id ??
+                                                r.entry?.packageItemId,
+                                            yardOfSrNumber(
+                                                r.package.srNumber)),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            color: context
+                                                .colors.textSecondary,
+                                            fontSize: 12))),
+                                    DataCell(Center(
+                                      child: TooltipText(
+                                          '${r.entry?.itemCount ?? r.item?.quantity ?? 0}'),
+                                    )),
                                     DataCell(TooltipText(r.entry?.returnedAt !=
                                             null
                                         ? DateFormat('yyyy-MM-dd')
@@ -2513,22 +2578,31 @@ class _RequestCard extends ConsumerWidget {
                   empty: const EmptyTableState(
                       message: 'No packages in this request'),
                   columns: const [
+                    // ⚠️ The SAME order every table in this app now uses:
+                    // identity, place, numbers, state, action. A reader
+                    // moving between tabs should not be re-learning where a
+                    // column lives.
+                    //
+                    // ⚠️ Every non-text column is CENTRED, header and cell
+                    // alike -- a centred header over a left-aligned chip
+                    // reads as a column that does not line up with its own
+                    // title.
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                     DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('HS Code'),
                         size: ColumnSize.S,
-                        fixedWidth: 110),
+                        fixedWidth: 106),
+                    DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Text('Qty'),
+                        label: Center(child: Text('Qty')),
                         size: ColumnSize.S,
-                        fixedWidth: 64,
-                        numeric: true),
+                        fixedWidth: 64),
                     DataColumn2(
                         label: Center(child: Text('Source')),
                         size: ColumnSize.S,
-                        fixedWidth: 110),
+                        fixedWidth: 108),
                     DataColumn2(
                         label: Center(child: Text('Disposition')),
                         size: ColumnSize.S,
@@ -2570,11 +2644,23 @@ class _RequestCard extends ConsumerWidget {
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(TooltipText('$displayQty',
+                      // ⚠️ Yard, warehouse AND zone -- the same helper
+                      // every other table uses, so one package reads
+                      // the same wherever it is listed.
+                      DataCell(TooltipText(
+                          unsoldLocation(f?.packageDetails,
+                              highlightId, f?.yard ?? request.yard),
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
-                              fontWeight: FontWeight.w600,
                               fontSize: 12))),
+                      DataCell(Center(
+                        child: TooltipText('$displayQty',
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12)),
+                      )),
                       DataCell(Center(
                           child: SourceChip(source: f?.source ?? 'forfeit'))),
                       DataCell(Center(
@@ -2860,19 +2946,32 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                     minWidth: 880,
                     headingRowColor: _headingColor(context),
                     columns: const [
+                      // ⚠️ The SAME order every other table uses: identity,
+                      // place, numbers, state, action.
+                      //
+                      // ⚠️ Case No and Reason gave way to Consignee and HS
+                      // Code. Both survivors are what a reader scans a tender
+                      // list for -- who the goods belong to and what they are
+                      // -- while a case number is looked up, not scanned, and
+                      // the hold reason is on the popup. Widening instead
+                      // would have pushed the valuation off the screen.
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                       DataColumn2(
                           label: Text('Goods Name'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Text('HS Code'),
+                          size: ColumnSize.S,
+                          fixedWidth: 106),
+                      DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Center(child: Text('Qty')),
+                          size: ColumnSize.S,
+                          fixedWidth: 64),
                       DataColumn2(
                           label: Center(child: Text('Source')),
-                          size: ColumnSize.S),
-                      DataColumn2(
-                          label: Text('Qty'),
                           size: ColumnSize.S,
-                          fixedWidth: 56),
-                      DataColumn2(label: Text('Reason'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                          fixedWidth: 108),
                       DataColumn2(
                           // "Latest": the cell shows the newest valuation —
                           // sealed while the round it prices is still open.
@@ -2909,26 +3008,26 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                             style: TextStyle(
                                 color: context.colors.accentLightBlue,
                                 fontWeight: FontWeight.w600))),
-                        DataCell(TooltipText(pkg?.caseNumber ?? '—',
-                            overflow: TextOverflow.ellipsis)),
                         DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(Center(child: SourceChip(source: f.source))),
+                        DataCell(TooltipText(unsoldConsignee(pkg, f.consigneeName),
+                            overflow: TextOverflow.ellipsis)),
                         DataCell(TooltipText(
-                            '${f.entryQty ?? item?.quantity ?? '—'}')),
-                        DataCell(Builder(builder: (_) {
-                          final reason = _forfeitReasonText(item, f);
-                          return Tooltip(
-                            message: reason,
-                            child: Text(reason.isNotEmpty ? reason : '—',
-                                overflow: TextOverflow.ellipsis),
-                          );
-                        })),
+                            unsoldHsCode(pkg, f.itemId) ?? '—',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 12))),
                         DataCell(TooltipText(_warehouseLocation(pkg, f.itemId),
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
+                        DataCell(Center(
+                          child: TooltipText(
+                              '${f.entryQty ?? item?.quantity ?? '—'}'),
+                        )),
+                        DataCell(Center(child: SourceChip(source: f.source))),
                         DataCell(_UnsoldValuationCell(
                             info: info,
                             // The same signal the Re-valuation chip uses, so
@@ -3563,19 +3662,33 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                   empty: const EmptyTableState(
                       message: 'No packages in this sale'),
                   columns: [
-                    DataColumn2(label: Text('SR Number'), size: ColumnSize.S, fixedWidth: 135),
-                    DataColumn2(label: Text('Case No'), size: ColumnSize.S, fixedWidth: 130),
-                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+                    // ⚠️ The SAME order every other table uses: identity,
+                    // place, numbers, state, action.
+                    //
+                    // ⚠️ Case No and Reason gave way to Consignee and HS
+                    // Code. Both survivors are what a reader scans a tender
+                    // list for -- who the goods belong to and what they are --
+                    // while a case number is looked up, not scanned, and the
+                    // hold reason is on the popup.
                     DataColumn2(
-                        label: Center(child: Text('Source')),
+                        label: Text('SR Number'),
                         size: ColumnSize.S,
-                        fixedWidth: 65),
+                        fixedWidth: 135),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+                    DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                    DataColumn2(
+                        label: Text('HS Code'),
+                        size: ColumnSize.S,
+                        fixedWidth: 106),
+                    DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Center(child: Text('Qty')),
                         size: ColumnSize.S,
-                        fixedWidth: 50),
-                    DataColumn2(label: Text('Reason'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                        fixedWidth: 56),
+                    DataColumn2(
+                        label: Center(child: Text('Source')),
+                        size: ColumnSize.S,
+                        fixedWidth: 100),
                     // The DECLARED value off the SR form -- what the goods
                     // were entered as being worth. Replaces Goods Description,
                     // which repeated the Goods Name for most rows and pushed
@@ -3611,29 +3724,28 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(TooltipText(pkg?.caseNumber ?? '—',
-                          overflow: TextOverflow.ellipsis)),
                       DataCell(TooltipText(
                           r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Center(child: _sourceChip(context, f?.source))),
-                      DataCell(Center(
-                          child: Text(
-                              '${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
-                      DataCell(Builder(builder: (_) {
-                        final reason = _forfeitReasonText(r.item, f);
-                        return Tooltip(
-                          message: reason,
-                          child: Text(reason.isNotEmpty ? reason : '—',
-                              overflow: TextOverflow.ellipsis),
-                        );
-                      })),
+                      DataCell(TooltipText(
+                          unsoldConsignee(pkg, f?.consigneeName),
+                          overflow: TextOverflow.ellipsis)),
+                      DataCell(TooltipText(
+                          unsoldHsCode(pkg, r.item?.id ?? f?.itemId) ?? '—',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12))),
                       DataCell(TooltipText(
                           '${yardName(r.saleItem.yard)} / ${r.warehouse}',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
+                      DataCell(Center(
+                          child: Text(
+                              '${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
+                      DataCell(Center(child: _sourceChip(context, f?.source))),
                       // Not sealed: the declared value is on the SR form and
                       // is not the reserve price, so it carries none of the
                       // bidding secrecy the valuation columns do.
@@ -6607,19 +6719,33 @@ class DestructionCard extends ConsumerWidget {
                   empty: const EmptyTableState(
                       message: 'No packages in this sale'),
                   columns: [
-                    DataColumn2(label: Text('SR Number'), size: ColumnSize.S, fixedWidth: 135),
-                    DataColumn2(label: Text('Case No'), size: ColumnSize.S, fixedWidth: 130),
-                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+                    // ⚠️ The SAME order every other table uses: identity,
+                    // place, numbers, state, action.
+                    //
+                    // ⚠️ Case No and Reason gave way to Consignee and HS
+                    // Code. Both survivors are what a reader scans a tender
+                    // list for -- who the goods belong to and what they are --
+                    // while a case number is looked up, not scanned, and the
+                    // hold reason is on the popup.
                     DataColumn2(
-                        label: Center(child: Text('Source')),
+                        label: Text('SR Number'),
                         size: ColumnSize.S,
-                        fixedWidth: 65),
+                        fixedWidth: 135),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+                    DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                    DataColumn2(
+                        label: Text('HS Code'),
+                        size: ColumnSize.S,
+                        fixedWidth: 106),
+                    DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Center(child: Text('Qty')),
                         size: ColumnSize.S,
-                        fixedWidth: 50),
-                    DataColumn2(label: Text('Reason'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                        fixedWidth: 56),
+                    DataColumn2(
+                        label: Center(child: Text('Source')),
+                        size: ColumnSize.S,
+                        fixedWidth: 100),
                     // The same pair the tender card shows: the declared value
                     // off the SR form, then the Valuation Directorate's own
                     // figure (sealed on the yard, which does not see it).
@@ -6648,29 +6774,28 @@ class DestructionCard extends ConsumerWidget {
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(TooltipText(pkg?.caseNumber ?? '—',
-                          overflow: TextOverflow.ellipsis)),
                       DataCell(TooltipText(
                           r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Center(child: _sourceChip(context, f?.source))),
-                      DataCell(Center(
-                          child: Text(
-                              '${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
-                      DataCell(Builder(builder: (_) {
-                        final reason = _forfeitReasonText(r.item, f);
-                        return Tooltip(
-                          message: reason,
-                          child: Text(reason.isNotEmpty ? reason : '—',
-                              overflow: TextOverflow.ellipsis),
-                        );
-                      })),
+                      DataCell(TooltipText(
+                          unsoldConsignee(pkg, f?.consigneeName),
+                          overflow: TextOverflow.ellipsis)),
+                      DataCell(TooltipText(
+                          unsoldHsCode(pkg, r.item?.id ?? f?.itemId) ?? '—',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12))),
                       DataCell(TooltipText(
                           '${yardName(r.saleItem.yard)} / ${r.warehouse}',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
+                      DataCell(Center(
+                          child: Text(
+                              '${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
+                      DataCell(Center(child: _sourceChip(context, f?.source))),
                       DataCell(Center(
                           child: _GoodsValueCell(
                               item: r.item,

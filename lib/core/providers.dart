@@ -1808,6 +1808,22 @@ final exhaustedUnsoldYearsProvider =
 // The recorded final outcomes, keyed by forfeited_package_id.
 /// The DG's final outcomes keyed by package_item_id, for pages that list
 /// items rather than forfeited packages (Perishable Goods).
+/// The valuation each perishable item's special sale was priced at.
+///
+/// ⚠️ One query for the whole page. The Perishable table reads this map
+/// rather than watching a provider per row.
+final perishableValuationsProvider =
+    FutureProvider<Map<String, double>>((ref) async {
+  // ⚠️ `disposalRequestsChangeTriggerProvider` ALONE. The valuation
+  // lives on `disposal_request_items`, so that is the table whose
+  // changes matter -- and the page already watches this same trigger
+  // for its rows, so no second realtime channel is opened. Adding
+  // `forfeitedPackagesChangeTriggerProvider` opened one, and a widget
+  // test then never settled: a pending timer outlives the tree.
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getPerishableValuationsByItem();
+});
+
 final unsoldProposalsByItemProvider =
     FutureProvider<Map<String, UnsoldProposalModel>>((ref) async {
   ref.watch(tenderBidsChangeTriggerProvider);

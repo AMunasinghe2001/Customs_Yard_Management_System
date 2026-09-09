@@ -7642,6 +7642,39 @@ class DisposalService {
   /// Without this it could not show the DG's decision at all -- the yard and
   /// Central Disposal would be looking at goods whose fate had been settled
   /// and see nothing of it.
+  /// The valuation set for each PERISHABLE item, keyed by item id.
+  ///
+  /// ⚠️ ONE query for the page, not one per row. A per-row read here
+  /// meant a provider watch inside every cell -- twenty round trips for one
+  /// number each, and in a widget test a realtime channel that never
+  /// settles, so `pumpAndSettle` timed out with a pending timer.
+  ///
+  /// ⚠️ `valuation_cost` lives on `disposal_request_items`, not on
+  /// `forfeited_packages` -- the same embed the popup needs.
+  Future<Map<String, double>> getPerishableValuationsByItem() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('item_id, entry_qty, '
+            'disposal_request_items!forfeited_package_id(valuation_cost)')
+        .eq('source', 'perishable'));
+    final out = <String, double>{};
+    for (final e in (data as List)) {
+      final m = e as Map<String, dynamic>;
+      final itemId = m['item_id']?.toString();
+      if (itemId == null) continue;
+      final rows = m['disposal_request_items'] as List?;
+      if (rows == null || rows.isEmpty) continue;
+      for (final r in rows) {
+        final cost = parseDbNum((r as Map<String, dynamic>)['valuation_cost']);
+        if (cost != null && cost > 0) {
+          out[itemId] = cost;
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   Future<Map<String, UnsoldProposalModel>> getUnsoldProposalsByItem() async {
     final rows = await AuthService._withNetworkRetry(() => supabase
         .from('unsold_proposals')

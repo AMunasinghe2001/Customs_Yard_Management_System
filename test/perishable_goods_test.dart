@@ -91,6 +91,12 @@ Widget _harness({
         // Central Disposal's copy carries a yard dropdown, which fetches the
         // yard list -- overridden here or the widget opens a real socket.
         yardFilterOptionsProvider.overrideWith((ref) => Future.value(const [])),
+        // ⚠️ Every provider this page touches must be overridden, or
+        // it opens a real realtime channel and the test ends with a
+        // pending timer outliving the widget tree. The Valuation column
+        // added one.
+        perishableValuationsProvider
+            .overrideWith((ref) => Future.value(const <String, double>{})),
         storageRateProvider
             .overrideWith((ref) => Future.value(const <DateTime, double>{})),
       ],

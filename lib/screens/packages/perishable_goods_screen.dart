@@ -221,6 +221,11 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
     // yard and Central Disposal cannot describe one outcome differently.
     final outcomes = ref.watch(unsoldProposalsByItemProvider).valueOrNull ??
         const <String, UnsoldProposalModel>{};
+    // ⚠️ ONE query for the page. A per-row provider watch meant
+    // twenty round trips for one number each -- and in a widget test a
+    // realtime channel that never settled, so pumpAndSettle timed out.
+    final valuations = ref.watch(perishableValuationsProvider).valueOrNull ??
+        const <String, double>{};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final accent =
@@ -552,6 +557,14 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                               columnSpacing: 12,
                               horizontalMargin: 16,
                               fixedTopRows: 1,
+                              // ⚠️ A minWidth, so the table SCROLLS rather
+                              // than asserting. data_table_2 throws when
+                              // the fixed-width columns outgrow the
+                              // parent -- adding Valuation pushed the
+                              // fixed total past a narrow window, and
+                              // the failure is a red screen, not a
+                              // squeeze. Every other table here sets one.
+                              minWidth: 1180,
                               isHorizontalScrollBarVisible: false,
                               empty: const EmptyTableState(
                                 icon: Icons.eco_rounded,
@@ -583,6 +596,16 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                       label: Text('Yard'),
                                       size: ColumnSize.S,
                                       fixedWidth: 130),
+                                // ⚠️ What the goods were PRICED at for
+                                // their special sale. A perishable runs
+                                // exactly one, and the figure it ran at
+                                // decided whether it sold -- the table
+                                // listed the outcome and never the price
+                                // behind it.
+                                const DataColumn2(
+                                    label: Center(child: Text('Valuation')),
+                                    size: ColumnSize.S,
+                                    fixedWidth: 150),
                                 // ⚠️ No "Waiting" column. A countdown here read
                                 // as an appeal window running down -- and a
                                 // perishable has NO appeal window; that is the
@@ -628,6 +651,16 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                               yardName(yardOfSrNumber(
                                                   r.package.srNumber)),
                                               overflow: TextOverflow.ellipsis)),
+                                        // ⚠️ The price its ONE special sale
+                                        // ran at. Read from the same
+                                        // per-item forfeited row the popup
+                                        // uses, so the two cannot disagree.
+                                        DataCell(Center(
+                                          child: _PerishValuationCell(
+                                              unitCost:
+                                                  valuations[r.item.id],
+                                              qty: r.item.quantity),
+                                        )),
                                         DataCell(Center(
                                             child: _PerishableOutcomeChip(
                                                 proposal: outcomes[r.item.id],
@@ -784,6 +817,47 @@ class _CountChip extends StatelessWidget {
 /// 3. Failed Special Tender Sale and marked unsold -> "Awaiting Top Management" (Orange)
 /// 4. Sent to Central Disposal in a request -> "In Tender" (Gold)
 /// 5. In Yard, not yet sent -> "In Yard" (Muted)
+/// What a perishable's single special tender sale was priced at.
+///
+/// ⚠️ Per ITEM. A package holds several, each forfeited separately with
+/// its own valuation, and pricing the whole package on a row about one of
+/// them would overstate it.
+class _PerishValuationCell extends StatelessWidget {
+  const _PerishValuationCell({required this.unitCost, this.qty});
+
+  /// Per-unit, from the page's own map.
+  final double? unitCost;
+  final int? qty;
+
+  @override
+  Widget build(BuildContext context) {
+    final unit = unitCost;
+    if (unit == null) {
+      return Text('Not set',
+          style: TextStyle(
+              color: context.colors.textMuted,
+              fontSize: 12,
+              fontStyle: FontStyle.italic));
+    }
+    final n = qty ?? 1;
+    final money = NumberFormat('#,##0');
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text('LKR ${money.format(unit * n)}',
+            style: TextStyle(
+                color: context.colors.primaryGold,
+                fontWeight: FontWeight.w700,
+                fontSize: 12)),
+        Text('@ ${money.format(unit)} × $n',
+            style:
+                TextStyle(fontSize: 10, color: context.colors.textMuted)),
+      ],
+    );
+  }
+}
+
 class _PerishableOutcomeChip extends StatelessWidget {
   final UnsoldProposalModel? proposal;
   final double? soldPrice;
