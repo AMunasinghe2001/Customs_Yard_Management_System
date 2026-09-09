@@ -197,7 +197,14 @@ void main() {
       // holds several items with separate entries — charging the whole
       // package on a form about one of them would overstate it, sometimes
       // several times over.
-      expect(note, contains('if (e.isReturned) return false;'));
+      // ⚠️ A CLOSED entry counts now -- to the day it closed, not to
+      // today. Skipping them meant all 146 rows on the disposition
+      // pages showed nothing, and those are exactly the goods whose
+      // storage cost somebody wants to know.
+      expect(note.contains('if (e.isReturned) return false;'), isFalse);
+      expect(note, contains('until: ends'));
+      // The ITEM filter still applies, which is the half of this rule
+      // that never changed.
       expect(note, contains('return e.packageItemId == packageItemId;'));
     });
 

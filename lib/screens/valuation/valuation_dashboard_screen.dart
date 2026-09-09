@@ -737,6 +737,19 @@ class _ValuationRequestCard extends ConsumerWidget {
                                       valuationUnitCost: it.unitCost,
                                       valuationTotalCost: it.totalCost,
                                       valuationQty: displayQty,
+                                      // ⚠️ The rounds these goods have
+                                      // already been through. A first
+                                      // valuation usually has none, but a
+                                      // package can arrive here after a
+                                      // failed round, and pricing it
+                                      // without seeing what was bid before
+                                      // is guessing.
+                                      tenderHistoryFor: f,
+                                      // ⚠️ This portal SET these figures. The
+                                      // seal keeps a live reserve price from
+                                      // bidders, not from the people whose
+                                      // job is to decide it.
+                                      valuerView: true,
                                     ),
                                   ),
                         ),
@@ -1430,6 +1443,18 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                                                     ? f.valuationCost! *
                                                         (f.entryQty ?? 1)
                                                     : null,
+                                            // ⚠️ THE point of this page.
+                                            // Every row here failed at least
+                                            // one tender, and the directorate
+                                            // is setting the price for the
+                                            // next one -- the rounds, the
+                                            // re-valuations and the bids are
+                                            // the whole evidence for that
+                                            // decision, and the popup showed
+                                            // none of it.
+                                            tenderHistoryFor: f,
+                                            valuerView: true,
+                                            valuationQty: f.entryQty,
                                           ),
                                         ),
                               ),

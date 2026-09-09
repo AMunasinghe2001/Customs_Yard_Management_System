@@ -240,8 +240,12 @@ void main() {
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
     test('each history round is gated on its OWN sale moment', () {
+      // ⚠️ Except for the VALUER. The seal keeps a live reserve price
+      // from bidders, and the directorate that SET it is not a bidder --
+      // sealing there hid a number from the only people whose job is to
+      // decide it, on the page where they decide the next round's.
       expect(flat(dialog),
-          contains('final sealed = !(ranById[id] ?? false)'));
+          contains('final sealed = !valuerView && !(ranById[id] ?? false)'));
       expect(flat(dialog), contains('priceLabel: (unit == null || sealed)'),
           reason: 'A round still to be tendered must not print its price.');
     });

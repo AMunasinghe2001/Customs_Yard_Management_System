@@ -18,10 +18,20 @@ double _spaceCost({
   required DateTime from,
   required int units,
   required Map<DateTime, double> rates,
+
+  /// The day the goods LEFT, when they have. Null runs to today.
+  ///
+  /// ⚠️ Without this the figure was live-entries-only, and 146 of the
+  /// rows on the disposition pages have a closed entry -- every sold,
+  /// released, re-exported and "other" package in this yard. Their popups
+  /// showed nothing at all, which is the opposite of the point: what the
+  /// space cost is most worth knowing about goods that are gone.
+  DateTime? until,
 }) {
   final start = DateTime(from.year, from.month, from.day);
-  final now = DateTime.now();
-  final end = DateTime(now.year, now.month, now.day);
+  final last = until ?? DateTime.now();
+  final end = DateTime(last.year, last.month, last.day);
+  if (end.isBefore(start)) return 0;
   var total = 0.0;
   for (var i = 0; i <= end.difference(start).inDays; i++) {
     final day = start.add(Duration(days: i));
@@ -80,14 +90,21 @@ class StorageChargeNote extends ConsumerWidget {
     final pkg = pkgAsync.valueOrNull;
     if (pkg == null || rates == null) return const SizedBox.shrink();
 
-    // ⚠️ Only entries that are STILL HELD. A package with a returned entry
-    // and a live one would otherwise be charged for both, and the returned
-    // one stopped accruing the day it closed.
+    // ⚠️ A closed entry still COUNTS -- it just stops at the day it
+    // closed. Skipping them entirely meant every sold, released and
+    // re-exported package showed nothing, and those are exactly the goods
+    // whose storage cost somebody wants to know.
+    //
+    // The item filter still applies: a package holds several items with
+    // separate entries, and charging the whole package on a form about one
+    // of them would overstate it, sometimes several times over.
     final entries = pkg.warehouseEntries.where((e) {
-      if (e.isReturned) return false;
       if (packageItemId == null) return true;
       return e.packageItemId == packageItemId;
     }).toList();
+    // Whether any of them is still accruing, which changes the wording
+    // below from "to date" to a closed figure.
+    final anyLive = entries.any((e) => !e.isReturned);
     if (entries.isEmpty) return const SizedBox.shrink();
 
     // Charged from the SR's ENTRY DATE, the same rule the Released Goods
@@ -106,10 +123,16 @@ class StorageChargeNote extends ConsumerWidget {
     // for 703 days needs that number either way.
     double total = 0;
     DateTime? since;
+    DateTime? lastDay;
     var billable = true;
     for (final e in entries) {
       final start = pkg.entryDate ?? e.admittedAt;
       if (since == null || start.isBefore(since)) since = start;
+      // ⚠️ A closed entry ends on the day it CLOSED, not today. An
+      // entry returned in 2024 has not been accruing since.
+      final ends = e.isReturned ? (e.returnedAt ?? DateTime.now()) : null;
+      final endOf = ends ?? DateTime.now();
+      if (lastDay == null || endOf.isAfter(lastDay)) lastDay = endOf;
       final item =
           pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
       final status = (item?.status ?? '').trim().toLowerCase();
@@ -118,14 +141,18 @@ class StorageChargeNote extends ConsumerWidget {
         from: start,
         units: e.itemCount,
         rates: rates,
+        until: ends,
       );
     }
     if (total <= 0) return const SizedBox.shrink();
 
     final money = NumberFormat('#,##0.00');
+    // ⚠️ Days to the LAST day counted, not to today. "703 days in
+    // storage" about goods that left in 2024 is a figure and a lie in the
+    // same line.
     final days = since == null
         ? null
-        : DateTime.now().difference(since).inDays;
+        : (lastDay ?? DateTime.now()).difference(since).inDays;
     final held = days == null
         ? 'in storage'
         : 'over $days day${days == 1 ? '' : 's'} in storage';
@@ -133,17 +160,27 @@ class StorageChargeNote extends ConsumerWidget {
     // it; forfeited and abandoned goods will not, and an officer told
     // "accrued" about goods nobody can be billed for would reasonably read
     // it as money the yard is owed.
-    final caption = billable
-        ? 'Accrued $held \u00b7 payable on collection'
-        : 'Cost of space $held \u00b7 not billable, the state holds these goods';
+    // ⚠️ Three sentences, because there are three cases: money still
+    // owed, money that was owed and is settled, and days in a zone nobody
+    // is billed for. Telling a reader goods are "payable on collection"
+    // when they were collected two years ago is worse than saying nothing.
+    final caption = !billable
+        ? 'Cost of space $held \u00b7 not billable, the state holds these goods'
+        : anyLive
+            ? 'Accrued $held \u00b7 payable on collection'
+            : 'Charged $held \u00b7 the goods have left the yard';
 
     if (compact) {
       return Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.warehouse_rounded,
             size: 13, color: context.colors.textMuted),
         const Gap(5),
+        // ⚠️ "so far" only where it is still running. The compact
+        // line is the one that goes on a dense form, so it has to be
+        // right in three words.
         Text(
-            '${billable ? 'Storage charge' : 'Storage cost'} so far: '
+            '${billable ? 'Storage charge' : 'Storage cost'}'
+            '${anyLive ? ' so far' : ''}: '
             'LKR ${money.format(total)}',
             style: TextStyle(
                 color: context.colors.textSecondary,
@@ -171,9 +208,11 @@ class StorageChargeNote extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                  billable
-                      ? 'Warehouse charge to date'
-                      : 'Storage cost to date',
+                  !billable
+                      ? 'Storage cost'
+                      : (anyLive
+                          ? 'Warehouse charge to date'
+                          : 'Warehouse charge'),
                   style: TextStyle(
                       color: context.colors.textMuted,
                       fontSize: 10,

@@ -101,6 +101,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
 import 'error_view.dart';
 import 'appeal_state_chip.dart';
+import 'storage_charge_note.dart';
 
 /// The valuation row shown in the Sale / Destruction sections.
 ///
@@ -169,6 +170,15 @@ class TenderHistorySection extends ConsumerWidget {
   /// Quantity this row covers, so a per-item unit price can be totalled.
   final int? qty;
 
+  /// The Valuation Directorate is reading its OWN figures.
+  ///
+  /// ⚠️ A reserve price is sealed until bidding closes so nobody can bid
+  /// against it -- but the directorate that SET it cannot be kept from it.
+  /// Sealing there hides a number from the only people whose job is to
+  /// decide it, and they are setting the NEXT round's price from exactly
+  /// these rounds.
+  final bool valuerView;
+
   /// Whether to render the final outcome tile at the bottom.
   final bool showFinalOutcome;
 
@@ -177,6 +187,7 @@ class TenderHistorySection extends ConsumerWidget {
     required this.forfeited,
     this.qty,
     this.showFinalOutcome = true,
+    this.valuerView = false,
   });
 
   /// True when these goods are PERISHABLE.
@@ -314,7 +325,12 @@ class TenderHistorySection extends ConsumerWidget {
       // case: the ADG submits a price and the package is only tendered at it
       // afterwards, so showing it here leaked the reserve price of a tender
       // that had not opened yet.
-      final sealed = !(ranById[id] ?? false);
+      // ⚠️ Never sealed for the VALUER. The seal exists so nobody can
+      // bid against a live reserve price -- and the directorate that SET
+      // it is not "nobody". Sealing here hid a number from the only
+      // people whose job is to decide it, on the page where they decide
+      // the next one.
+      final sealed = !valuerView && !(ranById[id] ?? false);
       final soldHere = soldById.containsKey(id);
       // A sealed round still renders — it is the one that says "not yet".
       // ⚠️ And a round that SOLD always renders, whatever else it lacks: it
@@ -1156,6 +1172,15 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   /// notice — see [valuationSealed].
   final bool valuationSealedUntilSale;
 
+  /// The VALUATION DIRECTORATE is reading its own figures.
+  ///
+  /// ⚠️ Passed by that portal alone. A reserve price is sealed until
+  /// bidding closes so nobody can bid against it -- and the directorate
+  /// that SET it is not "nobody". Sealing there hid a number from the
+  /// only people whose job is to decide it, on the very page where they
+  /// decide the next round's.
+  final bool valuerView;
+
   // Optional generic footer action (e.g. the Appeal Directorate's "Hold Appeal"
   // / "Release"). When [footerActionLabel] is set, a button is shown in the
   // dialog footer — styled like the Final Disposition footer — that calls
@@ -1222,6 +1247,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.valuationTotalCost,
     this.valuationQty,
     this.valuationSealedUntilSale = false,
+    this.valuerView = false,
     this.footerActionLabel,
     this.footerActionIcon,
     this.footerActionColor,
@@ -2875,7 +2901,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         // own declared value.
                         // Sealed while the sale is still open: show that the
                         // figure is deliberately withheld, not simply missing.
-                        if (widget.valuationSealedUntilSale)
+                        // ⚠️ Not for the valuer. They set this figure; a
+                        // lock panel where their own number should be is a
+                        // page telling them they may not see their own work.
+                        if (widget.valuationSealedUntilSale &&
+                            !widget.valuerView)
                           _DetailSection(
                             title: 'Valuation',
                             icon: Icons.lock_outline_rounded,
@@ -2964,6 +2994,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             forfeited: widget.tenderHistoryFor!,
                             qty: widget.valuationQty,
                             showFinalOutcome: widget.showFinalOutcome,
+                            valuerView: widget.valuerView,
                           ),
                         // ⚠️ Directly ABOVE Warehouse Summary, and in the
                         // same frame. The two are read as a pair -- where
@@ -3926,6 +3957,36 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                 valueColor: context.colors.successGreen,
                               ),
                             ],
+                          ),
+                        ),
+                      // ⚠️ What the SPACE has cost, on every popup that does
+                      // not already carry the section above.
+                      //
+                      // That section is skipped in three cases and each
+                      // leaves a real gap: `useLegacySummary` (which is
+                      // nearly every popup in the app), a no-charge status,
+                      // and a sale. The first shows an entry-date charge in
+                      // its summary but only on the pages that have one; the
+                      // second and third are goods the state has taken or
+                      // sold, where nobody is billed -- but the days in a
+                      // zone still happened, and every valuation, committee
+                      // and sale decision is made against them.
+                      //
+                      // The note says which of the two figures it is: an
+                      // accrued CHARGE payable on collection, or the COST of
+                      // space nobody will be billed for.
+                      if (widget.useLegacySummary ||
+                          isNoChargeContext ||
+                          isSoldContext)
+                        _DetailSection(
+                          title: 'Storage',
+                          icon: Icons.warehouse_rounded,
+                          delay: 600,
+                          child: StorageChargeNote(
+                            packageId: p.id,
+                            packageItemId:
+                                widget.highlightEntry?.packageItemId ??
+                                    widget.highlightItemId,
                           ),
                         ),
                       if (() {

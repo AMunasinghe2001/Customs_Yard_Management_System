@@ -116,6 +116,70 @@ void main() {
     });
   });
 
+  group('the Valuation Directorate sees what it is pricing', () {
+    final val = code(File(
+            'lib/screens/valuation/valuation_dashboard_screen.dart')
+        .readAsStringSync());
+    final c = code(dialog);
+
+    test('both its popups carry the tender history', () {
+      // ⚠️ Unsold Tenders is a page of goods that FAILED at least one
+      // round, and the directorate is setting the price for the next one.
+      // The rounds, the re-valuations and the bids are the whole evidence
+      // for that decision, and the popup showed none of it.
+      expect('tenderHistoryFor: f,'.allMatches(val).length, 2);
+    });
+
+    test('a valuer is never sealed out of their own figure', () {
+      // ⚠️ The seal keeps a live reserve price from BIDDERS. The
+      // directorate that set it is not a bidder, and sealing there hid a
+      // number from the only people whose job is to decide it -- on the
+      // very page where they decide the next round's.
+      expect('valuerView: true,'.allMatches(val).length, 2);
+      expect(c, contains('final sealed = !valuerView'));
+      expect(c, contains('widget.valuationSealedUntilSale && !widget.valuerView'));
+    });
+  });
+
+  group('every popup says what the space cost', () {
+    final c = code(dialog);
+    final note =
+        code(File('lib/widgets/storage_charge_note.dart').readAsStringSync());
+
+    test('the gap the old section left is filled', () {
+      // ⚠️ The Warehouse Charges section is skipped in three cases and
+      // each leaves a real gap: `useLegacySummary` (nearly every popup in
+      // the app), a no-charge status, and a sale.
+      expect(c, contains('widget.useLegacySummary || isNoChargeContext || isSoldContext'));
+      expect(c, contains('StorageChargeNote('));
+    });
+
+    test('a CLOSED entry still counts, to the day it closed', () {
+      // ⚠️ It used to skip returned entries entirely, so all 146 rows on
+      // the disposition pages -- every sold, released, re-exported and
+      // "other" package in this yard -- showed nothing. Those are exactly
+      // the goods whose storage cost somebody wants to know.
+      expect(note.contains('if (e.isReturned) return false;'), isFalse,
+          reason: 'closed entries are being skipped again');
+      expect(note, contains('e.isReturned ? (e.returnedAt ?? DateTime.now()) : null'));
+      expect(note, contains('until: ends'));
+    });
+
+    test('the days count to the last day, not to today', () {
+      // ⚠️ "703 days in storage" about goods that left in 2024 is a
+      // figure and a lie in the same line.
+      expect(note, contains('(lastDay ?? DateTime.now()).difference(since)'));
+    });
+
+    test('the wording distinguishes owed, settled and never-billed', () {
+      // ⚠️ Telling a reader goods are "payable on collection" when they
+      // were collected two years ago is worse than saying nothing.
+      expect(note, contains('payable on collection'));
+      expect(note, contains('the goods have left the yard'));
+      expect(note, contains('not billable, the state holds these goods'));
+    });
+  });
+
   group('a portal opens packages in its own colour', () {
     test('the card takes an accent instead of inferring one from readOnly', () {
       // ⚠️ `readOnly` means "cannot mark an item sold" — true of the yard AND
