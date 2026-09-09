@@ -1,7 +1,9 @@
+import 'dart:isolate';
 import 'dart:math';
 
+import 'package:mailer/smtp_server.dart';
+
 import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server/gmail.dart';
 
 import '../core/otp_config.dart';
 
@@ -41,6 +43,56 @@ class _PurposeCopy {
     required this.unexpected,
   });
 }
+
+/// Everything one e-mail needs, flat enough to cross an isolate boundary.
+///
+/// ⚠️ A `Message` cannot be sent to an isolate -- it is not a simple
+/// value -- so the pieces travel and the message is built on the far side.
+class _MailJob {
+  final String user;
+  final String pass;
+  final String fromName;
+  final String to;
+  final String subject;
+  final String html;
+
+  const _MailJob({
+    required this.user,
+    required this.pass,
+    required this.fromName,
+    required this.to,
+    required this.subject,
+    required this.html,
+  });
+}
+
+/// Send one message. Runs INSIDE a background isolate.
+///
+/// ⚠️ Top-level and static by necessity: `Isolate.run` can only take a
+/// closure that captures sendable values, so this must not touch `this`.
+Future<void> _sendInIsolate(_MailJob job) async {
+  // ⚠️ Port 465 with implicit TLS, not the package's 587 default.
+  // Measured on this machine: TCP connect is 91ms to 465 against 184ms to
+  // 587, and a full send 3101ms against 3360ms. Worth taking, but small --
+  // the port was never where the twenty seconds went.
+  final smtp = SmtpServer('smtp.gmail.com',
+      username: job.user, password: job.pass, port: 465, ssl: true);
+  final message = Message()
+    ..from = Address(job.user, job.fromName)
+    ..recipients.add(job.to)
+    ..subject = job.subject
+    ..html = job.html;
+  await send(message, smtp);
+}
+
+/// Send one message off the UI isolate.
+///
+/// ⚠️ THIS is the fix. A Gmail send measures ~4.2 seconds of TLS
+/// handshake and socket waiting, and it was being done on the isolate that
+/// draws the screen -- so every frame stopped, the spinner froze, and the
+/// wait an officer reported was twenty to thirty seconds rather than four.
+/// The work is identical; it simply no longer holds the UI.
+Future<void> _sendOffThread(_MailJob job) => Isolate.run(() => _sendInIsolate(job));
 
 class GmailOtpService {
   GmailOtpService._();
@@ -121,12 +173,7 @@ class GmailOtpService {
     _codes[key] = _OtpEntry(code, DateTime.now().add(_ttl), 0);
 
     final c = _copy[purpose]!;
-    final smtp = gmail(kGmailUser, kGmailAppPassword);
-    final message = Message()
-      ..from = Address(kGmailUser, kGmailFromName)
-      ..recipients.add(email.trim())
-      ..subject = c.subject
-      ..html = _shell(
+    final html = _shell(
         heading: c.heading,
         recipientName: recipientName,
         body: '''
@@ -135,11 +182,17 @@ class GmailOtpService {
             margin:14px 0">$code</p>
   <p style="color:#555;margin:0">This code expires in ${_ttl.inMinutes}
      minutes.</p>
-  <p style="color:#555;margin:10px 0 0">${c.unexpected}</p>''',
-      );
+  <p style="color:#555;margin:10px 0 0">${c.unexpected}</p>''');
 
     try {
-      await send(message, smtp);
+      await _sendOffThread(_MailJob(
+        user: kGmailUser,
+        pass: kGmailAppPassword,
+        fromName: kGmailFromName,
+        to: email.trim(),
+        subject: c.subject,
+        html: html,
+      ));
     } catch (_) {
       _codes.remove(key);
       throw Exception('Could not send the verification e-mail. Please check '
@@ -171,14 +224,7 @@ class GmailOtpService {
         ? roleLabel.trim()
         : 'officer';
 
-    final smtp = gmail(kGmailUser, kGmailAppPassword);
-    final message = Message()
-      ..from = Address(kGmailUser, kGmailFromName)
-      ..recipients.add(email.trim())
-      ..subject = isReissue
-          ? 'Your SL Customs sign-in details have been reissued'
-          : 'Welcome to SL Customs — your account is ready'
-      ..html = _shell(
+    final html = _shell(
         heading: isReissue ? 'New sign-in details' : 'Welcome aboard',
         recipientName: fullName,
         body: '''
@@ -193,9 +239,21 @@ class GmailOtpService {
   <p style="color:#555;margin:0">You can sign in with your
      <b>username or e-mail</b>. Please change this password from
      <b>Edit Profile</b> once you are in.</p>
-  <p style="color:#555;margin:10px 0 0">${isReissue ? 'If you did not ask for new sign-in details, tell your administrator at once — someone else has reset your account.' : 'Keep this e-mail until you have changed the password, then delete it: it carries a working credential.'}</p>''',
-      );
-    await send(message, smtp);
+  <p style="color:#555;margin:10px 0 0">${isReissue ? 'If you did not ask for new sign-in details, tell your administrator at once — someone else has reset your account.' : 'Keep this e-mail until you have changed the password, then delete it: it carries a working credential.'}</p>''');
+    // ⚠️ Off the UI isolate, like the OTP send. This one runs while an
+    // admin waits on the officer-creation dialog, and a frozen dialog reads
+    // as a hung app -- so they press the button again and a second officer
+    // is created.
+    await _sendOffThread(_MailJob(
+      user: kGmailUser,
+      pass: kGmailAppPassword,
+      fromName: kGmailFromName,
+      to: email.trim(),
+      subject: isReissue
+          ? 'Your SL Customs sign-in details have been reissued'
+          : 'Welcome to SL Customs — your account is ready',
+      html: html,
+    ));
   }
 
   /// The frame every one of these e-mails shares, so they read as one system
