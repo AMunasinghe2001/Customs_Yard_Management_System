@@ -7821,7 +7821,7 @@ class DisposalService {
     final fps = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
-            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+            '*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
         .inFilter('id', ids));
     final items = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')

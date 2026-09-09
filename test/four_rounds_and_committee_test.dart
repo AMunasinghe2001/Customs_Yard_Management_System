@@ -115,27 +115,26 @@ void main() {
       expect(flat(dash), contains("widget.readOnly ? 'Tender History'"));
     });
 
-    test('the tab offers two ways in', () {
-      // The round count, and the bid count beside it.
-      expect(committees, contains("label: Center(child: Text('Bids'))"));
-      expect(committees, contains('_CommitteeBidsCell'));
+    test('the tender history is reachable from the tab', () {
+      // ⚠️ The tab used to carry a Bids column beside Times, as a second
+      // door into the same history dialog. It was removed; Times remains,
+      // and the dialog it opens still shows every bid of every round. This
+      // asserts the ACCESS, not the column -- one way in is a UI decision,
+      // no way in is a regression.
+      expect(committees, contains("label: Center(child: Text('Times'))"));
       expect(committees, contains('_showHistory(context, info)'));
+      expect(committees, contains('void _showHistory('));
     });
 
-    test('the bid count survives a re-fetch', () {
-      // ⚠️ asData goes null while the provider re-fetches, so the count would
-      // flip to 0 and back and the table would look like it was constantly
-      // refreshing.
-      // Comments dropped: the one beside the line NAMES asData to explain
-      // why it is not used.
-      final code = committees
-          .substring(committees.indexOf('class _CommitteeBidsCell'))
-          .split('\n')
-          .where((l) => !l.trimLeft().startsWith('//'))
-          .join('\n');
-      final fn = flat(code);
-      expect(fn.substring(0, 900), contains('.valueOrNull'));
-      expect(fn.substring(0, 900).contains('asData?.value'), isFalse);
+    test('no per-row fetch came back with it', () {
+      // ⚠️ The bid cell read `tenderBidsProvider(fpId)` per row -- twenty
+      // rows, twenty round trips for one number each, measured at 57ms
+      // against 22ms as a single page query. The column is gone, so the
+      // page provider went with it; what must NOT come back is the per-row
+      // read. Re-valuations still take the page-scoped path.
+      expect(committees.contains('tenderBidsProvider('), isFalse,
+          reason: 'a per-row bid fetch is back');
+      expect(committees, contains('pageRevaluationsProvider('));
     });
   });
 

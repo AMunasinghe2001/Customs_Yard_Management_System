@@ -96,8 +96,14 @@ void main() {
     test('the tables carry the scope', () {
       expect(code(disposal), contains('TenderPageScope('));
       expect(code(committeeTab), contains('TenderPageScope('));
-      // The executive committee tab's bid cell reads it too.
-      expect(code(committeeTab), contains('pageBidsProvider('));
+      // ⚠️ The committee tab's BID cell used to read `pageBidsProvider`;
+      // the Bids column has since been removed from that tab, so the
+      // provider went with it. Its re-valuation cell still takes the
+      // page-scoped path, which is the property this test is about --
+      // one query per page, never one per row.
+      expect(code(committeeTab), contains('pageRevaluationsProvider('));
+      expect(code(committeeTab).contains('tenderBidsProvider('), isFalse,
+          reason: 'a per-row bid fetch is back on the committee tab');
     });
 
     test('the whole-table watches are gone from the row paths', () {

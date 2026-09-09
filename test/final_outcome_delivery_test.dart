@@ -13,7 +13,13 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final shared = File('lib/screens/executive/unsold_shared.dart').readAsStringSync();
+  // ⚠️ Line endings NORMALISED on the way in. The repo's Dart files are
+  // CRLF, so a substring search for '\n];' finds nothing -- the file ends
+  // its lines '\r\n];'. Reading raw and searching for LF is a test that
+  // passes or fails on how git checked the file out.
+  final shared = File('lib/screens/executive/unsold_shared.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
   final yard = File('lib/screens/packages/unsold_packages_screen.dart').readAsStringSync();
   final disposal = File('lib/screens/disposal/disposal_dashboard_screen.dart').readAsStringSync();
   final migration =
@@ -28,11 +34,60 @@ void main() {
 
     test('the UNDECIDED table does not', () {
       // Its rows are still waiting on the DG, so the column would be nothing
-      // but dashes. Count: the Delivery column appears once, in the decided
-      // list only.
-      expect("Text('Delivery')".allMatches(shared).length, 1);
-      // Both lists still end with Details, so neither lost a column.
-      expect("label: Center(child: Text('Details'))".allMatches(shared).length, 2);
+      // but dashes.
+      //
+      // ⚠️ There are FOUR column sets now, not two -- perishables got
+      // their own pair. Counting occurrences pinned the old shape rather
+      // than the rule, so it asserts the rule: a Delivery column appears in
+      // the DECIDED sets and in neither undecided one, and every set ends
+      // with Details.
+      String columnsOf(String name) {
+        final i = shared.indexOf('const List<DataColumn2> $name = [');
+        expect(i, greaterThan(0), reason: '$name is gone');
+        return shared.substring(i, shared.indexOf('\n];', i));
+      }
+
+      for (final undecided in ['kUnsoldColumns', 'kUnsoldPerishableColumns']) {
+        expect(columnsOf(undecided).contains("Text('Delivery')"), isFalse,
+            reason: '$undecided is still awaiting the DG');
+      }
+      for (final decided in [
+        'kUnsoldDecidedColumns',
+        'kUnsoldPerishableDecidedColumns',
+      ]) {
+        expect(columnsOf(decided), contains("Text('Delivery')"));
+      }
+      // Every set still ends with Details, so none lost a column.
+      expect("label: Center(child: Text('Details'))".allMatches(shared).length, 4);
+    });
+
+    test('the CELLS match the columns, set for set', () {
+      // ⚠️ This is the failure a test can catch and a reader cannot:
+      // data_table_2 THROWS when a row's cell count differs from the
+      // table's column count. Eight columns undecided, nine decided, and
+      // `unsoldCells` emits eight plus the optional delivery.
+      int columnCount(String name) {
+        final i = shared.indexOf('const List<DataColumn2> $name = [');
+        return 'DataColumn2('
+            .allMatches(shared.substring(i, shared.indexOf('\n];', i)))
+            .length;
+      }
+
+      expect(columnCount('kUnsoldColumns'), 8);
+      expect(columnCount('kUnsoldPerishableColumns'), 8);
+      expect(columnCount('kUnsoldDecidedColumns'), 9);
+      expect(columnCount('kUnsoldPerishableDecidedColumns'), 9);
+
+      // ⚠️ Cut at the function's OWN closing brace. `unsoldCells` has
+      // nested closures, and their braces are indented -- so the first
+      // unindented `}` on its own line is the end of the function, and
+      // anything shorter stops inside a closure and misses the tail.
+      final i = shared.indexOf('List<DataCell> unsoldCells(');
+      expect(i, greaterThan(0));
+      final cells = shared.substring(i, shared.indexOf('\n}\n', i));
+      // The optional one is emitted behind `if (delivery != null)`, so the
+      // fixed cells are one fewer than the decided column count.
+      expect(cells, contains('if (delivery != null) DataCell('));
     });
 
     test('the cell is optional, so the two tables stay in step', () {

@@ -225,7 +225,9 @@ class UnsoldDecisionTab extends ConsumerWidget {
                                     'No packages awaiting a final outcome'),
                             headingRowColor: WidgetStateProperty.all(
                                 context.colors.surfaceDark),
-                            columns: kUnsoldColumns,
+                            columns: perishable
+                                ? kUnsoldPerishableColumns
+                                : kUnsoldColumns,
                             rows: pageRows.map((info) {
                               final f = info.forfeited;
                               final pkg = f.packageDetails;

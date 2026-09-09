@@ -54,19 +54,24 @@ String? unsoldHsCode(ForfeitedPackageModel f) {
   return items.isNotEmpty ? items.first.hsCode : null;
 }
 
-/// Warehouse · zone the item currently sits in (latest entry).
-String unsoldLocation(PackageModel? pkg, String? itemId) {
-  if (pkg == null) return '—';
+/// Yard · Warehouse · zone the item currently sits in (latest entry).
+///
+/// [yard] is the forfeited package's yard code — prepended so the directorate
+/// tables (which show packages from every yard) identify where each one is.
+String unsoldLocation(PackageModel? pkg, String? itemId, [String? yard]) {
+  final yName = (yard != null && yard.isNotEmpty) ? yardName(yard) : null;
+  if (pkg == null) return yName ?? '—';
   var entries = itemId != null
       ? pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
       : <WarehouseEntryModel>[];
   if (entries.isEmpty) entries = [...pkg.warehouseEntries];
-  if (entries.isEmpty) return '—';
+  if (entries.isEmpty) return yName ?? '—';
   entries.sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
   final w = entries.first;
-  return (w.zone != null && w.zone!.isNotEmpty)
+  final whPart = (w.zone != null && w.zone!.isNotEmpty)
       ? '${w.warehouseName} · ${w.zone}'
       : w.warehouseName;
+  return yName != null ? '$yName · $whPart' : whPart;
 }
 
 /// Icon + colour per final outcome, identical on every portal.
@@ -163,6 +168,57 @@ const List<DataColumn2> kUnsoldDecidedColumns = [
   // ⚠️ A decision is not a hand-over. These goods are still in the yard until
   // someone comes for them, and this column is what says so — the same
   // Pending/Mark Delivered/Delivered pill the Sold table uses.
+  DataColumn2(
+      label: Center(child: Text('Delivery')),
+      size: ColumnSize.M,
+      fixedWidth: kStatusPillWidth + 24),
+  DataColumn2(
+      label: Center(child: Text('Details')),
+      size: ColumnSize.S,
+      fixedWidth: 66),
+];
+
+/// [kUnsoldColumns] for PERISHABLE goods. Perishables only get one valuation
+/// (from the Valuation Directorate), never a committee re-valuation, so the
+/// column says **Valuation** rather than "Latest Valuation".
+const List<DataColumn2> kUnsoldPerishableColumns = [
+  DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+  DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+  DataColumn2(label: Text('Location'), size: ColumnSize.M),
+  DataColumn2(
+      label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 130),
+  DataColumn2(
+      label: Center(child: Text('Final Outcome')),
+      size: ColumnSize.M,
+      fixedWidth: 235),
+  DataColumn2(
+      label: Center(child: Text('Details')),
+      size: ColumnSize.S,
+      fixedWidth: 66),
+];
+
+/// [kUnsoldPerishableColumns] with **Decided On** + **Delivery** instead of
+/// **Final Outcome**, for a perishable page that already filters to one outcome.
+///
+/// ⚠️ NOT WIRED UP YET. No perishable table filters to a single outcome
+/// today -- Central Disposal's perishable tab shows them all -- so nothing
+/// passes this. It is kept because it is the matching half of a pair: the
+/// moment a perishable outcome tab exists, using [kUnsoldPerishableColumns]
+/// there would put nine cells against eight columns, and data_table_2 throws.
+const List<DataColumn2> kUnsoldPerishableDecidedColumns = [
+  DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+  DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+  DataColumn2(label: Text('Location'), size: ColumnSize.M),
+  DataColumn2(
+      label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 130),
+  DataColumn2(
+      label: Center(child: Text('Decided On')),
+      size: ColumnSize.M,
+      fixedWidth: 235),
   DataColumn2(
       label: Center(child: Text('Delivery')),
       size: ColumnSize.M,
@@ -273,7 +329,7 @@ List<DataCell> unsoldCells(
     DataCell(TooltipText(unsoldItemName(f), overflow: TextOverflow.ellipsis)),
     DataCell(TooltipText('$qty')),
     DataCell(TooltipText(f.consigneeName, overflow: TextOverflow.ellipsis)),
-    DataCell(TooltipText(unsoldLocation(pkg, f.itemId),
+    DataCell(TooltipText(unsoldLocation(pkg, f.itemId, f.yard),
         overflow: TextOverflow.ellipsis,
         style: TextStyle(color: context.colors.textSecondary, fontSize: 12))),
     if (sealed)
