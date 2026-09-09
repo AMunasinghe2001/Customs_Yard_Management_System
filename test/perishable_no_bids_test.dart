@@ -138,6 +138,16 @@ void main() {
       expect('valuerView: true,'.allMatches(val).length, 2);
       expect(c, contains('final sealed = !valuerView'));
       expect(c, contains('widget.valuationSealedUntilSale && !widget.valuerView'));
+      // ⚠️ The NEXT round's tile too. `sealed: true` was hardcoded there,
+      // so the popup told the directorate its own pending re-valuation was
+      // "shown once the tender closes" -- on the page where it had just
+      // typed the number. That tile IS the figure they set.
+      expect(c, contains('sealed: !valuerView'));
+      expect(c, contains('upcoming: valuerView'));
+      expect(c, contains('Set for the next round.'));
+      // The seal is not decoration -- it stays for every other reader.
+      expect(c.contains('sealed: true,'), isFalse,
+          reason: 'a hardcoded seal is back');
     });
   });
 

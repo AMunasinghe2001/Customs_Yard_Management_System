@@ -411,13 +411,37 @@ class TenderHistorySection extends ConsumerWidget {
         committee?.submittedValue != null &&
         (pending.valuationCost - committee!.submittedValue!).abs() < 0.01;
     if (pending != null && !decided && !isCommitteePrice) {
+      // ⚠️ The NEXT round's price, and the last place the seal was still
+      // hardcoded. `sealed: true` here is right for every reader except the
+      // one who WROTE the figure: this tile is the Valuation Directorate's
+      // own pending re-valuation, and its popup told it the number was
+      // "shown once the tender closes" -- on the page where it had just
+      // typed it.
+      //
+      // The seal is not decoration. It is why the price is withheld from
+      // bidders, and it stays for everyone else.
+      final nextQty = qty ??
+          forfeited.entryQty ??
+          (forfeited.itemId != null
+              ? (forfeited.packageDetails?.items
+                      .where((i) => i.id == forfeited.itemId)
+                      .firstOrNull
+                      ?.quantity ??
+                  1)
+              : (forfeited.packageDetails?.items
+                      .fold<int>(0, (a, i) => a + i.quantity) ??
+                  1));
       rows.add(_TenderRoundTile(
-        sealed: true,
+        sealed: !valuerView,
+        upcoming: valuerView,
         label: tenderRoundLabel(ordered.length + 1),
         isCommitteeRound: false,
         committeeMembers: const [],
         committeeLoading: false,
-        priceLabel: null,
+        priceLabel: valuerView
+            ? 'LKR ${money.format(pending.valuationCost * nextQty)}'
+                '  (@ ${money.format(pending.valuationCost)} \u00d7 $nextQty)'
+            : null,
         revalued: true,
         bids: const [],
       ));
@@ -938,6 +962,15 @@ class _TenderRoundTile extends StatelessWidget {
   /// This round has not been tendered yet, so its price is withheld and the
   /// tile says so instead of showing a figure.
   final bool sealed;
+
+  /// This round has not RUN yet, but its price is shown anyway.
+  ///
+  /// ⚠️ The Valuation Directorate's own view. "Not yet tendered" is
+  /// still worth saying there -- it is the difference between a price that
+  /// fetched nothing and one nobody has bid on -- but the reason changes:
+  /// not "withheld until the tender closes", which is what the seal says,
+  /// simply that the round is still to come.
+  final bool upcoming;
   final bool revalued;
 
   /// What this round FETCHED, when it is the one that sold. Null on every
@@ -976,6 +1009,7 @@ class _TenderRoundTile extends StatelessWidget {
     required this.bids,
     this.isCommitteeRound = false,
     this.isPerishableRound = false,
+    this.upcoming = false,
     this.committeeSubtitle,
     this.committeeMembers = const [],
     this.committeeLoading = false,
@@ -1067,10 +1101,18 @@ class _TenderRoundTile extends StatelessWidget {
           // Say WHY the price is missing, the same way the committee block
           // does. A bare "Sealed" chip reads as a glitch; this says the figure
           // is deliberately withheld and when it will appear.
-          if (sealed) ...[
+          if (sealed || upcoming) ...[
             Text(
-                'This round has not been tendered yet. Its valuation is the '
-                'reserve price, so it is shown once the tender closes.',
+                sealed
+                    ? 'This round has not been tendered yet. Its valuation '
+                        'is the reserve price, so it is shown once the '
+                        'tender closes.'
+                    // ⚠️ Same fact, different reason. The valuer is not
+                    // being kept from the figure -- it set it -- so the
+                    // line says what is still to happen instead of what is
+                    // being withheld.
+                    : 'Set for the next round. Central Disposal re-tenders '
+                        'at this price.',
                 style:
                     TextStyle(fontSize: 11, color: context.colors.textMuted)),
             const Gap(8),
