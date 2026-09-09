@@ -180,6 +180,55 @@ void main() {
     });
   });
 
+  group('the popup shows only what it has', () {
+    final c = code(dialog);
+    final note =
+        code(File('lib/widgets/storage_charge_note.dart').readAsStringSync());
+
+    test('an empty Storage section is not drawn at all', () {
+      // ⚠️ A widget returning SizedBox.shrink() still leaves its
+      // PARENT's frame on screen -- the heading, the border, the padding.
+      // So "show nothing" rendered as an empty box with STORAGE over it,
+      // on every package that never reached a zone.
+      expect(note, contains('storageChargeVisibleProvider'));
+      expect(c, contains('ref.watch(storageChargeVisibleProvider(p.id))'));
+    });
+
+    test('storage reads BEFORE the signatures', () {
+      // ⚠️ Storage is a fact about the GOODS; System Entry By and
+      // Released By name the officers who signed for them. Every paper form
+      // in this office puts the signature at the bottom.
+      final storage = c.indexOf("title: 'Storage'");
+      final entry = c.indexOf('_SystemEntrySection(');
+      expect(storage, greaterThan(0));
+      expect(entry, greaterThan(0));
+      expect(storage, lessThan(entry));
+    });
+
+    test('the valuer is shown no ending', () {
+      // ⚠️ Its work is one step of a process with several still to run:
+      // the price it sets goes to Central Disposal, which re-tenders, and
+      // only after that does anything reach Top Management. Announcing an
+      // ending on the form where the next round is priced describes a
+      // future nobody has decided.
+      expect(c, contains('if (showFinalOutcome && !valuerView)'));
+    });
+
+    test('the entry panel wears the same frame as every other section', () {
+      // ⚠️ It had a gradient card of its own, so the last thing on every
+      // popup looked like it came from a different screen. Same header bar
+      // now -- tinted strip, gold icon, spaced capitals -- with an avatar
+      // of the officer's initials rather than a second copy of the icon
+      // already in the heading.
+      expect(c, contains('String get _initials'));
+      expect(c, contains('shape: BoxShape.circle'));
+      final i = c.indexOf('class _SystemEntrySection');
+      final body = c.substring(i, i + 2600);
+      expect(body.contains('gradient: LinearGradient'), isFalse,
+          reason: 'the odd-one-out card is back');
+    });
+  });
+
   group('a portal opens packages in its own colour', () {
     test('the card takes an accent instead of inferring one from readOnly', () {
       // ⚠️ `readOnly` means "cannot mark an item sold" — true of the yard AND

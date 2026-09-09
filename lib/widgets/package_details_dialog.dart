@@ -471,7 +471,13 @@ class TenderHistorySection extends ConsumerWidget {
     }
 
     // ⚠️ How the story ENDS, at the end of the story.
-    if (showFinalOutcome) {
+    //
+    // ⚠️ Not for the VALUER. Its work is one step of a process with
+    // several still to run -- the price it sets goes to Central Disposal,
+    // which re-tenders, and only after that does anything reach Top
+    // Management. Announcing an ending on the form where the next round is
+    // priced describes a future nobody has decided.
+    if (showFinalOutcome && !valuerView) {
       final soldPrice = mine.where((s) => s.sold).firstOrNull?.soldPrice;
       // ⚠️ A FOURTH state: the tender is still running.
       //
@@ -3825,6 +3831,35 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         const Gap(16),
                       ],
 
+                      // ⚠️ BEFORE the entry sections. Storage is a fact about
+                      // the GOODS; "System Entry By" and "Released By" name
+                      // the officers who signed for them. Reading the people
+                      // last is how every paper form in this office is laid
+                      // out -- the signature goes at the bottom.
+                      //
+                      // ⚠️ And ask FIRST, then build the frame. The note
+                      // returns an empty box for a package with no warehouse
+                      // entries -- goods that never reached a zone -- while a
+                      // section wrapping it still drew its heading and its
+                      // border, so the popup carried an empty panel titled
+                      // STORAGE.
+                      if ((widget.useLegacySummary ||
+                              isNoChargeContext ||
+                              isSoldContext) &&
+                          (ref.watch(storageChargeVisibleProvider(p.id)) ??
+                              false))
+                        _DetailSection(
+                          title: 'Storage',
+                          icon: Icons.warehouse_rounded,
+                          delay: 480,
+                          child: StorageChargeNote(
+                            packageId: p.id,
+                            packageItemId:
+                                widget.highlightEntry?.packageItemId ??
+                                    widget.highlightItemId,
+                          ),
+                        ),
+
                       // Entry Person Section
                       _SystemEntrySection(
                         officerDisplay: officerDisplay,
@@ -3975,20 +4010,6 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       // The note says which of the two figures it is: an
                       // accrued CHARGE payable on collection, or the COST of
                       // space nobody will be billed for.
-                      if (widget.useLegacySummary ||
-                          isNoChargeContext ||
-                          isSoldContext)
-                        _DetailSection(
-                          title: 'Storage',
-                          icon: Icons.warehouse_rounded,
-                          delay: 600,
-                          child: StorageChargeNote(
-                            packageId: p.id,
-                            packageItemId:
-                                widget.highlightEntry?.packageItemId ??
-                                    widget.highlightItemId,
-                          ),
-                        ),
                       if (() {
                         // Sold Packages page: always show Sale & Financial.
                         if (widget.isSoldPage) return true;
@@ -5269,107 +5290,156 @@ class _SystemEntrySection extends StatelessWidget {
   /// True when there is no officer to name, rather than one we failed to load.
   bool get _unrecorded => officerDisplay == _kNoEntrantRecorded;
 
+  /// The officer's initials, for the avatar.
+  ///
+  /// ⚠️ Two letters at most, and only from words that start with one.
+  /// A name like "D. M. Perera" would otherwise read "DM" from the
+  /// initials somebody already wrote out.
+  String get _initials {
+    if (_unrecorded) return '?';
+    final words = officerDisplay
+        .split(RegExp(r'[\s.]+'))
+        .where((w) => w.isNotEmpty && RegExp(r'^[A-Za-z]').hasMatch(w))
+        .toList();
+    if (words.isEmpty) return '?';
+    if (words.length == 1) return words.first[0].toUpperCase();
+    return (words.first[0] + words.last[0]).toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    // ⚠️ An unrecorded entry is drawn in MUTED grey, not gold. Gold and
+    // bold announces a person; using it for "Not recorded" made a blank
+    // field look like a finding.
+    final tint = _unrecorded ? context.colors.textMuted : gold;
+
     return material.Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            context.colors.primaryGold.withOpacity(0.1),
-            context.colors.primaryGold.withOpacity(0.05),
-          ],
-        ),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? context.colors.surfaceDark.withOpacity(0.5)
+            : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.primaryGold.withOpacity(0.3)),
+        border: Border.all(color: context.colors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              material.Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: context.colors.primaryGold.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(customIcon ?? Icons.verified_user_rounded,
-                    size: 16, color: context.colors.primaryGold),
-              ),
-              const Gap(10),
-              Text(
-                (customTitle ?? 'System Entry By').toUpperCase(),
-                style: material.TextStyle(
-                  color: context.colors.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ],
-          ),
-          const Gap(2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                // An absent name is set in muted, ordinary type: gold-and-bold
-                // announces a person, and using it for "Not recorded" made a
-                // blank field look like a finding.
-                child: Text(
-                  officerDisplay,
+          // ⚠️ The SAME header bar every other section has -- the tinted
+          // strip, the gold icon, the spaced capitals. This panel used a
+          // gradient card of its own, so the last thing on every popup
+          // looked like it came from a different screen.
+          material.Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: context.colors.textPrimary.withOpacity(0.03),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(
+                  bottom: BorderSide(color: context.colors.borderColor)),
+            ),
+            child: Row(
+              children: [
+                Icon(customIcon ?? Icons.verified_user_rounded,
+                    size: 18, color: gold),
+                const Gap(10),
+                Text(
+                  (customTitle ?? 'System Entry By').toUpperCase(),
                   style: material.TextStyle(
-                    color: _unrecorded
-                        ? context.colors.textMuted
-                        : context.colors.primaryGold,
-                    fontSize: 14,
-                    fontWeight: _unrecorded ? FontWeight.w500 : FontWeight.bold,
-                    fontStyle:
-                        _unrecorded ? FontStyle.italic : FontStyle.normal,
-                    letterSpacing: 0.3,
+                    color: context.colors.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
                   ),
                 ),
-              ),
-              if (badgeNumber != null && badgeNumber!.isNotEmpty)
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // ⚠️ An AVATAR, not another icon. The header already
+                // carries one, and repeating it says nothing; initials say
+                // a person signed this.
                 material.Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  width: 44,
+                  height: 44,
+                  alignment: material.Alignment.center,
                   decoration: BoxDecoration(
-                    color: context.colors.primaryGold.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: context.colors.primaryGold.withOpacity(0.4)),
+                    color: tint.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: tint.withOpacity(0.35)),
                   ),
                   child: Text(
-                    'Salary No: $badgeNumber',
+                    _initials,
                     style: material.TextStyle(
-                      color: context.colors.primaryGold,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      color: tint,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
-            ],
-          ),
-          // Says WHY it is blank, so nobody goes looking for a broken lookup.
-          if (_unrecorded) ...[
-            const Gap(4),
-            Text(
-              'This entry predates officer tracking — no officer was saved '
-              'against it.',
-              style: material.TextStyle(
-                color: context.colors.textMuted.withOpacity(0.85),
-                fontSize: 11,
-                height: 1.4,
-              ),
+                const Gap(14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        officerDisplay,
+                        style: material.TextStyle(
+                          color: _unrecorded
+                              ? context.colors.textMuted
+                              : context.colors.textPrimary,
+                          fontSize: 14.5,
+                          fontWeight:
+                              _unrecorded ? FontWeight.w500 : FontWeight.w700,
+                          fontStyle: _unrecorded
+                              ? FontStyle.italic
+                              : FontStyle.normal,
+                        ),
+                      ),
+                      // Says WHY it is blank, so nobody goes looking for a
+                      // broken lookup.
+                      if (_unrecorded) ...[
+                        const Gap(3),
+                        Text(
+                          'This entry predates officer tracking \u2014 no '
+                          'officer was saved against it.',
+                          style: material.TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 11,
+                              height: 1.3),
+                        ),
+                      ] else if (badgeNumber != null &&
+                          badgeNumber!.isNotEmpty) ...[
+                        const Gap(3),
+                        Text(
+                          'Salary No: ${badgeNumber!}',
+                          style: material.TextStyle(
+                            color: context.colors.textSecondary,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ],
       ),
-    ).animate().slideY(
-        delay: Duration(milliseconds: delay), duration: 300.ms, begin: 0.1);
+    )
+        .animate()
+        .fadeIn(delay: Duration(milliseconds: delay))
+        .slideY(begin: 0.1);
   }
 }
 

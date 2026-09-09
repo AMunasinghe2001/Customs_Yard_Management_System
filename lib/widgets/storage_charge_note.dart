@@ -59,6 +59,24 @@ double _spaceCost({
 /// ⚠️ It is a NOTE, never an input. Nothing here changes what is charged; the
 /// charge is the rate history times the days, and it goes on accruing whatever
 /// anybody types into the form beside it.
+/// Whether [StorageChargeNote] would draw anything for this package.
+///
+/// ⚠️ A caller that wraps the note in a titled section needs to ask
+/// BEFORE building the frame. A widget returning `SizedBox.shrink()` still
+/// leaves its parent's heading, border and padding on screen -- so "show
+/// nothing" rendered as an empty box with the word STORAGE over it.
+///
+/// Returns null while the package or the rates are still loading, so a
+/// caller can hold the section back rather than flashing it away.
+final storageChargeVisibleProvider =
+    Provider.family<bool?, String?>((ref, packageId) {
+  if (packageId == null || packageId.isEmpty) return false;
+  final pkg = ref.watch(packageByIdProvider(packageId)).valueOrNull;
+  final rates = ref.watch(storageRateProvider).valueOrNull;
+  if (pkg == null || rates == null) return null;
+  return pkg.warehouseEntries.isNotEmpty;
+});
+
 class StorageChargeNote extends ConsumerWidget {
   const StorageChargeNote({
     super.key,
