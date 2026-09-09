@@ -4426,10 +4426,17 @@ class ForfeitedPackageService {
   /// item.
   Future<Map<String, ForfeitedPackageModel>> getForfeitedByItemForPackage(
       String packageId) async {
+    // ⚠️ The valuation embed. `valuation_cost` lives on
+    // `disposal_request_items`, not on `forfeited_packages` -- the model
+    // reads it from this embed, and without it every row came back with
+    // a null valuation. The Perishable popup's one tender round then
+    // vanished entirely: a round with no price, no bids and no seal is
+    // dropped from the history, so the section showed an outcome with
+    // nothing above it. Same omission as `_reTenderInfoForIds` had.
     final data = await supabase
         .from('forfeited_packages')
-        .select(
-            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .select('*, disposal_request_items!forfeited_package_id(valuation_cost), '
+            'packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
         .eq('package_id', packageId)
         .order('forfeited_at', ascending: false);
     final out = <String, ForfeitedPackageModel>{};

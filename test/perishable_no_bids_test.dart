@@ -307,6 +307,50 @@ void main() {
     });
   });
 
+  group('the middle of a story announces no ending', () {
+    final disposal = code(
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync());
+
+    test('Tender Sales, Unsold Tenders and Committees hide it', () {
+      // ⚠️ All three are the MIDDLE of the story: a package in a live
+      // sale is waiting for bidding to close, one on Unsold Tenders for a
+      // new price, one at a committee for its figure. "Awaiting Top
+      // Management" on any of them announces an ending several steps away.
+      expect('showFinalOutcome: false,'.allMatches(disposal).length, 3);
+    });
+  });
+
+  group('a perishable popup shows the round it ran', () {
+    test('the valuation embed is fetched, or the round vanishes', () {
+      // ⚠️ `valuation_cost` lives on `disposal_request_items`, not on
+      // `forfeited_packages`, and the model reads it from that embed. Without
+      // it the round had no price, no bids (a perishable takes none) and no
+      // seal -- and a round with none of those is dropped from the history,
+      // so the section showed an outcome with nothing above it.
+      final services =
+          code(File('lib/services/services.dart').readAsStringSync());
+      final i = services.indexOf('getForfeitedByItemForPackage');
+      expect(i, greaterThan(0));
+      expect(services.substring(i, i + 700),
+          contains('disposal_request_items!forfeited_package_id(valuation_cost)'));
+    });
+  });
+
+  group('one delivery treatment, everywhere it is read', () {
+    final c = code(dialog);
+
+    test('the Final Outcome tile uses the SAME banner as the sale', () {
+      // ⚠️ It was an 11.5pt line squeezed under the decision note -- on
+      // pages (Government Use, Auction, Re-export, Converted, Removed)
+      // whose whole job is to say whether the goods have gone yet.
+      expect('DeliveryStatusBanner('.allMatches(c).length, greaterThanOrEqualTo(2));
+      expect(c, contains('delivered: proposal!.delivered'));
+      expect(c.contains('Not yet delivered — still held by the yard'), isFalse,
+          reason: 'the cramped line is back');
+    });
+  });
+
   group('a portal opens packages in its own colour', () {
     test('the card takes an accent instead of inferring one from readOnly', () {
       // ⚠️ `readOnly` means "cannot mark an item sold" — true of the yard AND

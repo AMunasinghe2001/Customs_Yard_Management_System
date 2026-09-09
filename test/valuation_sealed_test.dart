@@ -718,7 +718,7 @@ void main() {
         .readAsStringSync()
         .replaceAll(RegExp(r'\s+'), ' ');
     expect(dash, contains('valuationSealedUntilSale: !widget.sale.saleEnded,'));
-    expect(dash, contains('tenderHistoryFor: f, ),'));
+    expect(dash, contains('tenderHistoryFor: f,'));
     // No longer gated on !widget.readOnly: the yard sees the same number its
     // own column shows, sealed the same way.
     expect(dash, isNot(contains('valuationUnitCost: widget.readOnly')));

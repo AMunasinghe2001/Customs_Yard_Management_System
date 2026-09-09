@@ -79,10 +79,17 @@ void main() {
 
   group('a decision is not a hand-over', () {
     test('the Final Outcome tile says whether the goods actually left', () {
+      // ⚠️ It is a BANNER now -- the same one the Sold popup carries.
+      // It was an 11.5pt line squeezed under the decision note, on
+      // pages whose whole job is to say whether the goods have gone.
       final tile = dialog.substring(dialog.indexOf('class _FinalOutcomeTile'));
       expect(tile, contains('proposal!.delivered'));
-      expect(tile, contains('Not yet delivered'));
-      expect(tile, contains("'Delivered on "));
+      expect(tile, contains('DeliveryStatusBanner('));
+      // The banner itself still says both halves.
+      final banner =
+          dialog.substring(dialog.indexOf('class DeliveryStatusBanner'));
+      expect(banner, contains("'Awaiting "));
+      expect(banner, contains('doneLabel'));
     });
   });
 

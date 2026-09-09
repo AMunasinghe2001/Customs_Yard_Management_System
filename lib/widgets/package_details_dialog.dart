@@ -834,34 +834,21 @@ class _FinalOutcomeTile extends StatelessWidget {
                 style: TextStyle(
                     color: context.colors.textSecondary, fontSize: 11.5)),
             // ⚠️ A decision is not a hand-over. The goods sit in the yard
-            // until someone comes for them, so the outcome on its own is only
-            // half the answer — this line says whether they have gone.
-            const Gap(6),
-            Row(children: [
-              Icon(
-                  proposal!.delivered
-                      ? Icons.check_circle_rounded
-                      : Icons.schedule_rounded,
-                  size: 13,
-                  color: proposal!.delivered
-                      ? context.colors.successGreen
-                      : context.colors.warningAmber),
-              const Gap(6),
-              Flexible(
-                child: Text(
-                    proposal!.delivered
-                        ? (proposal!.deliveredAt != null
-                            ? 'Delivered on ${DateFormat('dd MMM yyyy').format(proposal!.deliveredAt!)}'
-                            : 'Delivered')
-                        : 'Not yet delivered — still held by the yard',
-                    style: TextStyle(
-                        color: proposal!.delivered
-                            ? context.colors.successGreen
-                            : context.colors.warningAmber,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600)),
-              ),
-            ]),
+            // until someone comes for them, so the outcome on its own is
+            // only half the answer.
+            //
+            // ⚠️ Its OWN banner, the same one the Sold popup carries. This
+            // was a 11.5pt line squeezed under the decision note, on pages
+            // (Government Use, Auction, Re-export, Converted, Removed)
+            // whose whole job is to say whether the goods have gone yet.
+            // One fact, one treatment, wherever it is read.
+            const Gap(10),
+            DeliveryStatusBanner(
+              delivered: proposal!.delivered,
+              deliveredAt: proposal!.deliveredAt,
+              waitingFor: 'hand-over',
+              doneLabel: 'Delivered',
+            ),
           ] else if (running) ...[
             const Gap(6),
             // ⚠️ Nothing has ended. Say what is happening instead of

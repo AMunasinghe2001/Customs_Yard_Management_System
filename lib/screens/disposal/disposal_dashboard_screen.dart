@@ -2979,6 +2979,17 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                                       // one thing that says whether it is
                                       // falling fast enough to sell.
                                       tenderHistoryFor: f,
+                                      // ⚠️ No FINAL OUTCOME here. These three
+                                      // tabs are the middle of the story:
+                                      // a package on Unsold Tenders is
+                                      // waiting to be re-priced, one at a
+                                      // committee is waiting for its
+                                      // figure, one in a live sale is
+                                      // waiting for bidding to close.
+                                      // "Awaiting Top Management" on any of
+                                      // them announces an ending that has
+                                      // several steps still to run.
+                                      showFinalOutcome: false,
                                       // Sealed while the newest round is open.
                                       valuationSealedUntilSale:
                                           info.latestSale?.saleEnded == false,
@@ -3804,6 +3815,13 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     // is sealed until that round has ended, the
                                     // same rule Unsold Tenders already uses.
                                     tenderHistoryFor: f,
+                                    // ⚠️ A package in a LIVE sale has not
+                                    // ended anything -- bidding is
+                                    // open. Announcing "Awaiting Top
+                                    // Management" on the tab where the
+                                    // sale is running describes a
+                                    // future several steps away.
+                                    showFinalOutcome: false,
                                   ),
                                 ),
                               )
@@ -5007,6 +5025,10 @@ class _CommitteeCard extends StatelessWidget {
                               // for its figure, and this popup showed none
                               // of them.
                               tenderHistoryFor: f,
+                              // The committee has not priced it yet -- see
+                              // the Unsold Tenders popup for why no ending
+                              // is announced on these tabs.
+                              showFinalOutcome: false,
                             ),
                           );
                         },
