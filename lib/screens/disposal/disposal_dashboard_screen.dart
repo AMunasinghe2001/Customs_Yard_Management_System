@@ -3277,13 +3277,27 @@ class TenderSaleCard extends ConsumerStatefulWidget {
   /// read-only.
   final bool showDecidedItems;
 
+  /// The PORTAL's accent, for the details popup this card opens.
+  ///
+  /// ⚠️ `readOnly` decided this, and `readOnly` means "cannot mark an
+  /// item sold" -- true of the yard AND of the Top Management
+  /// Directorate, which are two different portals with two different
+  /// colours. So Top Management opened a package and got the yard's
+  /// blue header on a page that is teal everywhere else. One flag
+  /// cannot answer two questions.
+  ///
+  /// Null keeps the old behaviour: green for Central Disposal, the
+  /// popup's own default blue for the yard.
+  final Color? popupAccent;
+
   const TenderSaleCard(
       {required this.sale,
       this.readOnly = false,
       this.isRetender = false,
       // Default true: the yard's page is the one that had this behaviour, and
       // every existing caller is that page.
-      this.showDecidedItems = true});
+      this.showDecidedItems = true,
+      this.popupAccent});
 
   @override
   ConsumerState<TenderSaleCard> createState() => _TenderSaleCardState();
@@ -3780,10 +3794,12 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                   builder: (_) => PackageDetailsDialog(
                                     package: pkg,
                                     storageRate: storageRate,
-                                    // Yard (read-only) uses the default blue
-                                    // header like Forfeited; Central keeps green.
-                                    headerAccentColor:
-                                        widget.readOnly ? null : green,
+                                    // The PORTAL's colour when one was
+                                    // given; otherwise green for Central
+                                    // Disposal and the popup's default
+                                    // blue for the yard.
+                                    headerAccentColor: widget.popupAccent ??
+                                        (widget.readOnly ? null : green),
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),

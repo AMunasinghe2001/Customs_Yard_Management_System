@@ -179,19 +179,39 @@ class TenderHistorySection extends ConsumerWidget {
     this.showFinalOutcome = true,
   });
 
+  /// True when these goods are PERISHABLE.
+  ///
+  /// ⚠️ A perishable runs ONE special tender sale. If it fails the goods
+  /// go straight to the Top Management Directorate through Unsold
+  /// Perishables -- there is no re-valuation and no second round, because
+  /// the goods are rotting. So this section must not offer the vocabulary
+  /// of a package that gets four attempts: no bids, no "re-valued" badge,
+  /// no "Tender 1", and no committee.
+  bool get _isPerishable =>
+      forfeited.source.trim().toLowerCase() == 'perishable';
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final revals =
-        ref.watch(tenderRevaluationsProvider(forfeited.id)).valueOrNull ??
-            const <String, TenderRevaluationModel>{};
-    final bids = ref.watch(tenderBidsProvider(forfeited.id)).valueOrNull ??
-        const <String, List<double>>{};
+    final revals = _isPerishable
+        ? const <String, TenderRevaluationModel>{}
+        : (ref.watch(tenderRevaluationsProvider(forfeited.id)).valueOrNull ??
+            const <String, TenderRevaluationModel>{});
+    // ⚠️ Not fetched at all for a perishable. Migration 62 deleted the 20
+    // that existed and added a trigger, but a stale row must not be able to
+    // put a bid chip under a round nobody can re-price.
+    final bids = _isPerishable
+        ? const <String, List<double>>{}
+        : (ref.watch(tenderBidsProvider(forfeited.id)).valueOrNull ??
+            const <String, List<double>>{});
     // The committee round is priced by the ADG's submission. The seed also
     // records that as a tender_revaluations row, but a package valued through
     // the UI may not have one yet — so fall back to the committee itself,
     // otherwise the round would vanish from this list.
     final committeeAsync = ref.watch(tenderCommitteesProvider);
-    final committee = committeeAsync.valueOrNull?[forfeited.id];
+    // A committee is appointed after four failed rounds; a perishable has
+    // one, so it can never reach that door.
+    final committee =
+        _isPerishable ? null : committeeAsync.valueOrNull?[forfeited.id];
     // ⚠️ Whether this package's story has ENDED. Converted, auctioned, taken
     // into government use, removed -- after any of those there is no next
     // tender, so nothing below may announce one.
@@ -310,8 +330,15 @@ class TenderHistorySection extends ConsumerWidget {
       }
       rows.add(_TenderRoundTile(
         sealed: sealed,
-        label: tenderRoundLabel(i + 1),
+        // ⚠️ A perishable's one round is a SPECIAL TENDER SALE, not
+        // "Valuation Tender". That name only means something as the first
+        // of a series -- it is the price the goods went to tender at, before
+        // the re-valuations that follow. A perishable has no series, and
+        // calling its single sale "Valuation Tender" implied a Tender 1 that
+        // is never coming.
+        label: _isPerishable ? 'Special Tender Sale' : tenderRoundLabel(i + 1),
         isCommitteeRound: isCommitteeRound,
+        isPerishableRound: _isPerishable,
         // Who set this price. Only the committee round names its officers.
         committeeMembers: isCommitteeRound ? committeeMembers : const [],
         // Separates "still loading" from "nobody was appointed", so the tile
@@ -430,7 +457,25 @@ class TenderHistorySection extends ConsumerWidget {
     // ⚠️ How the story ENDS, at the end of the story.
     if (showFinalOutcome) {
       final soldPrice = mine.where((s) => s.sold).firstOrNull?.soldPrice;
-      rows.add(_FinalOutcomeTile(proposal: proposal, soldPrice: soldPrice));
+      // ⚠️ A FOURTH state: the tender is still running.
+      //
+      // The tile knew sold, decided, and "awaiting Top Management" -- so a
+      // package on its first round, with the sale open and bidding not yet
+      // closed, was told every tender had been exhausted. 71 forfeited
+      // packages in this yard have exactly one round; CED/GL1/SR/18/2025's
+      // Engine Cylinder Block sat in a sale opened three days ago and read
+      // as though the DG were already deciding its fate.
+      //
+      // Goods reach Top Management only when every round has RUN and none
+      // sold. `hasRun` is the same clock the round tiles seal prices on, so
+      // the outcome and the rounds above it cannot disagree.
+      final everySaleHasRun = mine.isNotEmpty && mine.every((s) => s.hasRun);
+      rows.add(_FinalOutcomeTile(
+        proposal: proposal,
+        soldPrice: soldPrice,
+        isPerishable: _isPerishable,
+        stillRunning: !everySaleHasRun,
+      ));
     }
 
     if (rows.isEmpty) return const SizedBox.shrink();
@@ -629,7 +674,26 @@ class _HandoverSection extends StatelessWidget {
 }
 
 class _FinalOutcomeTile extends StatelessWidget {
-  const _FinalOutcomeTile({required this.proposal, this.soldPrice});
+  const _FinalOutcomeTile(
+      {required this.proposal,
+      this.soldPrice,
+      this.isPerishable = false,
+      this.stillRunning = false});
+
+  /// A round of this package's tender has not closed yet.
+  ///
+  /// ⚠️ Goods reach Top Management when every round has RUN and none
+  /// sold. While one is still open the story has not ended, and saying it
+  /// has puts a decision in the DG's hands that nobody has asked for.
+  final bool stillRunning;
+
+  /// True for goods that ran a single SPECIAL tender sale.
+  ///
+  /// ⚠️ Only changes the WAITING line. A perishable reaches Top
+  /// Management after one failed sale, not after exhausting four rounds
+  /// and a committee, and telling an officer otherwise misdescribes the
+  /// only process these goods have.
+  final bool isPerishable;
 
   final UnsoldProposalModel? proposal;
 
@@ -659,9 +723,15 @@ class _FinalOutcomeTile extends StatelessWidget {
     // a decision that is still to come.
     final sold = soldPrice;
     final decided = proposal != null;
+    // ⚠️ A tender still running is not an outcome at all, so it is not
+    // amber either -- amber is the colour of work waiting on somebody. It
+    // reads as neutral information, because that is what it is.
+    final running = stillRunning && sold == null && !decided;
     final tint = (sold != null || decided)
         ? context.colors.successGreen
-        : context.colors.warningAmber;
+        : (running
+            ? context.colors.accentLightBlue
+            : context.colors.warningAmber);
 
     return material.Container(
       margin: const EdgeInsets.only(top: 10),
@@ -675,7 +745,10 @@ class _FinalOutcomeTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Icon(sold != null ? Icons.sell_rounded : _icon,
+            Icon(
+                running
+                    ? Icons.storefront_rounded
+                    : (sold != null ? Icons.sell_rounded : _icon),
                 size: 16, color: tint),
             const Gap(8),
             Text('FINAL OUTCOME',
@@ -686,8 +759,10 @@ class _FinalOutcomeTile extends StatelessWidget {
                     fontWeight: FontWeight.w800)),
             const Spacer(),
             Text(
-                sold != null
-                    ? 'Sold'
+                running
+                    ? 'At tender'
+                    : sold != null
+                        ? 'Sold'
                     : decided
                         ? unsoldProposalLabel(proposal!.proposal)
                         : 'Awaiting Top Management',
@@ -741,11 +816,29 @@ class _FinalOutcomeTile extends StatelessWidget {
                         fontWeight: FontWeight.w600)),
               ),
             ]),
+          ] else if (running) ...[
+            const Gap(6),
+            // ⚠️ Nothing has ended. Say what is happening instead of
+            // announcing a decision nobody has been asked for.
+            Text(
+                'This package is in a tender that has not closed yet. '
+                'Its outcome is decided when bidding ends.',
+                style: TextStyle(
+                    color: context.colors.textMuted, fontSize: 11.5)),
           ] else ...[
             const Gap(6),
+            // ⚠️ "Every tender has been exhausted" describes a package
+            // that failed four rounds and a committee. A perishable never
+            // has four: it runs ONE special sale, and if that fails the
+            // goods come here immediately -- because they are rotting, not
+            // because every avenue was tried.
             Text(
-                'Every tender has been exhausted. The package is with Top '
-                'Management for a final decision.',
+                isPerishable
+                    ? 'The special tender sale did not sell these goods. '
+                        'Perishables go straight to Top Management for a '
+                        'final decision -- there is no re-tender.'
+                    : 'Every tender has been exhausted. The package is with '
+                        'Top Management for a final decision.',
                 style: TextStyle(
                     color: context.colors.textMuted, fontSize: 11.5)),
           ],
@@ -845,6 +938,13 @@ class _TenderRoundTile extends StatelessWidget {
   /// Custom subtitle for committee round (e.g. pending / valued / submitted).
   final String? committeeSubtitle;
 
+  /// True when this is a PERISHABLE's single special sale.
+  ///
+  /// ⚠️ Changes what an empty bid list MEANS. Everywhere else it is an
+  /// omission -- somebody has not entered them yet. Here it is the rule:
+  /// perishable goods take no bids at all.
+  final bool isPerishableRound;
+
   const _TenderRoundTile({
     required this.label,
     required this.priceLabel,
@@ -853,6 +953,7 @@ class _TenderRoundTile extends StatelessWidget {
     this.soldLabel,
     required this.bids,
     this.isCommitteeRound = false,
+    this.isPerishableRound = false,
     this.committeeSubtitle,
     this.committeeMembers = const [],
     this.committeeLoading = false,
@@ -978,7 +1079,14 @@ class _TenderRoundTile extends StatelessWidget {
               ),
             ],
           ] else if (bids.isEmpty)
-            Text('No bids recorded',
+            // ⚠️ "No bids recorded" reads as an omission -- somebody
+            // forgot to enter them. For a perishable it is the RULE:
+            // the goods run one special sale and take no bids at all,
+            // so the line says which of the two this is.
+            Text(
+                isPerishableRound
+                    ? 'Perishable goods take no bids'
+                    : 'No bids recorded',
                 style:
                     TextStyle(color: context.colors.textMuted, fontSize: 11.5))
           else

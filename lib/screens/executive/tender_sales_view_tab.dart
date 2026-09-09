@@ -158,6 +158,12 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                         // is what actually marks an item sold or unsold.
                         itemBuilder: (context, i) => TenderSaleCard(
                           sale: pageItems[i],
+                          // ⚠️ This portal's teal, so a package opened
+                          // here does not arrive wearing the yard's
+                          // blue. The card decided the popup's colour
+                          // from `readOnly`, which is true of the yard
+                          // and of this directorate alike.
+                          popupAccent: accent,
                           // Top Management observes; Central Disposal is what
                           // actually marks an item sold or unsold.
                           readOnly: true,

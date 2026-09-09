@@ -7081,9 +7081,31 @@ class DisposalService {
 
   /// Replace the bids of ONE tender round with [amounts] (blanks/zeros skipped).
   /// Other rounds' bids for the same package are untouched.
+  ///
+  /// ⚠️ PERISHABLES TAKE NO BIDS. They run one special sale, and if it
+  /// fails they go straight to the Top Management Directorate through Unsold
+  /// Perishables -- there is no re-valuation and no second round to price,
+  /// because the goods are rotting. `unsold_retender_pool` has excluded them
+  /// since migration 44, so no UI offers the cell; nothing stopped the WRITE,
+  /// and 20 bids had been recorded against perishable packages through the
+  /// special sale. Migration 62 removed them and added a trigger.
+  ///
+  /// This checks FIRST so the officer reads a sentence about perishables
+  /// rather than a Postgres check_violation.
   Future<void> saveTenderRoundBids(
       String forfeitedPackageId, String tenderSaleId, List<double> amounts,
       {String? yard}) async {
+    final fp = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('source')
+        .eq('id', forfeitedPackageId)
+        .maybeSingle());
+    if ((fp?['source'] as String?)?.trim().toLowerCase() == 'perishable') {
+      throw Exception(
+          'Perishable goods take no bids. They run one special sale, and if '
+          'it fails the Top Management Directorate decides the outcome '
+          'directly from Unsold Perishables.');
+    }
     await AuthService._withNetworkRetry(() => supabase
         .from('tender_bids')
         .delete()
