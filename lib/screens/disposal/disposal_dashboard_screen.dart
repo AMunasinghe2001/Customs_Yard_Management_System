@@ -35,6 +35,8 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
 import '../executive/unsold_shared.dart';
 import '../../widgets/perishable_tag.dart';
+import '../../widgets/source_chip.dart';
+import '../../widgets/yard_chip.dart';
 
 /// The quantity actually forfeited & sent for disposal for a request row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -2417,23 +2419,15 @@ class _RequestCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
             child: Row(children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: green.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: green.withOpacity(0.35)),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.warehouse_rounded, size: 16, color: green),
-                  const Gap(8),
-                  Text(yardName(request.yard),
-                      style: TextStyle(
-                          color: green,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14)),
-                ]),
+              // ⚠️ The same chip the other portals use, in this portal's
+              // green. Only the accent differs -- three hand-maintained
+              // copies of one chip is three chips that drift.
+              YardChip(
+                yard: request.yard,
+                accent: green,
+                srNumber: request.items.isEmpty
+                    ? null
+                    : request.items.first.forfeited?.srNumber,
               ),
               const Gap(14),
               Expanded(
@@ -2582,7 +2576,7 @@ class _RequestCard extends ConsumerWidget {
                               fontWeight: FontWeight.w600,
                               fontSize: 12))),
                       DataCell(Center(
-                          child: _SourceChip(source: f?.source ?? 'forfeit'))),
+                          child: SourceChip(source: f?.source ?? 'forfeit'))),
                       DataCell(Center(
                           child:
                               _DispositionChip(disposition: it.disposition))),
@@ -2632,32 +2626,6 @@ class _RequestCard extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Forfeit / Abandoned / Other origin tag for a requested package.
-class _SourceChip extends StatelessWidget {
-  final String source; // 'forfeit' | 'abandoned' | 'other'
-  const _SourceChip({required this.source});
-  @override
-  Widget build(BuildContext context) {
-    final (label, color) = switch (source) {
-      'abandoned' => ('Abandoned', context.colors.heldOrange),
-      'other' => ('Other', context.colors.warningAmber),
-      'perishable' => ('Perishable', context.colors.dangerRed),
-      _ => ('Forfeit', context.colors.accentBlue),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Text(label,
-          style: TextStyle(
-              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -2945,7 +2913,7 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                             overflow: TextOverflow.ellipsis)),
                         DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(Center(child: _SourceChip(source: f.source))),
+                        DataCell(Center(child: SourceChip(source: f.source))),
                         DataCell(TooltipText(
                             '${f.entryQty ?? item?.quantity ?? '—'}')),
                         DataCell(Builder(builder: (_) {
@@ -4590,7 +4558,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                                                         .accentLightBlue)),
                                           ),
                                           const Gap(8),
-                                          _SourceChip(
+                                          SourceChip(
                                               source: it.forfeited?.source ??
                                                   'forfeit'),
                                         ]),
@@ -7422,7 +7390,7 @@ class _DestructionFormDialogState
                                                         .accentLightBlue)),
                                           ),
                                           const Gap(8),
-                                          _SourceChip(
+                                          SourceChip(
                                               source: it.forfeited?.source ??
                                                   'forfeit'),
                                         ]),

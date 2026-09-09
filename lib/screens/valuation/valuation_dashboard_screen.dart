@@ -22,6 +22,9 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/perishable_tag.dart';
+import '../../widgets/source_chip.dart';
+import '../../widgets/yard_chip.dart';
+import '../executive/unsold_shared.dart';
 
 /// The quantity actually forfeited & sent for disposal for a valuation row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -488,23 +491,17 @@ class _ValuationRequestCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
             child: Row(children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: gold.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: gold.withOpacity(0.35)),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.warehouse_rounded, size: 16, color: gold),
-                  const Gap(8),
-                  Text(yardName(request.yard),
-                      style: TextStyle(
-                          color: gold,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14)),
-                ]),
+              // ⚠️ One chip, shared by all three portals. Each had its own
+              // copy of these twelve lines and they had already drifted.
+              // It names the DIRECTORATE too -- a bare "Grey Line 1" made
+              // the reader map the name back to the CED/GL1 they were
+              // reading in the SR column beneath it.
+              YardChip(
+                yard: request.yard,
+                accent: gold,
+                srNumber: request.items.isEmpty
+                    ? null
+                    : request.items.first.forfeited?.srNumber,
               ),
               const Gap(14),
               Expanded(
@@ -582,6 +579,15 @@ class _ValuationRequestCard extends ConsumerWidget {
                   fixedTopRows: 1,
                   empty: const EmptyTableState(
                       message: 'No packages in this request'),
+                  // ⚠️ IDENTITY, then PLACE, then NUMBERS, then STATE, then
+                  // what the officer can do -- the same order on all three
+                  // tables in this portal and on Central Disposal's, so a
+                  // reader moving between them is not re-learning a layout.
+                  //
+                  // ⚠️ Every non-text column is CENTRED, header and cell
+                  // alike. Disposition was a centred header over a
+                  // left-aligned chip, which reads as a column that does not
+                  // line up with its own title.
                   columns: const [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
@@ -589,32 +595,39 @@ class _ValuationRequestCard extends ConsumerWidget {
                     DataColumn2(
                         label: Text('HS Code'),
                         size: ColumnSize.S,
-                        fixedWidth: 110),
+                        fixedWidth: 106),
+                    // Yard, warehouse and zone in one column: where the
+                    // goods physically are, which is what an officer asks
+                    // before pricing something they may want to inspect.
+                    DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Text('Qty'),
+                        label: Center(child: Text('Qty')),
                         size: ColumnSize.S,
-                        fixedWidth: 64,
-                        numeric: true),
+                        fixedWidth: 64),
                     DataColumn2(
                         label: Center(child: Text('Value')),
                         size: ColumnSize.S,
-                        fixedWidth: 130),
+                        fixedWidth: 126),
+                    DataColumn2(
+                        label: Center(child: Text('Source')),
+                        size: ColumnSize.S,
+                        fixedWidth: 108),
                     DataColumn2(
                         label: Center(child: Text('Disposition')),
                         size: ColumnSize.S,
-                        fixedWidth: 130),
+                        fixedWidth: 118),
                     DataColumn2(
-                        label: Text('Valuation'),
+                        label: Center(child: Text('Valuation')),
                         size: ColumnSize.S,
                         fixedWidth: 150),
                     DataColumn2(
                         label: Center(child: Text('Action')),
                         size: ColumnSize.S,
-                        fixedWidth: 96),
+                        fixedWidth: 92),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
-                        fixedWidth: 70),
+                        fixedWidth: 66),
                   ],
                   rows: expandedRows.map((row) {
                     final it = row.it;
@@ -649,14 +662,26 @@ class _ValuationRequestCard extends ConsumerWidget {
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
+                      // ⚠️ Yard, warehouse AND zone. The same helper the
+                      // executive tables use, so one package reads the same
+                      // wherever it is listed.
                       DataCell(TooltipText(
-                          showPackaging
-                              ? '$displayQty (in ${pkgItem!.packagingLabel})'
-                              : '$displayQty',
+                          unsoldLocation(f?.packageDetails, highlightId,
+                              f?.yard ?? request.yard),
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
-                              fontWeight: FontWeight.w600,
                               fontSize: 12))),
+                      DataCell(Center(
+                        child: TooltipText(
+                            showPackaging
+                                ? '$displayQty (in ${pkgItem!.packagingLabel})'
+                                : '$displayQty',
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12)),
+                      )),
                       DataCell(Center(child: Builder(builder: (_) {
                         // SR-form declared value (unit value × qty) — reference
                         // figure, distinct from the valuation cost set below.
@@ -670,7 +695,14 @@ class _ValuationRequestCard extends ConsumerWidget {
                                 fontWeight: FontWeight.w600,
                                 fontSize: 12));
                       }))),
-                      DataCell(_DispoChip(disposition: it.disposition)),
+                      // ⚠️ How the goods came to be here -- forfeit,
+                      // abandoned, detained, other, perishable. It decides
+                      // what may be done with them, and the valuer was
+                      // pricing without it.
+                      DataCell(Center(
+                          child: SourceChip(source: f?.source ?? '—'))),
+                      DataCell(
+                          Center(child: _DispoChip(disposition: it.disposition))),
                       DataCell(it.valuationCost != null
                           ? Column(
                               mainAxisSize: MainAxisSize.min,
@@ -1207,6 +1239,41 @@ class _ValYardFilter extends ConsumerWidget {
   }
 }
 
+/// This row's HS code, resolved the same way its name is.
+///
+/// ⚠️ From THIS row's item, not the package's first. Forfeiture is
+/// recorded per item, so a three-item package makes three rows -- falling
+/// through to `items.first` would stamp all three with one code.
+String? _valHs(ForfeitedPackageModel f) {
+  final items = f.packageDetails?.items ?? const <PackageItem>[];
+  if (f.itemId != null) {
+    final match = items.where((i) => i.id == f.itemId).firstOrNull;
+    if (match != null) return match.hsCode;
+  }
+  if (items.length == 1) return items.first.hsCode;
+  // Several items and no way to say which: a code that might be wrong is
+  // worse than none.
+  return null;
+}
+
+/// The SR-form DECLARED value for this row (unit value x quantity).
+///
+/// ⚠️ Not the valuation. This is what the importer declared, and the
+/// figure the directorate is deciding whether to believe -- the two sit in
+/// separate columns for exactly that reason.
+String _valDeclared(ForfeitedPackageModel f) {
+  final items = f.packageDetails?.items ?? const <PackageItem>[];
+  PackageItem? item;
+  if (f.itemId != null) {
+    item = items.where((i) => i.id == f.itemId).firstOrNull;
+  }
+  item ??= items.length == 1 ? items.first : null;
+  if (item == null) return '—';
+  final total = item.unitValue * unsoldQty(f);
+  if (total <= 0) return '—';
+  return 'LKR ${NumberFormat('#,##0').format(total)}';
+}
+
 String _valItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
   final items = f.packageDetails?.items ?? const [];
@@ -1371,21 +1438,51 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                           message: 'No unsold tender packages'),
                       headingRowColor:
                           WidgetStateProperty.all(context.colors.surfaceDark),
+                      // ⚠️ The SAME order as the two tables above: identity,
+                      // place, numbers, state, action. A reader moving
+                      // between this portal's three tabs should not be
+                      // re-learning where a column lives.
+                      //
+                      // ⚠️ Yard becomes LOCATION -- yard, warehouse and zone.
+                      // A bare yard name on a page that lists every yard
+                      // says which one, and nothing about where in it; the
+                      // goods here have failed rounds and may need looking
+                      // at before they are re-priced.
+                      //
+                      // ⚠️ Bids is GONE, and the count is not lost: the
+                      // Re-valuation cell opens the same dialog, which lists
+                      // every bid of every round. A column that only
+                      // duplicated a door was taking width the location
+                      // needed.
                       columns: const [
                         DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                         DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                         DataColumn2(
                             label: Text('Consignee'), size: ColumnSize.M),
                         DataColumn2(
-                            label: Text('Yard'),
+                            label: Text('HS Code'),
                             size: ColumnSize.S,
-                            fixedWidth: 110),
+                            fixedWidth: 106),
+                        DataColumn2(
+                            label: Text('Location'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Center(child: Text('Qty')),
+                            size: ColumnSize.S,
+                            fixedWidth: 64),
+                        DataColumn2(
+                            label: Center(child: Text('Value')),
+                            size: ColumnSize.S,
+                            fixedWidth: 126),
+                        DataColumn2(
+                            label: Center(child: Text('Source')),
+                            size: ColumnSize.S,
+                            fixedWidth: 108),
+                        DataColumn2(
+                            label: Center(child: Text('Disposition')),
+                            size: ColumnSize.S,
+                            fixedWidth: 118),
                         DataColumn2(
                             label: Center(child: Text('Times')),
-                            size: ColumnSize.S,
-                            fixedWidth: 70),
-                        DataColumn2(
-                            label: Center(child: Text('Bids')),
                             size: ColumnSize.S,
                             fixedWidth: 70),
                         DataColumn2(
@@ -1395,7 +1492,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                         DataColumn2(
                             label: Center(child: Text('Details')),
                             size: ColumnSize.S,
-                            fixedWidth: 70),
+                            fixedWidth: 66),
                       ],
                       rows: rows.map((info) {
                         final f = info.forfeited;
@@ -1409,12 +1506,47 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis)),
                             DataCell(TooltipText(f.consigneeName,
                                 overflow: TextOverflow.ellipsis)),
-                            DataCell(TooltipText(yardName(f.yard),
-                                overflow: TextOverflow.ellipsis)),
+                            DataCell(TooltipText(_valHs(f) ?? '—',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 12))),
+                            DataCell(TooltipText(
+                                unsoldLocation(
+                                    f.packageDetails, f.itemId, f.yard),
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 12))),
+                            DataCell(Center(
+                              child: TooltipText('${unsoldQty(f)}',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12)),
+                            )),
+                            // The SR-form declared value, the same reference
+                            // figure the Pending table shows -- not the
+                            // valuation, which has its own column.
+                            DataCell(Center(
+                              child: TooltipText(_valDeclared(f),
+                                  style: TextStyle(
+                                      color: context.colors.textPrimary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12)),
+                            )),
+                            DataCell(Center(
+                                child: SourceChip(source: f.source))),
+                            // ⚠️ Every row here is on the SALE path -- goods
+                            // headed for destruction never reach a tender,
+                            // so they never become unsold. The column is
+                            // kept for symmetry with the tables above, and
+                            // it states the fact rather than implying the
+                            // disposition could be anything else.
+                            const DataCell(
+                                Center(child: _DispoChip(disposition: 'sale'))),
                             DataCell(Center(
                                 child: _ValAttemptsBadge(info: info))),
-                            DataCell(Center(
-                                child: _ValBidCountChip(fpId: f.id))),
                             DataCell(Center(
                               child: _ValRevalCell(
                                   info: info,
@@ -1487,39 +1619,6 @@ class _UnsoldTendersValTab extends ConsumerWidget {
   }
 }
 
-/// Small chip showing the total recorded bid count for a package.
-class _ValBidCountChip extends ConsumerWidget {
-  final String fpId;
-  const _ValBidCountChip({required this.fpId});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final gold = context.colors.primaryGold;
-    // valueOrNull, NOT asData?.value: while the provider re-fetches, asData is
-    // null and the count collapses to 0 before snapping back — which is what
-    // made the table look like it was constantly refreshing. valueOrNull keeps
-    // the previous value during a reload.
-    final count = ref
-            .watch(tenderBidsProvider(fpId))
-            .valueOrNull
-            ?.values
-            .fold<int>(0, (s, l) => s + l.length) ??
-        0;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: gold.withOpacity(count > 0 ? 0.14 : 0.06),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text('$count',
-          style: TextStyle(
-              color: count > 0 ? gold : context.colors.textMuted,
-              fontWeight: FontWeight.w800)),
-    );
-  }
-}
-
-/// Combined popup: shows the bids per tender round (read-only) and lets the
-/// Valuation Directorate set a NEW valuation for the CURRENT round.
 class _ValBidsAndRevalDialog extends ConsumerStatefulWidget {
   final ReTenderSaleInfo info;
   const _ValBidsAndRevalDialog({required this.info});
