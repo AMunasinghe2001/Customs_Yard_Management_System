@@ -57,7 +57,11 @@ select
   -- Both of the year filter's answers, so it can match either.
   extract(year from we.admitted_at at time zone 'Asia/Colombo')::text
     as admitted_year,
-  substring(p.sr_number, '(20[0-9]{2})') as sr_year
+  substring(p.sr_number, '(20[0-9]{2})') as sr_year,
+
+  -- A warehouse facility is shared, but an entry belongs to exactly one
+  -- yard. Exposing this lets every yard-bound query narrow in SQL.
+  p.yard
 
 from public.warehouse_entries we
 join public.packages p on p.id = we.package_id

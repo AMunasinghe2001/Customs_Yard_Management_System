@@ -28,7 +28,8 @@ class PgConfig {
   //  by the compiler, so it cannot be called with a runtime key. They are read
   //  here and handed to AppEnv, which applies the precedence above.
   static const String _hostDefine = String.fromEnvironment('PG_HOST');
-  static const int _portDefine = int.fromEnvironment('PG_PORT', defaultValue: -1);
+  static const int _portDefine =
+      int.fromEnvironment('PG_PORT', defaultValue: -1);
   static const String _databaseDefine = String.fromEnvironment('PG_DATABASE');
   static const String _userDefine = String.fromEnvironment('PG_USER');
   static const String _passwordDefine = String.fromEnvironment('PG_PASSWORD');
@@ -46,8 +47,8 @@ class PgConfig {
 
   /// The server PC on the office LAN. `localhost` suits running the app on the
   /// same machine as the database.
-  static String get host => AppEnv.read('PG_HOST',
-      dartDefine: _hostDefine, fallback: 'localhost');
+  static String get host =>
+      AppEnv.read('PG_HOST', dartDefine: _hostDefine, fallback: 'localhost');
 
   static int get port => AppEnv.readInt('PG_PORT',
       dartDefine: _portDefine, fallback: 5432, dartDefineSentinel: -1);
@@ -56,8 +57,8 @@ class PgConfig {
   static String get database => AppEnv.read('PG_DATABASE',
       dartDefine: _databaseDefine, fallback: 'Customs_SR_DB');
 
-  static String get username => AppEnv.read('PG_USER',
-      dartDefine: _userDefine, fallback: 'postgres');
+  static String get username =>
+      AppEnv.read('PG_USER', dartDefine: _userDefine, fallback: 'postgres');
 
   /// ⚠️ The fallback is the stock PostgreSQL development password, and it is
   /// compiled into the binary. That is a convenience for a fresh local
@@ -209,11 +210,8 @@ class PgConfig {
   /// allocation forever, each costing the server a backend process with its
   /// own ~work_mem. Retiring them returns the memory and the connection slot
   /// to everyone else; the next query just opens a fresh one.
-  static int get maxConnectionAgeSeconds => AppEnv.readInt(
-      'PG_MAX_CONN_AGE',
-      dartDefine: _maxConnAgeDefine,
-      fallback: 600,
-      dartDefineSentinel: -1);
+  static int get maxConnectionAgeSeconds => AppEnv.readInt('PG_MAX_CONN_AGE',
+      dartDefine: _maxConnAgeDefine, fallback: 600, dartDefineSentinel: -1);
 
   /// Pool settings: the same connection settings, plus the size cap and the
   /// per-connection session hook.
@@ -224,8 +222,7 @@ class PgConfig {
   /// user's queries as 'anon' -- every user-scoped policy denying, on some
   /// queries and not others, depending purely on which connection the pool
   /// handed out.
-  static PoolSettings poolSettings(
-          Future<void> Function(Connection) onOpen) =>
+  static PoolSettings poolSettings(Future<void> Function(Connection) onOpen) =>
       PoolSettings(
         maxConnectionCount: poolSizeSetting,
         // Bounded lifetime, so an all-day client hands its idle sockets back
@@ -343,8 +340,7 @@ class PgDatabase {
   /// than one transaction, so every later query sees them.
   Future<void> _applySession(Session conn) async {
     await conn.execute(
-      Sql.named(
-          "select set_config('app.current_user_id', @uid, false), "
+      Sql.named("select set_config('app.current_user_id', @uid, false), "
           "set_config('app.current_role', @role, false)"),
       parameters: {
         // An empty string, not null: `current_setting` returns '' for an unset
@@ -389,6 +385,21 @@ class PgDatabase {
       // first: the pool opens lazily, so without this a bad password would
       // surface as a random panel failing.
       await pool.execute('select 1');
+      // RLS is the boundary between every yard.  A superuser or BYPASSRLS
+      // role ignores it, so reject that configuration before any screen can
+      // query data. `yard_app` is intentionally neither and starts normally.
+      final identity = await pool.execute(
+          'select rolsuper, rolbypassrls from pg_roles '
+          'where rolname = current_user');
+      final dbRole = identity.isEmpty ? null : identity.first.toColumnMap();
+      if (dbRole == null ||
+          dbRole['rolsuper'] == true ||
+          dbRole['rolbypassrls'] == true) {
+        await pool.close();
+        throw StateError(
+            'Database access must use the non-superuser yard_app account. '
+            'Set PG_USER=yard_app in .env.');
+      }
       return pool;
     });
     _connecting = future;

@@ -9,6 +9,7 @@ import 'package:pdf/pdf.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../core/app_session.dart';
 import '../executive/unsold_shared.dart' show unsoldQty;
 import '../../core/yards.dart';
 import '../../core/post_status_activities.dart';
@@ -156,6 +157,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }).toList();
     }
     if (_reportYard == null) return rows;
+    final dirMap = ref.read(directorateSrPrefixMapProvider).valueOrNull;
     return rows.where((r) {
       final y = yardOf(r);
       String? sr = srNumberOf?.call(r);

@@ -23,6 +23,10 @@ class WarehouseCapacityScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final capacityAsync = ref.watch(yardWarehouseCapacityProvider);
+    // Distinguishes "no warehouses at all" from "warehouses, but empty" —
+    // two different situations that need two different next actions.
+    final hasWarehouses =
+        (ref.watch(warehousesProvider).valueOrNull ?? const []).isNotEmpty;
 
     return AppShell(
       currentRoute: '/zone-capacity',
@@ -98,11 +102,20 @@ class WarehouseCapacityScreen extends ConsumerWidget {
                   ),
                   data: (rows) {
                     if (rows.isEmpty) {
-                      return const EmptyStateCard(
-                        icon: Icons.inventory_2_outlined,
-                        message: 'No active warehouse stock in your yard',
-                        subtitle:
-                            'Admitted packages for this yard will appear here.',
+                      // "No stock" implies there is somewhere to put it. A
+                      // yard with no warehouses yet needs to be told to add
+                      // one, not to wait for packages that can never arrive.
+                      return EmptyStateCard(
+                        icon: hasWarehouses
+                            ? Icons.inventory_2_outlined
+                            : Icons.warehouse_rounded,
+                        message: hasWarehouses
+                            ? 'No active warehouse stock in your yard'
+                            : 'No warehouses in your yard yet',
+                        subtitle: hasWarehouses
+                            ? 'Admitted packages for this yard will appear here.'
+                            : 'Add a warehouse and its zones from the Admin '
+                                'Panel to start tracking capacity.',
                       );
                     }
                     // One card per warehouse, listing its ZONES — capacity

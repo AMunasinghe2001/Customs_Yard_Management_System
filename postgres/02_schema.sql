@@ -2,7 +2,7 @@
 --  02 · Schema — every table, function, policy and trigger
 --
 --  GENERATED. Do not edit by hand: it is the base schema followed by all
---  78 migrations in date order, exactly as they were applied to Supabase.
+--  80 migrations in date order, exactly as they were applied to Supabase.
 --  Regenerate with scratchpad/build_schema.py after adding a migration.
 --
 --  Why stitched rather than consolidated: the migrations ARE the source of
@@ -328,13 +328,17 @@ ORDER BY stat_date DESC;
 CREATE TABLE IF NOT EXISTS package_categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- ⚠️ The column is `reason_text`, not `name`. Nothing in this repo ever
+-- created this table (it was made in the Supabase dashboard), so the shape
+-- here is taken from the live database rather than guessed.
 CREATE TABLE IF NOT EXISTS hold_reasons (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  reason_text TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Same story: made in the dashboard, never written down. Columns follow
@@ -7090,6 +7094,54 @@ select sr_number
 
 
 -- ==========================================================================
+--  20260841_sale_end_time.sql
+-- ==========================================================================
+
+-- Sale END time for tender sales and destructions.
+--
+-- A sale has a start moment (sale_date + sale_time) that unlocks Mark Sold /
+-- Mark Destroyed, and now an END moment that closes bidding. The valuation is
+-- the RESERVE PRICE, so it stays sealed until the sale has ENDED — not merely
+-- started. Without this the reserve became visible the moment bidding opened,
+-- which is exactly when it must not be.
+--
+-- Nullable on purpose: existing rows have no end time and fall back to the
+-- start moment, so their behaviour is unchanged.
+alter table if exists public.tender_sales
+  add column if not exists sale_end_time text;
+
+alter table if exists public.destructions
+  add column if not exists sale_end_time text;
+
+comment on column public.tender_sales.sale_end_time is
+  'Sale close time, "HH:mm". The valuation stays sealed until this passes.';
+comment on column public.destructions.sale_end_time is
+  'Sale close time, "HH:mm". The valuation stays sealed until this passes.';
+
+
+-- ==========================================================================
+--  20260842_tender_unsold_actions.sql
+-- ==========================================================================
+
+-- Explicit UNSOLD and UNDESTROYED status for tender sale items and destruction items.
+--
+-- Allows officers to manually mark an item unsold/undestroyed immediately after
+-- the sale moment, without having to wait for the automatic grace deadline.
+alter table if exists public.tender_sale_items
+  add column if not exists unsold boolean not null default false,
+  add column if not exists unsold_at timestamptz;
+
+alter table if exists public.destruction_items
+  add column if not exists undestroyed boolean not null default false,
+  add column if not exists undestroyed_at timestamptz;
+
+comment on column public.tender_sale_items.unsold is
+  'True when the officer explicitly marks the item unsold in this tender sale.';
+comment on column public.destruction_items.undestroyed is
+  'True when the officer explicitly marks the item undestroyed in this destruction.';
+
+
+-- ==========================================================================
 --  migrations/002_strict_yard_isolation.sql (folded in)
 -- ==========================================================================
 
@@ -7141,15 +7193,545 @@ begin
   end loop;
 end $$;
 
--- 4. ── Unsold and Undestroyed status columns ───────────────────────────────
-alter table if exists public.tender_sale_items
-  add column if not exists unsold boolean not null default false,
-  add column if not exists unsold_at timestamptz;
-
-alter table if exists public.destruction_items
-  add column if not exists undestroyed boolean not null default false,
-  add column if not exists undestroyed_at timestamptz;
+-- 3. ── Drop the admin-bypass helper (no longer used) ───────────────────────
+drop function if exists public.auth_user_is_admin();
 
 -- Done.
 
+
+-- ==========================================================================
+--  migrations/003_database_yard_isolation.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Enforced per-yard isolation for EVERY yard in the direct PostgreSQL client.
+--
+-- The desktop app must connect as the non-superuser `yard_app` role created by
+-- postgres/66_yard_app_role.sql.  PostgreSQL superusers bypass RLS, so a
+-- connection as `postgres` makes UI filters the only barrier between any two
+-- yards.  This migration closes the database side of that gap:
+--
+--   * tables that carry operational data force their existing dynamic RLS
+--     policy: `row.yard = auth_user_yard()`;
+--   * reporting/list views run with the caller's permissions, so their base
+--     table RLS policies apply too (views otherwise use their owner's rights).
+--
+-- Apply after 001_multi_yard.sql and 002_strict_yard_isolation.sql.
+-- Requires PostgreSQL 15+ for `security_invoker`; the deployed server meets
+-- that requirement.  Safe to re-run.
+-- ============================================================================
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'packages', 'package_items', 'warehouse_entries',
+    'forfeited_packages', 'tenders', 'tender_disposals', 'audit_logs',
+    'disposal_requests', 'disposal_request_items',
+    'tender_sales', 'tender_sale_items', 'tender_bids',
+    'tender_revaluations', 'tender_committees', 'unsold_proposals',
+    'destructions', 'destruction_items', 'financial_expenses'
+  ]
+  loop
+    if to_regclass('public.' || t) is not null then
+      execute format('alter table public.%I enable row level security', t);
+      execute format('alter table public.%I force row level security', t);
+    end if;
+  end loop;
+end $$;
+
+-- `auth_user_yard()` reads the logged-in account's profiles.yard.  It does
+-- not contain a yard-code list: therefore a new ICT-created code (for example
+-- `NEWYARD`) is isolated the instant an account is assigned to it, with no
+-- Flutter rebuild, SQL edit, or special GL1/GL2 branch.
+do $$
+declare
+  t text;
+  policy_sql text;
+begin
+  foreach t in array array[
+    'packages', 'package_items', 'warehouse_entries', 'forfeited_packages',
+    'tenders', 'tender_disposals'
+  ]
+  loop
+    select pg_get_expr(p.polqual, p.polrelid) into policy_sql
+      from pg_policy p
+      join pg_class c on c.oid = p.polrelid
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relname = t and p.polname = 'yard_all';
+    if policy_sql is null or policy_sql not like '%auth_user_yard%' then
+      raise exception 'public.% does not have the dynamic yard_all RLS policy', t;
+    end if;
+  end loop;
+end $$;
+
+-- These views power Old Entries, Goods History, Warehouses, Held Goods,
+-- Forfeited/Disposed tables, dashboard cards, and reports.  SECURITY INVOKER
+-- means a GL2 user sees only rows permitted by the underlying table policies;
+-- no view-owner (normally postgres) can accidentally widen the result set.
+do $$
+declare
+  v text;
+begin
+  foreach v in array array[
+    'held_goods_rows', 'perishable_rows', 'warehouse_rows', 'forfeit_rows',
+    'disposition_rows', 'sr_financials', 'sr_expense_summary',
+    'recent_package_activity', 'accrued_storage_by_yard',
+    'appeal_rows', 'valuation_rows', 'disposal_request_summary',
+    'tender_sale_summary', 'destruction_summary', 'unsold_retender_pool',
+    'unsold_perishables', 'exhausted_unsold', 'committee_pool',
+    'item_appeal_outcomes', 'zone_occupancy_entries'
+  ]
+  loop
+    if exists (
+      select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relname = v and c.relkind = 'v'
+    ) then
+      execute format('alter view public.%I set (security_invoker = true)', v);
+    end if;
+  end loop;
+end $$;
+
+-- A report or view accidentally created without SECURITY INVOKER is a data
+-- isolation regression.  Fail this deployment instead of silently releasing
+-- a report that can read another yard's records.
+do $$
+declare
+  v text;
+  invoker text;
+begin
+  foreach v in array array[
+    'held_goods_rows', 'perishable_rows', 'warehouse_rows', 'forfeit_rows',
+    'disposition_rows', 'sr_financials', 'sr_expense_summary',
+    'recent_package_activity', 'accrued_storage_by_yard',
+    'appeal_rows', 'valuation_rows', 'disposal_request_summary',
+    'tender_sale_summary', 'destruction_summary', 'unsold_retender_pool',
+    'unsold_perishables', 'exhausted_unsold', 'committee_pool',
+    'item_appeal_outcomes', 'zone_occupancy_entries'
+  ]
+  loop
+    if to_regclass('public.' || v) is not null then
+      select coalesce(c.reloptions::text, '') into invoker
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relname = v;
+      if invoker not like '%security_invoker=true%' then
+        raise exception 'view public.% must use security_invoker', v;
+      end if;
+    end if;
+  end loop;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/004_warehouse_query_yard_scope.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Warehouse view: expose the owning yard for mandatory SQL-side filtering.
+-- A physical warehouse is shared; its entries are not. Safe to re-run.
+-- ============================================================================
+
+create or replace view public.warehouse_rows as
+select
+  we.id as entry_id,
+  we.warehouse_id,
+  we.package_id,
+  we.package_item_id,
+  p.sr_number,
+  p.consignee_name,
+  we.hold_reason,
+  we.item_count,
+  we.admitted_at,
+  pi.item_name,
+  case
+    when lower(trim(coalesce(pi.status, ''))) = 'forfiet' then 'Forfeit'
+    else pi.status
+  end as item_status,
+  p.status as package_status,
+  lower(coalesce(p.status, '')) = 'confiscated' as is_package_confiscated,
+  extract(year from we.admitted_at at time zone 'Asia/Colombo')::text
+    as admitted_year,
+  substring(p.sr_number, '(20[0-9]{2})') as sr_year,
+  p.yard
+from public.warehouse_entries we
+join public.packages p on p.id = we.package_id
+left join public.package_items pi on pi.id = we.package_item_id
+where not coalesce(we.is_returned, false)
+  and lower(trim(coalesce(pi.status, ''))) not in
+      ('released', 'returned', 'sold', 're-export', 're-exported',
+       'destroy', 'destroyed', 'other');
+
+alter view public.warehouse_rows set (security_invoker = true);
+
+create index if not exists warehouse_entries_yard_warehouse_live_idx
+  on public.warehouse_entries (yard, warehouse_id, admitted_at desc)
+  where not coalesce(is_returned, false);
+
+analyze public.warehouse_entries;
+
+
+-- ==========================================================================
+--  migrations/005_restrict_yard_staff_at_database.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Database-wide yard boundary for every operational table with a `yard`.
+--
+-- Older schema policies include permissive rules such as
+-- `auth.role() = 'authenticated'`. PostgreSQL combines permissive policies
+-- with OR, so that old rule could override `yard_all` and leak a GL1 row to a
+-- GL2 officer. This migration adds a RESTRICTIVE policy instead: restrictive
+-- policies are AND-ed with every permissive policy, so no old or future broad
+-- policy can widen a yard officer/admin's result set.
+--
+-- Directorate roles (ICT, Disposal, Appeal, Valuation, Executive) are not
+-- yard staff and retain their intentional national workflows. Every officer
+-- and yard admin is bound to exactly profiles.yard, including ICT-added yards.
+-- Safe to re-run.
+-- ============================================================================
+
+create or replace function public.auth_user_is_yard_staff()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+      from public.profiles p
+     where p.id = auth.uid()
+       and lower(coalesce(p.role, '')) in ('officer', 'admin')
+  );
+$$;
+
+grant execute on function public.auth_user_is_yard_staff() to authenticated;
+
+do $$
+declare
+  t text;
+begin
+  -- No hard-coded yard codes: this covers GL1, GL2 and every yard ICT creates.
+  for t in
+    select c.table_name
+      from information_schema.columns c
+      join information_schema.tables tb
+        on tb.table_schema = c.table_schema and tb.table_name = c.table_name
+     where c.table_schema = 'public'
+       and c.column_name = 'yard'
+       and tb.table_type = 'BASE TABLE'
+       -- auth_user_yard() reads profiles itself. Applying this policy to
+       -- profiles would make that lookup recursively invoke its own policy.
+       and c.table_name <> 'profiles'
+  loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('alter table public.%I force row level security', t);
+    execute format('drop policy if exists yard_staff_boundary on public.%I', t);
+    execute format($policy$
+      create policy yard_staff_boundary on public.%I
+        as restrictive
+        for all
+        using (
+          not public.auth_user_is_yard_staff()
+          or yard = public.auth_user_yard()
+        )
+        with check (
+          not public.auth_user_is_yard_staff()
+          or yard = public.auth_user_yard()
+        )
+    $policy$, t);
+  end loop;
+end $$;
+
+-- Fail deployment rather than leaving even one yard-bearing data table open.
+do $$
+declare
+  missing text;
+begin
+  select string_agg(c.table_name, ', ' order by c.table_name) into missing
+    from information_schema.columns c
+    join information_schema.tables tb
+      on tb.table_schema = c.table_schema and tb.table_name = c.table_name
+   where c.table_schema = 'public'
+     and c.column_name = 'yard'
+     and tb.table_type = 'BASE TABLE'
+     and c.table_name <> 'profiles'
+     and not exists (
+       select 1 from pg_policy p
+       join pg_class pc on pc.oid = p.polrelid
+       join pg_namespace pn on pn.oid = pc.relnamespace
+       where pn.nspname = 'public'
+         and pc.relname = c.table_name
+         and p.polname = 'yard_staff_boundary'
+         and p.polpermissive = false
+     );
+  if missing is not null then
+    raise exception 'yard-staff boundary missing from: %', missing;
+  end if;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/006_profiles_policy_recursion_fix.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Profiles are the source of auth_user_yard(), so they cannot carry the
+-- generic yard_staff_boundary policy: evaluating it would read profiles to
+-- decide whether profiles may be read, producing PostgreSQL error 42P17.
+--
+-- Operational tables keep the restrictive policy from migration 005. Profile
+-- access remains governed by its dedicated own-row/same-yard policies.
+-- Safe to re-run.
+-- ============================================================================
+
+drop policy if exists yard_staff_boundary on public.profiles;
+
+-- Verify the migration repaired the recursive policy without weakening the
+-- operational-table boundary.
+do $$
+begin
+  if exists (
+    select 1 from pg_policy p
+    join pg_class c on c.oid = p.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and c.relname = 'profiles'
+     and p.polname = 'yard_staff_boundary'
+  ) then
+    raise exception 'profiles must not have yard_staff_boundary';
+  end if;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/007_drop_admin_profiles_policy.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- The base schema's "Admins can manage all profiles" policy survived
+-- migration 002, and it is wrong twice over.
+--
+-- 1. It recurses. It asks whether the caller is an admin by reading profiles
+--    INLINE:
+--
+--      EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role='admin')
+--
+--    That subquery is itself subject to the policies on profiles, so deciding
+--    whether profiles may be read requires reading profiles: PostgreSQL error
+--    42P17. Every sign-in fails, because the router reads the profile.
+--
+-- 2. It is a cross-yard bypass. Migration 002 established that every user,
+--    "administrators included", sees only their own yard, and it dropped
+--    auth_user_is_admin() as "the admin-bypass helper (no longer used)". It
+--    replaced admin access with yard_profiles_select/update/insert. It simply
+--    never dropped this policy, which grants FOR ALL across every yard.
+--
+-- So the fix is to remove it, not to rewrite it with a SECURITY DEFINER
+-- helper: reviving the helper would re-open the hole 002 closed. Profile
+-- access stays governed by the own-row/same-yard policies from 002, plus the
+-- directorate read policies. Migration 006 removed the same recursion from
+-- yard_staff_boundary; this is the older, second source of it.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+drop policy if exists "Admins can manage all profiles" on public.profiles;
+
+-- The helper 002 dropped must stay dropped: it exists only to bypass the yard
+-- boundary, and 007 above is what re-created it in an earlier draft.
+drop function if exists public.auth_user_is_admin();
+
+-- Verify no policy on profiles reads profiles inline any more.
+do $$
+declare
+  bad text;
+begin
+  select string_agg(p.polname, ', ') into bad
+    from pg_policy p
+    join pg_class c on c.oid = p.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and c.relname = 'profiles'
+     and (
+       pg_get_expr(p.polqual, p.polrelid) ilike '%from profiles%'
+       or pg_get_expr(p.polqual, p.polrelid) ilike '%from public.profiles%'
+       or pg_get_expr(p.polwithcheck, p.polrelid) ilike '%from profiles%'
+       or pg_get_expr(p.polwithcheck, p.polrelid) ilike '%from public.profiles%'
+     );
+
+  if bad is not null then
+    raise exception 'profiles policies still read profiles inline: %', bad;
+  end if;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/008_warehouses_belong_to_a_yard.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Warehouses and their zones had NO yard column, so every yard saw every
+-- warehouse in the system. GL2, which has never had a warehouse added to it,
+-- showed GL1's four ("Warehouse 01/02/03", "Open Area 01") plus 18 zones and
+-- 72,000 units of capacity that do not exist in that yard.
+--
+-- Reading them was never yard-scoped either: "All can view warehouses" grants
+-- SELECT to any authenticated user, and warehouse_zones inherits its yard
+-- through its parent warehouse.
+--
+-- The workaround in warehousesForYardProvider derived the association from
+-- warehouse_entries.yard, which cannot work for a NEW yard: a warehouse only
+-- appeared once goods were stored in it, and goods cannot be stored in a
+-- warehouse that is not offered. The column is the fix.
+--
+-- BACKFILL: every existing warehouse is GL1's. All 333 warehouse_entries rows
+-- across all four warehouses carry yard 'GL1' and no other yard has ever
+-- written one, so the assignment is unambiguous rather than a guess.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+alter table public.warehouses
+  add column if not exists yard text;
+
+-- Derive each warehouse's yard from the entries written against it. Only when
+-- EXACTLY ONE yard has used it — a warehouse two yards had written to would
+-- have no right answer, and silently picking one would hand a yard another
+-- yard's goods. There are none today; the guard is for a re-run on a database
+-- where that is no longer true.
+update public.warehouses w
+   set yard = sole.yard
+  from (
+    select warehouse_id, min(yard) as yard
+      from public.warehouse_entries
+     where yard is not null
+     group by warehouse_id
+    having count(distinct yard) = 1
+  ) as sole
+ where w.id = sole.warehouse_id
+   and w.yard is null;
+
+-- A warehouse no yard has ever used cannot be placed by evidence. Leave it
+-- NULL rather than guessing: an unplaced warehouse shows in NO yard, which is
+-- the safe direction — it can be assigned in the admin panel, whereas a wrong
+-- guess quietly exposes one yard's storage to another.
+do $$
+declare
+  unplaced int;
+begin
+  select count(*) into unplaced from public.warehouses where yard is null;
+  if unplaced > 0 then
+    raise notice '% warehouse(s) have no entries and stay unassigned', unplaced;
+  end if;
+end $$;
+
+create index if not exists warehouses_yard_idx on public.warehouses (yard);
+
+-- ── Reads: a yard sees only its own warehouses ──────────────────────────────
+-- The old policy granted every authenticated user every warehouse.
+drop policy if exists "All can view warehouses" on public.warehouses;
+drop policy if exists warehouses_yard_select on public.warehouses;
+create policy warehouses_yard_select on public.warehouses
+  for select using (yard = public.auth_user_yard());
+
+-- ── Writes: an admin manages warehouses in their OWN yard ───────────────────
+-- The replaced policy read profiles INLINE, the pattern that raises 42P17
+-- (see migration 007), and granted every admin every yard. Both go.
+drop policy if exists "Admins can manage warehouses" on public.warehouses;
+drop policy if exists warehouses_yard_write on public.warehouses;
+create policy warehouses_yard_write on public.warehouses
+  for all
+  using (yard = public.auth_user_yard())
+  with check (yard = public.auth_user_yard());
+
+-- ── Zones follow their warehouse ────────────────────────────────────────────
+-- warehouse_zones has no yard of its own; it inherits through warehouse_id.
+-- The parent lookup goes through a SECURITY DEFINER helper so that reading a
+-- zone does not re-enter the warehouses policies.
+create or replace function public.warehouse_yard(p_warehouse_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $function$
+  select yard from public.warehouses where id = p_warehouse_id;
+$function$;
+
+revoke all on function public.warehouse_yard(uuid) from public;
+grant execute on function public.warehouse_yard(uuid) to authenticated;
+
+drop policy if exists warehouse_zones_read on public.warehouse_zones;
+drop policy if exists warehouse_zones_admin_write on public.warehouse_zones;
+drop policy if exists warehouse_zones_yard_select on public.warehouse_zones;
+create policy warehouse_zones_yard_select on public.warehouse_zones
+  for select using (
+    public.warehouse_yard(warehouse_id) = public.auth_user_yard()
+  );
+
+drop policy if exists warehouse_zones_yard_write on public.warehouse_zones;
+create policy warehouse_zones_yard_write on public.warehouse_zones
+  for all
+  using (public.warehouse_yard(warehouse_id) = public.auth_user_yard())
+  with check (public.warehouse_yard(warehouse_id) = public.auth_user_yard());
+
+alter table public.warehouses enable row level security;
+alter table public.warehouse_zones enable row level security;
+
+-- ── Verification ────────────────────────────────────────────────────────────
+do $$
+declare
+  bad text;
+  mixed int;
+begin
+  -- No policy on either table may read profiles inline (42P17).
+  select string_agg(c.relname || '.' || p.polname, ', ') into bad
+    from pg_policy p
+    join pg_class c on c.oid = p.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and c.relname in ('warehouses', 'warehouse_zones')
+     and (
+       pg_get_expr(p.polqual, p.polrelid) ilike '%from profiles%'
+       or pg_get_expr(p.polwithcheck, p.polrelid) ilike '%from profiles%'
+     );
+  if bad is not null then
+    raise exception 'policies still read profiles inline: %', bad;
+  end if;
+
+  -- The backfill must not have handed one yard another yard's warehouse.
+  select count(*) into mixed
+    from public.warehouses w
+    join public.warehouse_entries e on e.warehouse_id = w.id
+   where w.yard is not null
+     and e.yard is not null
+     and e.yard <> w.yard;
+  if mixed > 0 then
+    raise exception '% entrie(s) sit in a warehouse belonging to another yard', mixed;
+  end if;
+end $$;
+
+-- ── warehouse_contents: the one view migration 003 missed ───────────────────
+-- It joins warehouse_entries, warehouses, packages and profiles with no yard
+-- filter, and without security_invoker it runs as its OWNER — so the policies
+-- above would not apply to it and any authenticated caller could read every
+-- yard's stock through it. Nothing in the app queries it, which is why it went
+-- unnoticed; making it run as the caller closes the hole rather than leaving a
+-- bypass in the schema for the next query that finds it.
+alter view public.warehouse_contents set (security_invoker = true);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public'
+       and c.relname = 'warehouse_contents'
+       and 'security_invoker=true' = any (c.reloptions)
+  ) then
+    raise exception 'warehouse_contents must run as the caller';
+  end if;
+end $$;
 

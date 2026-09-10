@@ -766,6 +766,16 @@ class WarehouseModel {
   final String? location;
   final int capacity;
 
+  /// The yard this warehouse physically stands in.
+  ///
+  /// ⚠️ Warehouses used to be global, so every yard was shown every other
+  /// yard's storage — a yard that had never had one added reported four
+  /// warehouses and 72,000 units of capacity that did not exist there. RLS
+  /// now scopes reads to the caller's yard, so in practice this always
+  /// matches the signed-in yard. Null only for a legacy row no yard has ever
+  /// stored goods in, which belongs to no yard until an admin assigns it.
+  final String? yard;
+
   const WarehouseModel({
     required this.id,
     required this.name,
@@ -773,6 +783,7 @@ class WarehouseModel {
     this.description,
     this.location,
     this.capacity = 500,
+    this.yard,
   });
 
   factory WarehouseModel.fromJson(Map<String, dynamic> json) {
@@ -783,6 +794,7 @@ class WarehouseModel {
       description: json['description'] as String?,
       location: json['location'] as String?,
       capacity: parseDbInt(json['capacity']) ?? 500,
+      yard: json['yard'] as String?,
     );
   }
 }

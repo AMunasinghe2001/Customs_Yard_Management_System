@@ -61,6 +61,11 @@ class AppEnv {
     final sep = Platform.pathSeparator;
     final paths = <String>[];
 
+    // A previous `flutter run` can leave a stale .env beside the debug EXE.
+    // While developing, the project-root .env is the file just edited and
+    // must win. Installed/release copies still prefer the EXE-side file.
+    if (kDebugMode) paths.add('.env');
+
     // Beside the .exe — where it lands for an installed copy.
     try {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
@@ -68,7 +73,7 @@ class AppEnv {
     } catch (_) {}
 
     // The working directory — `flutter run` from the project root.
-    paths.add('.env');
+    if (!kDebugMode) paths.add('.env');
 
     return paths;
   }

@@ -377,27 +377,19 @@ final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
   return ref.read(warehouseServiceProvider).getWarehouses();
 });
 
-/// The warehouses a given yard actually holds goods in, in `warehouses` order.
+/// The warehouses belonging to [yard], in `warehouses` order.
 ///
-/// `warehouses` is SHARED across yards with no yard column of its own, so the
-/// association is derived from `warehouse_entries.yard`. Yards differ in both
-/// which warehouses they use and how many, so a picker scoped to one yard must
-/// narrow to these rather than list every warehouse in the system.
-///
-/// A yard that has never written an entry yields the FULL list: an empty
-/// picker would leave the reader unable to choose anything at all.
+/// ⚠️ This used to derive the association from `warehouse_entries.yard`,
+/// because `warehouses` had no yard column. That could never place a NEW
+/// warehouse: it only appeared once goods were stored in it, and goods cannot
+/// be stored in a warehouse the picker does not offer. `warehouses.yard`
+/// (migration 008) answers it directly, and a yard with none gets an empty
+/// list — which is the truth until an admin adds one.
 final warehousesForYardProvider =
     FutureProvider.family<List<WarehouseModel>, String>((ref, yard) async {
   ref.watch(warehouseRefreshTriggerProvider);
-  ref.watch(warehouseEntriesChangeTriggerProvider);
   final all = await ref.watch(warehousesProvider.future);
-  final ids =
-      await ref.read(warehouseServiceProvider).getWarehouseIdsForYard(yard);
-  // A yard with no warehouses of its own gets an EMPTY list, not every
-  // warehouse in the system. `warehouses` is shared, so falling back to all of
-  // them told a yard it had three warehouses when it had none — and offered
-  // filters that could never match a single row.
-  return all.where((w) => ids.contains(w.id)).toList();
+  return all.where((w) => w.yard == yard).toList();
 });
 
 // Selected warehouse tab index on the Warehouses page — persisted so a data

@@ -991,8 +991,13 @@ class PackageService {
     /// keeps them so the flag can be filtered on rather than the row dropped.
     bool includeSent = false,
   }) async {
+    final effectiveYard =
+        AppSession.isYardBound ? AppSession.currentYard : null;
     PgQuery narrow(PgQuery q) {
       q = q.eq('kind', kind);
+      if (effectiveYard != null && effectiveYard.isNotEmpty) {
+        q = q.eq('yard', effectiveYard);
+      }
       if (!includeSent) q = q.eq('sent', false);
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
@@ -1046,11 +1051,15 @@ class PackageService {
   /// page would have made the header disagree with itself.
   Future<({int total, int inAppeal, int actionable})> getHeldGoodsCounts(
       String kind) async {
-    final rows = await AuthService._withNetworkRetry(() => supabase
+    var query = supabase
         .from('held_goods_rows')
         .select('appeal_deadline, appeal_hold, appeal_decision')
         .eq('kind', kind)
-        .eq('sent', false));
+        .eq('sent', false);
+    if (AppSession.isYardBound && AppSession.currentYard.isNotEmpty) {
+      query = query.eq('yard', AppSession.currentYard);
+    }
+    final rows = await AuthService._withNetworkRetry(() => query);
     var inAppeal = 0;
     final now = DateTime.now();
     final list = (rows as List).cast<Map<String, dynamic>>();
@@ -1072,10 +1081,12 @@ class PackageService {
 
   /// The SR numbers on a Held Goods page, for its year filter.
   Future<List<String>> getHeldGoodsYears(String kind) async {
-    final data = await AuthService._withNetworkRetry(() => supabase
-        .from('held_goods_rows')
-        .select('sr_number')
-        .eq('kind', kind));
+    var query =
+        supabase.from('held_goods_rows').select('sr_number').eq('kind', kind);
+    if (AppSession.isYardBound && AppSession.currentYard.isNotEmpty) {
+      query = query.eq('yard', AppSession.currentYard);
+    }
+    final data = await AuthService._withNetworkRetry(() => query);
     return [
       for (final row in (data as List))
         (row as Map<String, dynamic>)['sr_number']?.toString() ?? '',
@@ -1960,8 +1971,16 @@ class WarehouseService {
     DateTime? dateEnd,
     String? year,
   }) async {
+    // A physical warehouse may hold goods from more than one yard. Scope the
+    // query itself (not merely the rendered list) so GL2 never fetches GL1's
+    // entry ids, even if a view policy is changed later.
+    final effectiveYard =
+        AppSession.isYardBound ? AppSession.currentYard : null;
     PgQuery narrow(PgQuery q) {
       q = q.eq('warehouse_id', warehouseId);
+      if (effectiveYard != null && effectiveYard.isNotEmpty) {
+        q = q.eq('yard', effectiveYard);
+      }
 
       if (status == 'confiscated') {
         // ⚠️ The PACKAGE is confiscated, not the item. That chip has
@@ -2043,10 +2062,14 @@ class WarehouseService {
   /// as goods that are not there.
   Future<({List<String> reasons, List<String> statuses, List<String> years})>
       getWarehouseFilterOptions(String warehouseId) async {
-    final data = await AuthService._withNetworkRetry(() => supabase
+    var query = supabase
         .from('warehouse_rows')
         .select('hold_reason, item_status, sr_year, admitted_year')
-        .eq('warehouse_id', warehouseId));
+        .eq('warehouse_id', warehouseId);
+    if (AppSession.isYardBound && AppSession.currentYard.isNotEmpty) {
+      query = query.eq('yard', AppSession.currentYard);
+    }
+    final data = await AuthService._withNetworkRetry(() => query);
 
     final reasons = <String>{};
     final statuses = <String>{};
@@ -2097,6 +2120,13 @@ class WarehouseService {
     );
   }
 
+  /// The warehouses of the SIGNED-IN yard, by code.
+  ///
+  /// ⚠️ No `.eq('yard', ...)` here on purpose: `warehouses.yard` plus the
+  /// `warehouses_yard_select` policy (migration 008) scope this in the
+  /// database, so a yard cannot be handed another yard's storage even if a
+  /// caller forgets to filter. Before that column existed this returned
+  /// EVERY warehouse in the system to every yard.
   Future<List<WarehouseModel>> getWarehouses() async {
     final data = await supabase.from('warehouses').select().order('code');
     return [
@@ -2105,26 +2135,14 @@ class WarehouseService {
     ];
   }
 
-  /// The warehouse ids a given yard actually holds goods in.
+  /// The zones of the SIGNED-IN yard's warehouses, newest warehouse first.
+  /// Reference data — the SR form, the capacity view and the admin panel all
+  /// read it.
   ///
-  /// `warehouses` is a SHARED table with no yard column — the association only
-  /// exists through `warehouse_entries.yard`, so the set is derived from the
-  /// entries that yard has written. Returns an empty set for a yard that has
-  /// never used a warehouse; the caller decides whether that means "show none"
-  /// or "show all".
-  Future<Set<String>> getWarehouseIdsForYard(String yard) async {
-    final data = await supabase
-        .from('warehouse_entries')
-        .select('warehouse_id')
-        .eq('yard', yard);
-    return {
-      for (final row in (data as List))
-        if (row['warehouse_id'] != null) row['warehouse_id'].toString(),
-    };
-  }
-
-  /// Every zone, newest warehouse first. Reference data — the SR form, the
-  /// capacity view and the admin panel all read it.
+  /// ⚠️ Zones carry no yard of their own; they inherit it through their parent
+  /// warehouse, and `warehouse_zones_yard_select` (migration 008) enforces
+  /// that in the database. This used to return every zone in the system, so a
+  /// yard with no warehouses still showed 18 zones' worth of capacity.
   Future<List<WarehouseZoneModel>> getWarehouseZones() async {
     try {
       final data = await AuthService._withNetworkRetry(() => supabase
@@ -2833,7 +2851,17 @@ class WarehouseService {
     }
 
     // A warehouse with zones but nothing in it still belongs on the list.
-    final whNames = <String, Map<String, String>>{};
+    //
+    // ⚠️ Names come from `warehouses`, NOT only from the occupancy rows. The
+    // occupancy view is filtered to this yard's stored goods, so a warehouse
+    // holding nothing contributes no row and therefore no name — every empty
+    // warehouse was listed as "Unknown". `warehouses` is itself yard-scoped
+    // by RLS (migration 008), so this names the yard's own warehouses and no
+    // one else's.
+    final whNames = <String, Map<String, String>>{
+      for (final w in await getWarehouses())
+        w.id: {'name': w.name, 'code': w.code},
+    };
     for (final e in (data as List)) {
       final row = e as Map<String, dynamic>;
       final name = row['warehouse_name']?.toString();
@@ -2846,8 +2874,8 @@ class WarehouseService {
     for (final z in zones) {
       final agg = shell(z.warehouseId);
       if (agg['warehouseName'] == 'Unknown' && whNames[z.warehouseId] != null) {
-        agg['warehouseName'] = whNames[z.warehouseId]!['name'];
-        agg['warehouseCode'] = whNames[z.warehouseId]!['code'];
+        agg['warehouseName'] = whNames[z.warehouseId]!['name']!;
+        agg['warehouseCode'] = whNames[z.warehouseId]!['code']!;
       }
     }
 
@@ -2914,6 +2942,10 @@ class WarehouseService {
     String? location,
     int capacity = 500,
   }) async {
+    // ⚠️ Stamp the yard. A warehouse with no yard belongs to none, and before
+    // `warehouses.yard` existed (migration 008) every warehouse an admin added
+    // became visible in EVERY yard. The RLS write policy also checks this, so
+    // omitting it is rejected rather than silently global.
     final data = await supabase
         .from('warehouses')
         .insert({
@@ -2922,6 +2954,7 @@ class WarehouseService {
           'description': description,
           'location': location,
           'capacity': capacity,
+          'yard': AppSession.currentYard,
         })
         .select()
         .single();

@@ -130,6 +130,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (raw.contains('session_expired')) {
       return 'Your session has timed out due to inactivity. Please sign in again.';
     }
+    // A database fault is not the officer's fault. Telling someone with a
+    // correct password to "check your credentials" sends them round the same
+    // failing loop; naming the server sends them to whoever can fix it.
+    if (low.contains('postgresqlexception') ||
+        low.contains('postgresexception') ||
+        low.contains('severity.error') ||
+        low.contains('infinite recursion detected') ||
+        low.contains('policy for relation') ||
+        low.contains('connection refused') ||
+        low.contains('connection closed')) {
+      return 'The server rejected the sign-in because of a database fault, '
+          'not your password. Please report this to the ICT Directorate.';
+    }
     return 'Sign in failed. Please check your credentials.';
   }
 

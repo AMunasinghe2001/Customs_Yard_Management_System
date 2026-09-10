@@ -82,8 +82,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         } catch (e) {
           AppLog.warn('session verification failed; redirecting to /',
               error: e, tag: 'router');
-          // If verification fails (e.g. email not confirmed), redirect to home/login
-          return '/';
+          // Every deliberate rejection (deactivated, expired, no profile)
+          // signs the user out first, so the next pass sees loggedIn=false
+          // and settles on a public page. An UNEXPECTED failure — the
+          // database down, or a bad RLS policy — leaves the session alive,
+          // and then redirecting to '/' re-runs this same failing check on
+          // arrival: the redirect never settles, no page is ever built, and
+          // the window freezes with no way back. So end the session before
+          // bouncing, and never bounce a route that is already public.
+          if (supabase.auth.currentUser != null) {
+            try {
+              await ref.read(authServiceProvider).signOut();
+            } catch (signOutError) {
+              AppLog.warn('sign-out after failed verification also failed',
+                  error: signOutError, tag: 'router');
+            }
+          }
+          return isPublicPage ? null : '/';
         }
       }
 

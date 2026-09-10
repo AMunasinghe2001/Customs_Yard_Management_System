@@ -162,6 +162,18 @@ names = sorted((f for f in os.listdir(MIG) if f.endswith('.sql')), key=sort_key)
 # has run. Fold it in ahead of the migrations that depend on it.
 MULTI_YARD = os.path.join(ROOT, 'migrations', '001_multi_yard.sql')
 YARD_ISOLATION = os.path.join(ROOT, 'migrations', '002_strict_yard_isolation.sql')
+DATABASE_YARD_ISOLATION = os.path.join(
+    ROOT, 'migrations', '003_database_yard_isolation.sql')
+WAREHOUSE_QUERY_YARD_SCOPE = os.path.join(
+    ROOT, 'migrations', '004_warehouse_query_yard_scope.sql')
+DATABASE_WIDE_YARD_BOUNDARY = os.path.join(
+    ROOT, 'migrations', '005_restrict_yard_staff_at_database.sql')
+PROFILES_POLICY_RECURSION_FIX = os.path.join(
+    ROOT, 'migrations', '006_profiles_policy_recursion_fix.sql')
+DROP_ADMIN_PROFILES_POLICY = os.path.join(
+    ROOT, 'migrations', '007_drop_admin_profiles_policy.sql')
+WAREHOUSES_BELONG_TO_A_YARD = os.path.join(
+    ROOT, 'migrations', '008_warehouses_belong_to_a_yard.sql')
 def emit(label: str, body: str) -> None:
     parts.append(
         '\n-- ' + '=' * 74 + '\n'
@@ -190,6 +202,38 @@ for name in names:
 if os.path.exists(YARD_ISOLATION):
     emit('migrations/002_strict_yard_isolation.sql (folded in)',
          io.open(YARD_ISOLATION, encoding='utf-8').read())
+
+# This must be last: it makes the reporting views obey the policies installed
+# above, including when a later schema migration recreated one of those views.
+if os.path.exists(DATABASE_YARD_ISOLATION):
+    emit('migrations/003_database_yard_isolation.sql (folded in)',
+         io.open(DATABASE_YARD_ISOLATION, encoding='utf-8').read())
+
+if os.path.exists(WAREHOUSE_QUERY_YARD_SCOPE):
+    emit('migrations/004_warehouse_query_yard_scope.sql (folded in)',
+         io.open(WAREHOUSE_QUERY_YARD_SCOPE, encoding='utf-8').read())
+
+if os.path.exists(DATABASE_WIDE_YARD_BOUNDARY):
+    emit('migrations/005_restrict_yard_staff_at_database.sql (folded in)',
+         io.open(DATABASE_WIDE_YARD_BOUNDARY, encoding='utf-8').read())
+
+if os.path.exists(PROFILES_POLICY_RECURSION_FIX):
+    emit('migrations/006_profiles_policy_recursion_fix.sql (folded in)',
+         io.open(PROFILES_POLICY_RECURSION_FIX, encoding='utf-8').read())
+
+# The base schema's admin policy reads profiles inline, so it recurses the way
+# 006's did — and it grants cross-yard access that 002 meant to remove. The
+# drop must come after the base schema that creates it.
+if os.path.exists(DROP_ADMIN_PROFILES_POLICY):
+    emit('migrations/007_drop_admin_profiles_policy.sql (folded in)',
+         io.open(DROP_ADMIN_PROFILES_POLICY, encoding='utf-8').read())
+
+# Gives warehouses (and, through them, zones) a yard, replacing the policies
+# that showed every yard's storage to every other yard. After the base schema
+# that creates those policies.
+if os.path.exists(WAREHOUSES_BELONG_TO_A_YARD):
+    emit('migrations/008_warehouses_belong_to_a_yard.sql (folded in)',
+         io.open(WAREHOUSES_BELONG_TO_A_YARD, encoding='utf-8').read())
 
 parts[0] = HEADER.format(n=len(names))
 

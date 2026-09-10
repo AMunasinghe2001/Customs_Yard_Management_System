@@ -8,9 +8,10 @@ PostgreSQL server on the office PC. These files build that database.
 | # | File | What it does |
 |---|------|--------------|
 | 1 | `01_supabase_compat.sql` | Recreates the `auth` schema Supabase provided — `auth.uid()`, `auth.role()`, `auth.users` — plus the `anon` / `authenticated` / `service_role` roles and the `supabase_realtime` publication. |
-| 2 | `02_schema.sql` | Every table, function, policy and trigger: the base schema followed by all 76 migrations in date order. |
+| 2 | `02_schema.sql` | Every table, function, policy and trigger: the base schema followed by all source migrations in date order. |
 | 3 | `03_realtime.sql` | NOTIFY triggers on the 18 tables the app watches, replacing Supabase's realtime channels. |
 | 4 | `04_auth.sql` | `sign_in` / `sign_up` / `change_password` over `auth.users`, using bcrypt. |
+| 5 | `66_yard_app_role.sql` | Creates the non-superuser account the desktop clients use, so PostgreSQL RLS actually enforces each yard boundary. |
 
 Run them in order. Each depends on the one before: `02_schema.sql` references
 `auth.uid()` 66 times, `03_realtime.sql` needs the tables to exist, and
@@ -66,7 +67,7 @@ flutter run \
   --dart-define=PG_HOST=192.168.1.50 \
   --dart-define=PG_PORT=5432 \
   --dart-define=PG_DATABASE=Customs_SR_DB \
-  --dart-define=PG_USER=postgres \
+  --dart-define=PG_USER=yard_app \
   --dart-define=PG_PASSWORD=...
 ```
 
