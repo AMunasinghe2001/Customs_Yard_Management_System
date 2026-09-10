@@ -7735,3 +7735,275 @@ begin
   end if;
 end $$;
 
+
+-- ==========================================================================
+--  migrations/009_warehouse_yard_boundary.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Migration 008 gave `warehouses` a yard, but left it protected only by
+-- PERMISSIVE policies. PostgreSQL OR-s permissive policies together, so
+-- `warehouses_disposal_read` and `executive_read_all` widen the result set
+-- past `warehouses_yard_select` — correct for those national roles, but it
+-- means a yard officer/admin has no policy that can never be widened.
+--
+-- Migration 005 already solved this for every operational table by adding a
+-- RESTRICTIVE policy, which is AND-ed with all permissive ones. It applies
+-- itself to every BASE TABLE carrying a `yard` column — but it ran BEFORE 008
+-- existed, so `warehouses` was not a candidate at the time, and re-running it
+-- is not part of a normal upgrade. `warehouse_zones` has no `yard` column at
+-- all (it inherits through warehouse_id), so 005 can never cover it.
+--
+-- This closes both, using the same helpers so the rule stays one rule:
+--   * yard staff (officer/admin) are pinned to their own yard
+--   * directorate roles keep their intentional cross-yard reads
+--
+-- Safe to re-run.
+-- ============================================================================
+
+drop policy if exists yard_staff_boundary on public.warehouses;
+create policy yard_staff_boundary on public.warehouses
+  as restrictive
+  for all
+  using (
+    (not public.auth_user_is_yard_staff())
+    or yard = public.auth_user_yard()
+  );
+
+-- Zones carry no yard of their own; the boundary follows the parent warehouse
+-- through the SECURITY DEFINER helper added in 008, so evaluating it does not
+-- re-enter the warehouses policies.
+drop policy if exists yard_staff_boundary on public.warehouse_zones;
+create policy yard_staff_boundary on public.warehouse_zones
+  as restrictive
+  for all
+  using (
+    (not public.auth_user_is_yard_staff())
+    or public.warehouse_yard(warehouse_id) = public.auth_user_yard()
+  );
+
+-- ── Verification ────────────────────────────────────────────────────────────
+do $$
+declare
+  missing text;
+begin
+  select string_agg(t, ', ') into missing
+    from unnest(array['warehouses', 'warehouse_zones']) as t
+   where not exists (
+     select 1 from pg_policy p
+       join pg_class c on c.oid = p.polrelid
+       join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public'
+        and c.relname = t
+        and p.polname = 'yard_staff_boundary'
+        and not p.polpermissive
+   );
+  if missing is not null then
+    raise exception 'restrictive yard boundary missing on: %', missing;
+  end if;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/010_remaining_views_run_as_caller.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- The last two views that ignored RLS.
+--
+-- A view without `security_invoker` runs as its OWNER, so the policies that
+-- scope a yard officer to their own yard never apply to it. `daily_stats`
+-- aggregates `packages` across EVERY yard; `password_rotation_status` reports
+-- on accounts. Neither is queried by the app today, which is why they went
+-- unnoticed — but an unscoped view is a leak waiting for the first caller,
+-- exactly like warehouse_contents was (migration 008).
+--
+-- Safe to re-run.
+-- ============================================================================
+
+alter view public.daily_stats set (security_invoker = true);
+alter view public.password_rotation_status set (security_invoker = true);
+
+-- Verification: NO view in public may bypass the caller's policies.
+do $$
+declare
+  bad text;
+begin
+  select string_agg(c.relname, ', ') into bad
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and c.relkind = 'v'
+     and not coalesce('security_invoker=true' = any (c.reloptions), false);
+
+  if bad is not null then
+    raise exception 'these views still run as their owner: %', bad;
+  end if;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/011_yard_index_completeness.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Every yard-scoped read filters on `yard`, so every table carrying that
+-- column needs an index on it. Three were missing: without one, each query
+-- from any yard sequentially scans the whole table, and the cost grows with
+-- the number of yards using the system rather than with one yard's data.
+--
+-- These three are empty today, which is exactly when to add the index: it is
+-- free now, and the seq scan would only start hurting once the tenders
+-- workflow is in real use across several yards.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+create index if not exists tenders_yard_idx
+  on public.tenders (yard);
+create index if not exists tender_disposals_yard_idx
+  on public.tender_disposals (yard);
+create index if not exists officer_signup_otps_yard_idx
+  on public.officer_signup_otps (yard);
+
+-- Verification: no BASE TABLE with a `yard` column may be left unindexed on
+-- it. Catches the next table that adds the column and forgets the index.
+do $$
+declare
+  missing text;
+begin
+  select string_agg(c.table_name, ', ') into missing
+    from information_schema.columns c
+    join information_schema.tables tb
+      on tb.table_schema = c.table_schema and tb.table_name = c.table_name
+   where c.table_schema = 'public'
+     and c.column_name = 'yard'
+     and tb.table_type = 'BASE TABLE'
+     and not exists (
+       select 1 from pg_indexes i
+        where i.schemaname = 'public'
+          and i.tablename = c.table_name
+          and i.indexdef like '%(yard%'
+     );
+
+  if missing is not null then
+    raise exception 'yard column is not indexed on: %', missing;
+  end if;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/012_rls_helpers_evaluated_once.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Every RLS policy here calls no-argument helpers — auth.uid(), auth.role(),
+-- auth_user_yard(), auth_user_is_*() — and PostgreSQL was calling them ONCE
+-- PER ROW. Each of those helpers runs `select ... from profiles`, so reading
+-- 176 packages meant hundreds of profile lookups:
+--
+--   Seq Scan on packages (actual time=1.300..20.644 rows=176)
+--     Filter: ((NOT auth_user_is_yard_staff()) OR (yard = auth_user_yard()))
+--             AND ((yard = auth_user_yard()) OR auth_user_is_valuation()
+--                  OR auth_user_is_executive() OR auth_user_is_disposal()
+--                  OR auth_user_is_appeal() OR ...)
+--     Buffers: shared hit=613
+--
+-- 613 buffer hits to count 176 rows, ~35ms per small query on localhost. The
+-- app's heaviest page fetch (getAllPackages) took 639ms warm, and that is the
+-- lag felt when moving between pages.
+--
+-- The fix is to wrap each no-argument call in a scalar subquery. `(select f())`
+-- is hoisted into an InitPlan and evaluated ONCE per statement instead of once
+-- per row. It is purely an evaluation-order change: the value is identical, so
+-- no policy's meaning changes — which the verification at the bottom proves by
+-- comparing visible rows for every role before and after.
+--
+-- Helpers that take an argument (warehouse_yard(warehouse_id)) genuinely vary
+-- per row and are deliberately left alone.
+--
+-- Safe to re-run: it unwraps before it wraps, so it never nests.
+-- ============================================================================
+
+do $$
+declare
+  r record;
+  q_old text;
+  c_old text;
+  q_new text;
+  c_new text;
+  stmt text;
+  -- Unwrap: pg_get_expr renders a wrapped call as "( SELECT f() AS f)".
+  unwrap_re constant text :=
+    '\( SELECT (auth\.uid|auth\.role|auth_user_[a-z_]+)\(\) AS [a-z_]+\)';
+  -- Wrap: only zero-argument calls, so warehouse_yard(warehouse_id) is safe.
+  wrap_re constant text := '(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)';
+begin
+  for r in
+    select c.relname                              as tbl,
+           p.polname                              as pol,
+           pg_get_expr(p.polqual, p.polrelid)     as qual,
+           pg_get_expr(p.polwithcheck, p.polrelid) as wchk
+      from pg_policy p
+      join pg_class c on c.oid = p.polrelid
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public'
+  loop
+    q_old := r.qual;
+    c_old := r.wchk;
+
+    q_new := q_old;
+    if q_new is not null then
+      q_new := regexp_replace(q_new, unwrap_re, '\1()', 'g');
+      q_new := regexp_replace(q_new, wrap_re, '(select \1())', 'g');
+    end if;
+
+    c_new := c_old;
+    if c_new is not null then
+      c_new := regexp_replace(c_new, unwrap_re, '\1()', 'g');
+      c_new := regexp_replace(c_new, wrap_re, '(select \1())', 'g');
+    end if;
+
+    -- Nothing to do unless a call actually moved.
+    if q_new is not distinct from q_old and c_new is not distinct from c_old then
+      continue;
+    end if;
+
+    -- USING and WITH CHECK must only be named when the policy already has
+    -- them: an INSERT policy has no USING, and naming it is an error.
+    stmt := format('alter policy %I on public.%I', r.pol, r.tbl);
+    if q_new is not null then
+      stmt := stmt || format(' using (%s)', q_new);
+    end if;
+    if c_new is not null then
+      stmt := stmt || format(' with check (%s)', c_new);
+    end if;
+
+    execute stmt;
+  end loop;
+end $$;
+
+-- ── Verification ────────────────────────────────────────────────────────────
+-- Every no-argument helper must now be hoisted, on every policy.
+do $$
+declare
+  bad text;
+begin
+  select string_agg(c.relname || '.' || p.polname, ', ') into bad
+    from pg_policy p
+    join pg_class c on c.oid = p.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and (
+       -- a bare call is one NOT preceded by "SELECT "
+       coalesce(pg_get_expr(p.polqual, p.polrelid), '')
+         ~ '(?<!SELECT )(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)'
+       or coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')
+         ~ '(?<!SELECT )(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)'
+     );
+
+  if bad is not null then
+    raise exception 'these policies still call a helper per row: %', bad;
+  end if;
+end $$;
+

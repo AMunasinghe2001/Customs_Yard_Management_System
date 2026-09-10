@@ -174,6 +174,14 @@ DROP_ADMIN_PROFILES_POLICY = os.path.join(
     ROOT, 'migrations', '007_drop_admin_profiles_policy.sql')
 WAREHOUSES_BELONG_TO_A_YARD = os.path.join(
     ROOT, 'migrations', '008_warehouses_belong_to_a_yard.sql')
+WAREHOUSE_YARD_BOUNDARY = os.path.join(
+    ROOT, 'migrations', '009_warehouse_yard_boundary.sql')
+REMAINING_VIEWS_AS_CALLER = os.path.join(
+    ROOT, 'migrations', '010_remaining_views_run_as_caller.sql')
+YARD_INDEX_COMPLETENESS = os.path.join(
+    ROOT, 'migrations', '011_yard_index_completeness.sql')
+RLS_HELPERS_EVALUATED_ONCE = os.path.join(
+    ROOT, 'migrations', '012_rls_helpers_evaluated_once.sql')
 def emit(label: str, body: str) -> None:
     parts.append(
         '\n-- ' + '=' * 74 + '\n'
@@ -234,6 +242,31 @@ if os.path.exists(DROP_ADMIN_PROFILES_POLICY):
 if os.path.exists(WAREHOUSES_BELONG_TO_A_YARD):
     emit('migrations/008_warehouses_belong_to_a_yard.sql (folded in)',
          io.open(WAREHOUSES_BELONG_TO_A_YARD, encoding='utf-8').read())
+
+# 005's restrictive boundary applies itself to tables that have a `yard`
+# column, so it could not cover warehouses (008 added the column later) or
+# warehouse_zones (no yard column at all). Must come after 008.
+if os.path.exists(WAREHOUSE_YARD_BOUNDARY):
+    emit('migrations/009_warehouse_yard_boundary.sql (folded in)',
+         io.open(WAREHOUSE_YARD_BOUNDARY, encoding='utf-8').read())
+
+# Last: every view must run as the caller, including ones a later migration
+# recreated, or it silently bypasses every policy above.
+if os.path.exists(REMAINING_VIEWS_AS_CALLER):
+    emit('migrations/010_remaining_views_run_as_caller.sql (folded in)',
+         io.open(REMAINING_VIEWS_AS_CALLER, encoding='utf-8').read())
+
+# Every yard-filtered table needs an index on `yard`, or each yard's reads
+# scan the whole table. Runs last so it sees every column added above.
+if os.path.exists(YARD_INDEX_COMPLETENESS):
+    emit('migrations/011_yard_index_completeness.sql (folded in)',
+         io.open(YARD_INDEX_COMPLETENESS, encoding='utf-8').read())
+
+# Truly last: it rewrites whatever policies exist above, so every policy any
+# earlier migration created must already be in place.
+if os.path.exists(RLS_HELPERS_EVALUATED_ONCE):
+    emit('migrations/012_rls_helpers_evaluated_once.sql (folded in)',
+         io.open(RLS_HELPERS_EVALUATED_ONCE, encoding='utf-8').read())
 
 parts[0] = HEADER.format(n=len(names))
 

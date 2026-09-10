@@ -8,6 +8,8 @@ void main() {
   final services = File('lib/services/services.dart').readAsStringSync();
   final providers = File('lib/core/providers.dart').readAsStringSync();
   final models = File('lib/models/models.dart').readAsStringSync();
+  final boundary =
+      File('migrations/009_warehouse_yard_boundary.sql').readAsStringSync();
 
   test('warehouses carry the yard they stand in', () {
     expect(migration, contains('add column if not exists yard text'));
@@ -75,5 +77,43 @@ void main() {
     // Names used to come only from the occupancy view, which is filtered to
     // stored goods — so every empty warehouse was listed as "Unknown".
     expect(services, contains('for (final w in await getWarehouses())'));
+  });
+
+  test('a permissive policy cannot widen a yard officer past their yard', () {
+    // Permissive policies are OR-ed, so warehouses_disposal_read and
+    // executive_read_all widen the result set. Only a RESTRICTIVE policy,
+    // which is AND-ed, can pin yard staff — the same fix migration 005 made
+    // for the operational tables.
+    expect(boundary, contains('as restrictive'));
+    expect(boundary, contains('auth_user_is_yard_staff()'));
+    expect(boundary, contains('yard = public.auth_user_yard()'));
+    // Zones have no yard column, so the boundary follows the parent.
+    expect(boundary,
+        contains('public.warehouse_yard(warehouse_id) = public.auth_user_yard()'));
+  });
+
+  test('005 could not have covered these two tables', () {
+    // 005 applies itself to BASE TABLEs with a `yard` column. warehouses had
+    // no such column until 008, and warehouse_zones still has none — so both
+    // need the boundary stated explicitly.
+    final five =
+        File('migrations/005_restrict_yard_staff_at_database.sql').readAsStringSync();
+    expect(five, contains("c.column_name = 'yard'"));
+    final eight =
+        File('migrations/008_warehouses_belong_to_a_yard.sql').readAsStringSync();
+    expect(eight, contains('add column if not exists yard text'));
+  });
+
+  test('every view runs as the caller', () {
+    // A view without security_invoker runs as its OWNER, so none of the yard
+    // policies apply to it. daily_stats aggregated packages across every
+    // yard; warehouse_contents joined four tables unscoped.
+    final views =
+        File('migrations/010_remaining_views_run_as_caller.sql').readAsStringSync();
+    expect(views, contains('alter view public.daily_stats'));
+    expect(views, contains('alter view public.password_rotation_status'));
+    expect(views, contains('security_invoker = true'));
+    // And it fails loudly if any view is left behind.
+    expect(views, contains('still run as their owner'));
   });
 }

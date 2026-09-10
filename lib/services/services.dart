@@ -5,6 +5,7 @@ import '../core/app_log.dart';
 import '../core/parse_isolate.dart';
 import '../core/supabase_client.dart';
 import '../core/app_session.dart';
+import '../core/session_reset.dart';
 import '../core/security_policy.dart';
 import '../core/yards.dart';
 import '../core/directorates.dart';
@@ -502,6 +503,11 @@ class AuthService {
     }
     AppSession.clear();
     await supabase.auth.signOut();
+    // Drop every cached provider with the session. Without this the rows
+    // fetched for the person who just left stay in memory and render for
+    // whoever signs in next — the database is scoped correctly, but the
+    // screen never re-asks it. See core/session_reset.dart.
+    clearCachedSessionData();
   }
 
   Future<ProfileModel?> getCurrentProfile() async {

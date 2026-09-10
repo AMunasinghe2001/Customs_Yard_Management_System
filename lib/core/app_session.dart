@@ -72,7 +72,14 @@ class AppSession {
   }
 
   static void clear() {
-    currentYard = kDefaultYardCode;
+    // ⚠️ NOT kDefaultYardCode. That default is 'GL1', so a cleared session
+    // silently claimed to BE GL1 — and every Dart-side `.eq('yard', ...)`
+    // filter, plus the yard stamped on anything created before the next
+    // profile loaded, would quietly say GL1. An ended session belongs to no
+    // yard: the empty string matches none, and the callers that build
+    // filters already skip an empty yard and fall through to the database's
+    // own per-yard policies, which is the safe direction.
+    currentYard = '';
     currentDirectorate = null;
     currentRole = null;
     // Back to "see everything" on sign-out: the next user's role is unknown

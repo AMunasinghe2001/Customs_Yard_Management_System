@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/supabase_client.dart';
+import 'core/session_reset.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/app_log.dart';
 import 'core/error_handling.dart';
@@ -77,11 +78,22 @@ Future<void> _start() async {
   // office day, so the warm-up stays rather than being rediscovered later.
   unawaited(loadPublicHolidays());
 
+  // ⚠️ The ProviderScope is REBUILT on every sign-out, keyed by the session
+  // epoch. Riverpod caches each provider's value for the life of its
+  // container and none of the data providers are autoDispose, so without
+  // this the previous user's rows stayed in memory and rendered under the
+  // next user's name — GL1 packages under a GL2 officer. Dropping the
+  // container is what guarantees a session starts empty; see
+  // core/session_reset.dart.
   runApp(
-    ProviderScope(
-      child: startupError == null
-          ? const CustomsApp()
-          : DatabaseUnavailableApp(error: startupError),
+    ValueListenableBuilder<int>(
+      valueListenable: sessionEpoch,
+      builder: (_, epoch, __) => ProviderScope(
+        key: ValueKey('session-$epoch'),
+        child: startupError == null
+            ? const CustomsApp()
+            : DatabaseUnavailableApp(error: startupError),
+      ),
     ),
   );
 }
