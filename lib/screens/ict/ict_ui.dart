@@ -49,35 +49,16 @@ const double kIctPillRadius = 6;
 /// same size, because its whole area is ink and theirs is an edge. So the
 /// fields go up and the button comes down to meet them — see
 /// [kIctPrimaryButtonHeight].
-const double kIctControlHeight = 40;
+const double kIctControlHeight = 32;
 
-/// The same as a field. See [kIctFieldPadY] for what makes that true.
-const double kIctPrimaryButtonHeight = kIctControlHeight;
+/// Matches toolbar controls and card header buttons at 32px.
+const double kIctPrimaryButtonHeight = 32;
 
-/// ⚠️ A primary action in a CARD HEADER, which is a different job.
-///
-/// In a toolbar the button stands in a row of fields, so it matches them. In a
-/// card header it stands beside a title and a subtitle — about 36pt of text —
-/// and at the field height it was the TALLEST thing in the strip, so it set
-/// the header's height and pushed the rule under it down. A header's height
-/// should be decided by its words.
+/// A primary action in a CARD HEADER (compact at 32px).
 const double kIctHeaderButtonHeight = 32;
 
-/// ⚠️ The vertical padding that makes a field PAINT its full height.
-///
-/// This is the number the whole "the button is taller" argument came down to.
-/// An InputDecorator does not stretch its border to the box you give it: with
-/// `isDense`, it sizes its own container to the content plus this padding and
-/// CENTRES that inside the box. So a field in a SizedBox(40) with 8px padding
-/// laid out at 40 and painted at 34, while the button's fill ran the whole 40
-/// — and every `getRect` in the test suite reported 40 for both, because 40 is
-/// what the layout said.
-///
-/// 11 makes the painted border exactly kIctControlHeight: content (~16) +
-/// 2 x 11 + the 1px stroke top and bottom. Change one and re-run
-/// tool/measure_toolbar.py, which reads the PAINTED pixels out of a golden
-/// rather than asking the widget tree what it meant to do.
-const double kIctFieldPadY = 11;
+/// The vertical padding that makes a field paint its full height.
+const double kIctFieldPadY = 12.0;
 
 /// ⚠️ The whole filter strip, capped. A caption, a control and the padding
 /// around them — and nothing else. The strip sits above the table on every
@@ -457,51 +438,42 @@ class IctToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: context.colors.cardDark,
         borderRadius: BorderRadius.circular(kIctCardRadius),
         border: Border.all(color: context.colors.borderColor),
       ),
-      // ⚠️ Aligned on the BOTTOM. Every field carries a caption above it, so
-      // aligning on the top would step the controls down the row by the
-      // height of their own labels.
-      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        for (var i = 0; i < children.length; i++) ...[
-          if (i > 0) const Gap(10),
-          children[i],
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const Gap(10),
+            children[i],
+          ],
         ],
-      ]),
+      ),
     );
   }
 }
 
-/// Opens the profile over a BLURRED console.
-///
-/// ⚠️ The blur is the point, not decoration. A dialog on a flat grey scrim
-/// still sits on a page of sharp text and tables, and the eye keeps reading
-/// past it; blurring what is behind takes the console out of focus so the
-/// dialog is the only thing left to read. Material's default barrier is a
-/// flat scrim, so the filter has to be supplied here.
-Future<void> showIctProfileDialog(BuildContext context, Color accent) {
-  return showGeneralDialog(
+/// Opens any dialog in ICT over a subtle blurred and darkened backdrop.
+Future<T?> showIctDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+}) {
+  return showGeneralDialog<T>(
     context: context,
-    barrierDismissible: true,
-    barrierLabel: 'Profile',
-    // ⚠️ The blur alone was not enough. A light scrim over a blurred page
-    // still reads as the console, slightly smudged — the dialog has to look
-    // like it is IN FRONT of something, and darkness is what does that. This
-    // matches the scrim every other dialog in the app drops.
-    barrierColor: Colors.black.withOpacity(0.45),
+    barrierDismissible: barrierDismissible,
+    barrierLabel: 'Dialog',
+    barrierColor: Colors.black.withOpacity(0.65),
     transitionDuration: const Duration(milliseconds: 180),
-    pageBuilder: (context, _, __) =>
-        DisposalProfileDialog(accent: accent, erp: true),
-    transitionBuilder: (context, animation, _, child) {
+    pageBuilder: (ctx, anim, secondaryAnim) => builder(ctx),
+    transitionBuilder: (ctx, animation, secondaryAnimation, child) {
       final t = Curves.easeOut.transform(animation.value);
       return BackdropFilter(
-        // Ramped with the animation: a blur that snaps to full strength on
-        // the first frame reads as the window glitching.
-        filter: ImageFilter.blur(sigmaX: 6 * t, sigmaY: 6 * t),
+        filter: ImageFilter.blur(sigmaX: 2.5 * t, sigmaY: 2.5 * t),
         child: Opacity(
           opacity: t,
           child: Transform.scale(scale: 0.98 + 0.02 * t, child: child),
@@ -511,13 +483,15 @@ Future<void> showIctProfileDialog(BuildContext context, Color accent) {
   );
 }
 
+/// Opens the profile over a BLURRED console.
+Future<void> showIctProfileDialog(BuildContext context, Color accent) {
+  return showIctDialog<void>(
+    context: context,
+    builder: (_) => DisposalProfileDialog(accent: accent, erp: true),
+  );
+}
+
 /// The small caption over a toolbar control.
-///
-/// ⚠️ Every field in the strip has one — including the search box, which is
-/// why it exists as its own widget. Without it the search box was a lone
-/// 34px box beside three cells that were a caption AND a box, so although
-/// every control measured the same it read as the small one in the row. The
-/// controls were never different heights; the cells were.
 class IctFieldLabel extends StatelessWidget {
   const IctFieldLabel(this.text, {super.key});
   final String text;
@@ -525,29 +499,25 @@ class IctFieldLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Text(text.toUpperCase(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          // ⚠️ height: 1 -- the caption is a label, not a line of prose, and
-          // the font's default line spacing added several pixels of air above
-          // and below it that the strip then had to carry on every page.
-          style: TextStyle(
-              color: context.colors.textMuted,
-              fontSize: 9.5,
-              height: 1,
-              letterSpacing: 0.8,
-              fontWeight: FontWeight.w800)),
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        text.isEmpty ? ' ' : text.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: text.isEmpty ? Colors.transparent : context.colors.textMuted,
+          fontSize: 9.5,
+          height: 1.1,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
 
-/// ICT's search box: neutral, not accent-tinted.
-///
-/// ⚠️ A search field is where the eye should land LAST, after the metrics and
-/// the section title. ICT's was filled and bordered in the portal accent,
-/// which made the loudest thing on the page the box you type into.
-class IctSearchField extends StatelessWidget {
+/// ICT's dedicated search box: neutral, self-contained, independent container.
+class IctSearchField extends StatefulWidget {
   const IctSearchField({
     super.key,
     required this.controller,
@@ -560,73 +530,104 @@ class IctSearchField extends StatelessWidget {
 
   final TextEditingController controller;
   final String hintText;
-
-  /// The caption above the box, so this cell matches the filters beside it.
   final String label;
   final Color accent;
   final ValueChanged<String> onChanged;
   final VoidCallback? onClear;
 
   @override
+  State<IctSearchField> createState() => _IctSearchFieldState();
+}
+
+class _IctSearchFieldState extends State<IctSearchField> {
+  final FocusNode _focusNode = FocusNode();
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(() {
+      if (mounted) setState(() => _isFocused = _focusNode.hasFocus);
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(kIctControlRadius),
-      borderSide: BorderSide(color: c.borderColor),
-    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        IctFieldLabel(label),
-        SizedBox(
-      height: kIctControlHeight,
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: TextStyle(
-            color: c.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: hintText,
-          hintStyle: TextStyle(color: c.textMuted, fontSize: 13),
-          prefixIcon: Icon(Icons.search_rounded, size: 18, color: c.textMuted),
-          prefixIconConstraints:
-              const BoxConstraints(minWidth: 40, maxHeight: 20),
-          suffixIcon: controller.text.isEmpty || onClear == null
-              ? null
-              : IconButton(
-                  splashRadius: 14,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 34),
-                  icon: Icon(Icons.close_rounded, size: 15, color: c.textMuted),
-                  onPressed: onClear,
-                ),
-          filled: true,
-          fillColor: c.surfaceDark,
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: 10, vertical: kIctFieldPadY),
-          border: border,
-          enabledBorder: border,
-          focusedBorder: OutlineInputBorder(
+        IctFieldLabel(widget.label),
+        Container(
+          height: kIctControlHeight,
+          decoration: BoxDecoration(
+            color: c.surfaceDark,
             borderRadius: BorderRadius.circular(kIctControlRadius),
-            borderSide: BorderSide(color: accent, width: 1.4),
+            border: Border.all(
+              color: _isFocused ? widget.accent : c.borderColor,
+              width: _isFocused ? 1.4 : 1.0,
+            ),
           ),
-        ),
-      ),
+          child: Row(
+            children: [
+              const SizedBox(width: 10),
+              Icon(Icons.search_rounded, size: 16, color: c.textMuted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: _focusNode,
+                  onChanged: widget.onChanged,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: false,
+                    hoverColor: Colors.transparent,
+                    fillColor: Colors.transparent,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                    hintText: widget.hintText,
+                    hintStyle: TextStyle(
+                      color: c.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.controller.text.isNotEmpty && widget.onClear != null)
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: widget.onClear,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    child: Icon(Icons.close_rounded, size: 15, color: c.textMuted),
+                  ),
+                ),
+              const SizedBox(width: 4),
+            ],
+          ),
         ),
       ],
     );
   }
 }
 
-/// One ICT filter: a small caption, then the control.
-///
-/// ⚠️ The caption is a real label above the field, not a Material floating
-/// label inside it. A floating label sits ON the border and shrinks as soon as
-/// a value is chosen, so a row of filters showed four differently-sized
-/// half-labels; an ERP filter bar names each control the same way every time,
-/// whether or not it is set.
+/// One ICT filter: a small caption, then the dedicated standalone dropdown button.
 class IctSelect extends StatelessWidget {
   const IctSelect({
     super.key,
@@ -636,6 +637,7 @@ class IctSelect extends StatelessWidget {
     required this.value,
     required this.options,
     required this.onChanged,
+    this.customDisplayLabel,
     this.menuWidth = 240,
   });
 
@@ -645,74 +647,87 @@ class IctSelect extends StatelessWidget {
   final String value;
   final List<StyledDropdownOption<String>> options;
   final ValueChanged<String?> onChanged;
+  final String? customDisplayLabel;
   final double menuWidth;
+
+  String _selectedLabel() {
+    if (customDisplayLabel != null && customDisplayLabel!.isNotEmpty) {
+      return customDisplayLabel!;
+    }
+    for (final o in options) {
+      if (o.value == value) return o.label;
+    }
+    return value;
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    // Set apart from the default: an unset filter is the norm, so it must not
-    // look like a warning, but a filter that IS narrowing the table has to be
-    // visible at a glance or people forget it is on.
-    final set = value != 'all';
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(kIctControlRadius),
-      borderSide:
-          BorderSide(color: set ? accent.withOpacity(0.55) : c.borderColor),
-    );
+    final set = value != 'all' && value.isNotEmpty;
+    final displayLabel = _selectedLabel();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         IctFieldLabel(label),
-        SizedBox(
-          height: kIctControlHeight,
-          child: Theme(
-            data: Theme.of(context).copyWith(
-              inputDecorationTheme:
-                  Theme.of(context).inputDecorationTheme.copyWith(
-                        border: border,
-                        enabledBorder: border,
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(kIctControlRadius),
-                          borderSide: BorderSide(color: accent, width: 1.4),
+        Builder(
+          builder: (btnContext) {
+            return InkWell(
+              borderRadius: BorderRadius.circular(kIctControlRadius),
+              onTap: () async {
+                final picked = await showStyledOptionsMenu<String>(
+                  btnContext,
+                  options: options,
+                  value: value,
+                  menuWidth: menuWidth,
+                  accentColor: accent,
+                );
+                if (picked != null) {
+                  onChanged(picked);
+                }
+              },
+              child: Container(
+                height: kIctControlHeight,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: set ? accent.withOpacity(0.08) : c.surfaceDark,
+                  borderRadius: BorderRadius.circular(kIctControlRadius),
+                  border: Border.all(
+                    color: set ? accent.withOpacity(0.6) : c.borderColor,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      icon,
+                      size: 14,
+                      color: set ? accent : c.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        displayLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: set ? accent : c.textPrimary,
                         ),
                       ),
-            ),
-            child: StyledDropdownFormField<String>(
-              value: value,
-              label: label,
-              // Never floats: the caption above already names the control.
-              floatingLabelBehavior: FloatingLabelBehavior.never,
-              helperText: null,
-              isDense: true,
-              menuWidth: menuWidth,
-              fillColor: set ? accent.withOpacity(0.07) : c.surfaceDark,
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: kIctFieldPadY),
-              prefixIcon: Icon(icon,
-                  size: 16, color: set ? accent : c.textMuted),
-              // ⚠️ Constrained, exactly as IctSearchField constrains its own.
-              //
-              // A Material prefix icon is a 48x48 tap target by default, so
-              // the decorator's INTRINSIC height was 48 against the search
-              // box's 36. Both were then forced into a 34px SizedBox: the
-              // search box fitted and the dropdown overflowed, painting its
-              // border taller than the box it was given. Every measurement of
-              // the LAYOUT agreed the two were 34 -- and they were; what
-              // differed was what got painted. Measured now by the probe in
-              // ict_control_heights_test, which asserts the INTRINSIC heights
-              // match before anything is forced.
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 38, maxHeight: 20),
-              valueStyle: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: set ? accent : c.textPrimary),
-              options: options,
-              onChanged: onChanged,
-            ),
-          ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.arrow_drop_down_rounded,
+                      color: set ? accent : c.textMuted,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ],
     );
@@ -741,27 +756,42 @@ class IctPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    final button = SizedBox(
       height: dense ? kIctHeaderButtonHeight : kIctPrimaryButtonHeight,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: dense ? 15 : 16, color: Colors.white),
-        label: Text(label,
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: dense ? 11.5 : 12,
-                fontWeight: FontWeight.w700)),
+        icon: Icon(icon, size: 14, color: Colors.white),
+        label: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: Colors.white,
           elevation: 0,
           minimumSize: _kIctShrink.minimumSize,
           tapTargetSize: _kIctShrink.tapTargetSize,
-          padding: EdgeInsets.symmetric(horizontal: dense ? 12 : 14),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(kIctControlRadius)),
+            borderRadius: BorderRadius.circular(kIctControlRadius),
+          ),
         ),
       ),
+    );
+
+    if (dense) return button;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const IctFieldLabel(''),
+        button,
+      ],
     );
   }
 }

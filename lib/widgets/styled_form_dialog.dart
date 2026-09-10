@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import '../core/theme.dart';
-import 'dialog_close_button.dart';
 
 /// A polished modal dialog matching the "Update SR Register Entry" form:
 /// a gradient header (gold icon box + small label + big title + close button),
@@ -81,22 +80,17 @@ class StyledFormDialog extends StatelessWidget {
                               BorderSide(color: context.colors.borderColor)),
                     )
                   : BoxDecoration(
-                      gradient: headerAccentColor != null
-                          ? LinearGradient(colors: [
-                              headerAccentColor!.withOpacity(0.15),
-                              context.colors.cardDark,
-                            ])
-                          : LinearGradient(
-                              colors: isDark
-                                  ? [
-                                      context.colors.surfaceDark,
-                                      context.colors.cardDark
-                                    ]
-                                  : [
-                                      context.colors.customsBlue,
-                                      context.colors.customsBlueDark
-                                    ],
-                            ),
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [
+                                context.colors.surfaceDark,
+                                context.colors.cardDark
+                              ]
+                            : [
+                                context.colors.customsBlue,
+                                context.colors.customsBlueDark
+                              ],
+                      ),
                     ),
               child: Row(
                 children: [
@@ -145,13 +139,14 @@ class StyledFormDialog extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // ⚠️ Prominent only where the header is PALE: a directorate
-                  // passes headerAccentColor and gets a tinted wash, and a
-                  // bare cross on that is nearly invisible. ICT's flat dialog
-                  // and the yard's dark one keep the plain shape and change
-                  // only the colour.
-                  DialogCloseButton(
-                      prominent: !erp && headerAccentColor != null),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close_rounded,
+                        color: erp
+                            ? context.colors.textSecondary
+                            : Colors.white.withOpacity(0.7)),
+                    splashRadius: 24,
+                  ),
                 ],
               ),
             ),

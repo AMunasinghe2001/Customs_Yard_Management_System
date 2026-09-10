@@ -83,6 +83,7 @@ class StorageChargeNote extends ConsumerWidget {
     required this.packageId,
     this.packageItemId,
     this.compact = false,
+    this.priceOnly = false,
   });
 
   /// The package the goods belong to.
@@ -97,6 +98,10 @@ class StorageChargeNote extends ConsumerWidget {
 
   /// One line rather than a panel, for forms that are already dense.
   final bool compact;
+
+  /// Show only the formatted amount — no icon, no label. For table cells
+  /// where the column header already identifies the figure.
+  final bool priceOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -187,6 +192,15 @@ class StorageChargeNote extends ConsumerWidget {
         : anyLive
             ? 'Accrued $held \u00b7 payable on collection'
             : 'Charged $held \u00b7 the goods have left the yard';
+
+    if (priceOnly) {
+      return Text(
+        'Rs ${money.format(total)}',
+        style: TextStyle(
+            color: context.colors.textPrimary,
+            fontSize: 12),
+      );
+    }
 
     if (compact) {
       return Row(mainAxisSize: MainAxisSize.min, children: [

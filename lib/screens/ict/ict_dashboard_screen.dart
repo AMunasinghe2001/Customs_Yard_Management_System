@@ -153,7 +153,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     String? dialogInfo;
     String? dialogError;
 
-    showDialog(
+    showIctDialog(
       context: context,
       // Closes on an outside click, like every other portal's forms. It was
       // `false`, so an ICT officer who opened this by mistake had to hunt for
@@ -482,7 +482,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     required String directorate,
     required bool emailed,
   }) {
-    showDialog(
+    showIctDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -616,7 +616,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     bool loading = false;
     String? error;
 
-    showDialog(
+    showIctDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -2028,6 +2028,7 @@ class _IctDialogDropdown extends StatelessWidget {
         helperText: helperText,
         isDense: true,
         menuWidth: 260,
+        accentColor: accent,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         prefixIcon: Icon(icon, color: accent, size: 20),

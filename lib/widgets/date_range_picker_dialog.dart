@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -8,7 +10,8 @@ import 'dialog_close_button.dart';
 
 class DateRangePickerDialog extends StatefulWidget {
   final DateTimeRange? initialRange;
-  const DateRangePickerDialog({super.key, this.initialRange});
+  final Color? accentColor;
+  const DateRangePickerDialog({super.key, this.initialRange, this.accentColor});
 
   @override
   State<DateRangePickerDialog> createState() => _DateRangePickerDialogState();
@@ -41,12 +44,13 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
   Future<void> _pickFrom() async {
     final today = _today();
     final initial = _clamp(_start ?? today, DateTime(2020), today);
-    final picked = await _showOneTapCalendar(
+    final picked = await showOneTapCalendar(
       context,
       initialDate: initial,
       firstDate: DateTime(2020),
       lastDate: today,
       label: 'From Date',
+      accentColor: widget.accentColor,
     );
     if (!mounted || picked == null) return;
     setState(() {
@@ -60,12 +64,13 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
     final today = _today();
     final minDate = _start ?? DateTime(2020);
     final initial = _clamp(_end ?? today, minDate, today);
-    final picked = await _showOneTapCalendar(
+    final picked = await showOneTapCalendar(
       context,
       initialDate: initial,
       firstDate: minDate,
       lastDate: today,
       label: 'To Date',
+      accentColor: widget.accentColor,
     );
     if (!mounted || picked == null) return;
     setState(() => _end = picked);
@@ -135,8 +140,9 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
                   context, DateTimeRange(start: _start!, end: _end!))
               : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: context.colors.primaryGold,
-            foregroundColor: Colors.black,
+            backgroundColor: widget.accentColor ?? context.colors.primaryGold,
+            foregroundColor:
+                widget.accentColor != null ? Colors.white : Colors.black,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10)),
@@ -151,21 +157,37 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
 
 // ── One-tap calendar dialog ───────────────────────────────────────────────────
 
-Future<DateTime?> _showOneTapCalendar(
+Future<DateTime?> showOneTapCalendar(
   BuildContext context, {
   required DateTime initialDate,
   required DateTime firstDate,
   required DateTime lastDate,
   String label = 'Select date',
+  Color? accentColor,
 }) {
-  return showDialog<DateTime>(
+  return showGeneralDialog<DateTime>(
     context: context,
-    builder: (_) => _OneTapCalendarDialog(
+    barrierDismissible: true,
+    barrierLabel: 'Calendar',
+    barrierColor: Colors.black.withOpacity(0.65),
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (ctx, anim, secondaryAnim) => _OneTapCalendarDialog(
       initialDate: initialDate,
       firstDate: firstDate,
       lastDate: lastDate,
       label: label,
+      accentColor: accentColor,
     ),
+    transitionBuilder: (ctx, animation, secondaryAnimation, child) {
+      final t = Curves.easeOut.transform(animation.value);
+      return BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 2.5 * t, sigmaY: 2.5 * t),
+        child: Opacity(
+          opacity: t,
+          child: Transform.scale(scale: 0.98 + 0.02 * t, child: child),
+        ),
+      );
+    },
   );
 }
 
@@ -174,12 +196,14 @@ class _OneTapCalendarDialog extends StatefulWidget {
   final DateTime firstDate;
   final DateTime lastDate;
   final String label;
+  final Color? accentColor;
 
   const _OneTapCalendarDialog({
     required this.initialDate,
     required this.firstDate,
     required this.lastDate,
     this.label = 'Select date',
+    this.accentColor,
   });
 
   @override
@@ -293,6 +317,12 @@ class _OneTapCalendarDialogState extends State<_OneTapCalendarDialog> {
               const Gap(8),
               ElevatedButton(
                 onPressed: _tryApplyText,
+                style: widget.accentColor != null
+                    ? ElevatedButton.styleFrom(
+                        backgroundColor: widget.accentColor,
+                        foregroundColor: Colors.white,
+                      )
+                    : null,
                 child: const Text('OK'),
               ),
             ]),
@@ -317,10 +347,10 @@ class _OneTapCalendarDialogState extends State<_OneTapCalendarDialog> {
     final isFrom = widget.label.toLowerCase().contains('from');
     final isTo = widget.label.toLowerCase().contains('to');
     final labelColor = isFrom
-        ? const Color(0xFF42A5F5) // blue for From
+        ? (widget.accentColor ?? const Color(0xFF42A5F5))
         : isTo
-            ? const Color(0xFF66BB6A) // green for To
-            : context.colors.primaryGold;
+            ? const Color(0xFF66BB6A)
+            : (widget.accentColor ?? context.colors.primaryGold);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

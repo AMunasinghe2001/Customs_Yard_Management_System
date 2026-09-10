@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../core/app_log.dart';
+import '../core/parse_isolate.dart';
 import '../core/supabase_client.dart';
 import '../core/app_session.dart';
 import '../core/security_policy.dart';
@@ -85,6 +86,7 @@ class AuthService {
 
     AppSession.setYard(profile.yard);
     AppSession.setDirectorate(profile.directorate);
+    AppSession.applyYardFilterToRealtime(profile.role);
   }
 
   /// Retries [action] a few times on transient network failures
@@ -188,6 +190,7 @@ class AuthService {
 
       AppSession.setYard(profile.yard);
       AppSession.setDirectorate(profile.directorate);
+      AppSession.applyYardFilterToRealtime(profile.role);
 
       try {
         await supabase.from('profiles').update({
@@ -409,6 +412,7 @@ class AuthService {
     }
     AppSession.setYard(profile.yard);
     AppSession.setDirectorate(profile.directorate);
+    AppSession.applyYardFilterToRealtime(profile.role);
     try {
       await supabase.from('profiles').update({
         'is_online': true,
@@ -459,6 +463,7 @@ class AuthService {
     }
     AppSession.setYard(profile.yard);
     AppSession.setDirectorate(profile.directorate);
+    AppSession.applyYardFilterToRealtime(profile.role);
     try {
       await supabase.from('profiles').update({
         'is_online': true,
@@ -508,6 +513,7 @@ class AuthService {
       final profile = ProfileModel.fromJson(data);
       AppSession.setYard(profile.yard);
       AppSession.setDirectorate(profile.directorate);
+      AppSession.applyYardFilterToRealtime(profile.role);
       return profile;
     } catch (_) {
       return null;
@@ -788,12 +794,16 @@ class PackageService {
           query.or('sr_number.ilike.%$search%,consignee_name.ilike.%$search%');
     }
     final data = await query.order('created_at', ascending: false);
-    // Typed explicitly: `data` is dynamic, so a bare .map().toList() infers
-    // List<dynamic> and throws on return. Supabase's builder carried a static
-    // type that made the inference work; the local one does not.
-    return [
-      for (final e in (data as List)) PackageModel.fromJson(e as Map<String, dynamic>)
-    ];
+    // ⚠️ Parsed OFF the UI thread once the list is large enough to matter.
+    //
+    // This is the app's heaviest parse: every package also parses its items
+    // and its warehouse entries, and the Reports screen calls this 21 times
+    // across its tabs with no pagination at all. Doing that inline froze the
+    // window for the duration — Dart runs the UI and this on the same thread.
+    //
+    // parsePackages() keeps small lists inline, where an isolate would cost
+    // more than it saves; see kIsolateParseThreshold.
+    return parsePackages(data as List);
   }
 
   /// Server-side paged fetch for the Package History page so it opens fast even
@@ -4408,9 +4418,10 @@ class ForfeitedPackageService {
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
         .eq('source', source)
         .order('forfeited_at', ascending: false);
-    return (data as List)
-        .map((e) => ForfeitedPackageModel.fromJson(e))
-        .toList();
+    // Off the UI thread past the threshold: this join carries each row's whole
+    // package, its items AND its warehouse entries, so the Abandoned / Other
+    // pages parse the deepest structure in the app in one go.
+    return parseForfeitedPackages(data as List);
   }
 
   /// Every forfeited row for one package, keyed by the ITEM it covers.

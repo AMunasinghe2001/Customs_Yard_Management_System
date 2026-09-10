@@ -88,7 +88,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
         children: [
           // ── Top bar ──────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
@@ -192,7 +192,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
           // ── Tab bar ───────────────────────────────────────────
           Container(
             color: context.colors.cardDark,
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
             child: Container(
               decoration: BoxDecoration(
                 color: context.colors.surfaceDark,
@@ -599,11 +599,12 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
         children: [
           // Search + yard filter row
           Row(children: [
-            Text('Active Appeals',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            Expanded(
+              child: PageTitle('Active Appeals', Icons.gavel_rounded,
+                  subtitle:
+                      'Forfeited packages under active appeal review',
+                  accent: accent),
+            ),
             const Spacer(),
             SizedBox(
               width: 320,
@@ -640,14 +641,14 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
               },
             ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
+          const Gap(10),
           // Stat chips
           // ⚠️ Counted in SQL over the whole active set under the same
           // filters — not the page. Folded from twenty rows these would report
           // twenty appeals however many the directorate is holding.
           feed.maybeWhen(
             data: (data) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Row(children: [
                 _StatChip(label: 'Active', value: '${data.active}', color: context.colors.accentLightBlue),
                 const Gap(12),
@@ -709,6 +710,7 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                     page: widget.page,
                     pageSize: kDispositionPageSize,
                     onPageChanged: widget.onPageChanged,
+                    accent: accent,
                   ),
                 ]);
               },
@@ -766,16 +768,17 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
     );
     final feed = ref.watch(appealPageProvider(query));
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Decided Goods',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            Expanded(
+              child: PageTitle('Decided Goods', Icons.fact_check_rounded,
+                  subtitle:
+                      'Packages with completed appeal rulings',
+                  accent: accent),
+            ),
             const Spacer(),
             SizedBox(
               width: 320,
@@ -812,7 +815,7 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
               },
             ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
+          const Gap(10),
           Expanded(
             child: feed.when(
               skipLoadingOnReload: true,
@@ -858,6 +861,7 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                     page: widget.page,
                     pageSize: kDispositionPageSize,
                     onPageChanged: widget.onPageChanged,
+                    accent: accent,
                   ),
                 ]);
               },

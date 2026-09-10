@@ -1227,11 +1227,14 @@ Future<void> _confirmMarkDestroyed(
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: ctx.colors.dangerRed,
-              foregroundColor: Colors.white,
+              backgroundColor: ctx.colors.primaryGold,
+              foregroundColor: ctx.colors.primaryNavy,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            icon: const Icon(Icons.check_rounded, size: 16),
-            label: const Text('Confirm Destruction'),
+            icon: const Icon(Icons.check_rounded, size: 18),
+            label: const Text('Confirm Destruction',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],

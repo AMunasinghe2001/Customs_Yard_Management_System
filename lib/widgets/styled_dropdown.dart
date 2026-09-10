@@ -29,6 +29,7 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
   required int columns,
   required int perPage,
   required double menuWidth,
+  Color? accentColor,
 }) async {
   final renderBox = anchorContext.findRenderObject() as RenderBox?;
   final overlayBox =
@@ -73,6 +74,7 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
           perPage: perPage,
           includeAll: includeAll,
           menuWidth: effectiveWidth,
+          accentColor: accentColor,
         ),
       ),
     ],
@@ -84,12 +86,6 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
 /// option cells and pagination when there are many options.
 /// Opens the app's own options popup under [anchorContext] and returns what
 /// was picked, or null if it was dismissed.
-///
-/// ⚠️ The same menu [StyledDropdownButton] and [StyledDropdownFormField] open
-/// — exposed so a caller that is not a dropdown can use it too. The ICT
-/// console's Month and Year pickers were a centred AlertDialog full of big
-/// white boxes, which is a different control from every other date choice in
-/// the app for no reason other than that this function was private.
 Future<T?> showStyledOptionsMenu<T>(
   BuildContext anchorContext, {
   required List<StyledDropdownOption<T>> options,
@@ -97,6 +93,7 @@ Future<T?> showStyledOptionsMenu<T>(
   double menuWidth = 260,
   int columns = 1,
   int perPage = 8,
+  Color? accentColor,
 }) async {
   final picked = await _showStyledMenu<T>(
     anchorContext,
@@ -107,6 +104,7 @@ Future<T?> showStyledOptionsMenu<T>(
     columns: columns,
     perPage: perPage,
     menuWidth: menuWidth,
+    accentColor: accentColor,
   );
   if (picked == null || picked.isAll) return null;
   return picked.value;
@@ -280,6 +278,8 @@ class StyledDropdownFormField<T> extends StatelessWidget {
   /// [FloatingLabelBehavior.never] on a filter row so both line up.
   final FloatingLabelBehavior? floatingLabelBehavior;
 
+  final Color? accentColor;
+
   const StyledDropdownFormField({
     super.key,
     required this.value,
@@ -300,6 +300,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
     this.labelStyle,
     this.splashRadius = 12,
     this.floatingLabelBehavior,
+    this.accentColor,
   });
 
   String _selectedLabel() {
@@ -335,6 +336,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 columns: columns,
                 perPage: perPage,
                 menuWidth: menuWidth,
+                accentColor: accentColor,
               );
               if (picked == null) return;
               final v = picked.isAll ? null : picked.value;
@@ -359,7 +361,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 contentPadding: contentPadding ??
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 suffixIcon: Icon(Icons.arrow_drop_down_rounded,
-                    color: context.colors.primaryGold, size: 24),
+                    color: accentColor ?? context.colors.primaryGold, size: 24),
                 // maxHeight caps the 24px arrow so it cannot make the box
                 // taller than a plain TextField with the same contentPadding —
                 // without it a dropdown beside a search field sits lower.
@@ -390,6 +392,7 @@ class _StyledDropdownContent<T> extends StatefulWidget {
   final int perPage;
   final bool includeAll;
   final double menuWidth;
+  final Color? accentColor;
 
   const _StyledDropdownContent({
     required this.value,
@@ -399,6 +402,7 @@ class _StyledDropdownContent<T> extends StatefulWidget {
     required this.perPage,
     required this.includeAll,
     required this.menuWidth,
+    this.accentColor,
   });
 
   @override
@@ -410,12 +414,6 @@ class _StyledDropdownContentState<T>
     extends State<_StyledDropdownContent<T>> {
   int _page = 0;
 
-  /// Shows a search box once the list is long enough to page.
-  ///
-  /// Paging through several pages to reach a known yard, warehouse or category
-  /// is slow and easy to overshoot, and some of these lists run to five pages.
-  /// Typing narrows them in place instead. A list that fits on one page needs
-  /// no box -- everything is already visible.
   static const int _searchAbove = 8;
 
   final _searchCtrl = TextEditingController();
@@ -423,7 +421,6 @@ class _StyledDropdownContentState<T>
 
   bool get _searchable => widget.options.length > _searchAbove;
 
-  /// The options matching the current query, in their original order.
   List<StyledDropdownOption<T>> get _filtered {
     if (_query.trim().isEmpty) return widget.options;
     final q = _query.trim().toLowerCase();
@@ -450,15 +447,15 @@ class _StyledDropdownContentState<T>
 
   @override
   Widget build(BuildContext context) {
+    final effectiveAccent = widget.accentColor ?? context.colors.primaryGold;
     final options = _filtered;
     final totalPages =
         (options.length / widget.perPage).ceil().clamp(1, 9999);
-    // The query can shorten the list past the page being shown.
     final page = _page.clamp(0, totalPages - 1);
     final start = page * widget.perPage;
     final pageOptions = options.skip(start).take(widget.perPage).toList();
 
-    final innerWidth = widget.menuWidth - 24; // padding 12 each side
+    final innerWidth = widget.menuWidth - 24;
     final cellWidth = widget.columns <= 1
         ? innerWidth
         : (innerWidth - (widget.columns - 1) * 8) / widget.columns;
@@ -482,9 +479,9 @@ class _StyledDropdownContentState<T>
                   decoration: InputDecoration(
                     hintText: 'Type to search\u2026',
                     hintStyle: TextStyle(
-                        color: context.colors.textMuted, fontSize: 13),
+                      color: context.colors.textMuted, fontSize: 13),
                     prefixIcon: Icon(Icons.search_rounded,
-                        size: 18, color: context.colors.primaryGold),
+                        size: 18, color: effectiveAccent),
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
@@ -512,25 +509,23 @@ class _StyledDropdownContentState<T>
                     focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                         borderSide: BorderSide(
-                            color: context.colors.primaryGold, width: 1.5)),
+                            color: effectiveAccent, width: 1.5)),
                   ),
                   onChanged: (v) => setState(() {
                     _query = v;
-                    // A narrowed list is shorter, so start it from the top.
                     _page = 0;
                   }),
                 ),
               ),
               const Gap(10),
             ],
-            // "All" is a reset, not an option: it stays put while a query
-            // narrows the list, so clearing the filter is always one tap away.
             if (widget.includeAll) ...[
               _StyledDropdownCell(
                 label: widget.allLabel,
                 isSelected: widget.value == null,
                 enabled: true,
                 width: innerWidth,
+                accentColor: effectiveAccent,
                 onTap: () =>
                     Navigator.pop(context, _PickResult<T>.all()),
               ),
@@ -556,6 +551,7 @@ class _StyledDropdownContentState<T>
                         isSelected: o.value == widget.value,
                         enabled: o.enabled,
                         width: cellWidth,
+                        accentColor: effectiveAccent,
                         onTap: o.enabled
                             ? () => Navigator.pop(
                                 context, _PickResult<T>.of(o.value))
@@ -573,7 +569,7 @@ class _StyledDropdownContentState<T>
                     tooltip: 'Previous',
                     visualDensity: VisualDensity.compact,
                     color: page > 0
-                        ? context.colors.primaryGold
+                        ? effectiveAccent
                         : context.colors.textMuted.withOpacity(0.4),
                     onPressed:
                         page > 0 ? () => setState(() => _page = page - 1) : null,
@@ -588,7 +584,7 @@ class _StyledDropdownContentState<T>
                     tooltip: 'Next',
                     visualDensity: VisualDensity.compact,
                     color: page < totalPages - 1
-                        ? context.colors.primaryGold
+                        ? effectiveAccent
                         : context.colors.textMuted.withOpacity(0.4),
                     onPressed: page < totalPages - 1
                         ? () => setState(() => _page = page + 1)
@@ -610,26 +606,29 @@ class _StyledDropdownCell extends StatelessWidget {
   final bool enabled;
   final double width;
   final VoidCallback? onTap;
+  final Color? accentColor;
+
   const _StyledDropdownCell({
     required this.label,
     required this.isSelected,
     required this.enabled,
     required this.width,
     required this.onTap,
+    this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final gold = context.colors.primaryGold;
+    final effectiveAccent = accentColor ?? context.colors.primaryGold;
     final Color textColor = !enabled
         ? context.colors.textMuted
-        : (isSelected ? gold : context.colors.textSecondary);
+        : (isSelected ? effectiveAccent : context.colors.textSecondary);
     return SizedBox(
       width: width,
       height: 40,
       child: Material(
         color: isSelected && enabled
-            ? gold.withOpacity(0.15)
+            ? effectiveAccent.withOpacity(0.15)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
@@ -642,7 +641,7 @@ class _StyledDropdownCell extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: isSelected && enabled
-                    ? gold.withOpacity(0.6)
+                    ? effectiveAccent.withOpacity(0.6)
                     : context.colors.borderColor,
               ),
             ),

@@ -154,7 +154,7 @@ class YardDirectorateTab extends ConsumerWidget {
     String? error;
     bool saving = false;
 
-    await showDialog(
+    await showIctDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
         Future<void> save() async {
@@ -287,7 +287,7 @@ class YardDirectorateTab extends ConsumerWidget {
     bool saving = false;
 
     if (!context.mounted) return;
-    await showDialog(
+    await showIctDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
         Future<void> save() async {

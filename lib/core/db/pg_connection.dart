@@ -39,6 +39,8 @@ class PgConfig {
       int.fromEnvironment('PG_CONNECT_TIMEOUT', defaultValue: -1);
   static const int _poolSizeDefine =
       int.fromEnvironment('PG_POOL_SIZE', defaultValue: -1);
+  static const int _maxConnAgeDefine =
+      int.fromEnvironment('PG_MAX_CONN_AGE', defaultValue: -1);
   static const int _queryTimeoutDefine =
       int.fromEnvironment('PG_QUERY_TIMEOUT', defaultValue: -1);
 
@@ -182,8 +184,36 @@ class PgConfig {
   /// happens to be last waits out the whole queue. That is what produced
   /// `57014: canceling statement due to user request` on a screen whose own
   /// query takes 13ms -- it was never slow, it was ninth in line.
+  ///
+  /// ⚠️ But the cap cannot be chosen from ONE client's point of view alone.
+  /// This is a desktop app talking straight to Postgres, so every PC on the
+  /// LAN holds its own pool, and the server's `max_connections` is divided
+  /// between all of them:
+  ///
+  ///     clients x (poolSize + 1 listener) <= max_connections - reserved
+  ///
+  /// At the old default of 8 that is 9 sockets per PC, so a stock server
+  /// (`max_connections = 100`, 3 reserved) ran out after ELEVEN users — the
+  /// twelfth got `53300: too many connections for role`, which reads like a
+  /// server fault but is only arithmetic. 3 keeps a dashboard's panels
+  /// genuinely parallel while fitting 24 users into a stock server, and ~97
+  /// into the 400 the deployment guide now sets. See postgres/63.
   static int get poolSizeSetting => AppEnv.readInt('PG_POOL_SIZE',
-      dartDefine: _poolSizeDefine, fallback: 8, dartDefineSentinel: -1);
+      dartDefine: _poolSizeDefine, fallback: 3, dartDefineSentinel: -1);
+
+  /// How long a pooled connection may live before the pool retires it.
+  ///
+  /// A desktop client is open all day, so without this the pool reaches its
+  /// high-water mark during the busiest minute and then holds every one of
+  /// those sockets idle until the app closes — 100 PCs keeping their peak
+  /// allocation forever, each costing the server a backend process with its
+  /// own ~work_mem. Retiring them returns the memory and the connection slot
+  /// to everyone else; the next query just opens a fresh one.
+  static int get maxConnectionAgeSeconds => AppEnv.readInt(
+      'PG_MAX_CONN_AGE',
+      dartDefine: _maxConnAgeDefine,
+      fallback: 600,
+      dartDefineSentinel: -1);
 
   /// Pool settings: the same connection settings, plus the size cap and the
   /// per-connection session hook.
@@ -198,6 +228,12 @@ class PgConfig {
           Future<void> Function(Connection) onOpen) =>
       PoolSettings(
         maxConnectionCount: poolSizeSetting,
+        // Bounded lifetime, so an all-day client hands its idle sockets back
+        // rather than hoarding its peak. `maxSessionUse` is the same bound
+        // applied to a connection currently in use: it finishes the query it
+        // is running and is retired after, never mid-statement.
+        maxConnectionAge: Duration(seconds: maxConnectionAgeSeconds),
+        maxSessionUse: Duration(seconds: maxConnectionAgeSeconds),
         connectTimeout: Duration(seconds: connectTimeoutSeconds),
         queryTimeout: Duration(seconds: queryTimeoutSeconds),
         sslMode: sslMode,

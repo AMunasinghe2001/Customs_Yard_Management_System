@@ -43,7 +43,7 @@ class DirectorateAccessTab extends ConsumerWidget {
       BuildContext context, WidgetRef ref, ProfileModel account) async {
     final portal = kDirectorateRoleNames[account.role] ?? account.role;
 
-    final ok = await showDialog<bool>(
+    final ok = await showIctDialog<bool>(
       context: context,
       builder: (ctx) => StyledFormDialog(
         label: 'RESET ACCESS',

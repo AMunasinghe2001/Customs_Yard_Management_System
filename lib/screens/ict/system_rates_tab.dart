@@ -8,7 +8,6 @@ import 'package:intl/intl.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
-import '../../services/services.dart';
 import '../../widgets/account_cells.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
@@ -62,7 +61,7 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
         activeTaxes.fold<double>(0, (sum, t) => sum + t.percentage);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -114,18 +113,11 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
                 : '${history.value!.length} '
                     '${history.value!.length == 1 ? 'change' : 'changes'}',
             actions: [
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: widget.accent,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: const Icon(Icons.edit_rounded, size: 16),
-                label: const Text('Set Rate',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
+              IctPrimaryButton(
+                dense: true,
+                label: 'Set Rate',
+                icon: Icons.edit_rounded,
+                accent: widget.accent,
                 onPressed: () => _showRateDialog(context, current),
               ),
             ],
@@ -192,18 +184,11 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
                 : '${taxes.value!.length} '
                     '${taxes.value!.length == 1 ? 'levy' : 'levies'}',
             actions: [
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: c.successGreen,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('Add Levy',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
+              IctPrimaryButton(
+                dense: true,
+                label: 'Add Levy',
+                icon: Icons.add_rounded,
+                accent: c.successGreen,
                 onPressed: () => _showTaxDialog(context),
               ),
             ],
@@ -278,7 +263,7 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
     String? error;
     var saving = false;
 
-    await showDialog<void>(
+    await showIctDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => StyledFormDialog(
@@ -400,7 +385,7 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
     String? error;
     var saving = false;
 
-    await showDialog<void>(
+    await showIctDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => StyledFormDialog(
@@ -525,7 +510,7 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
 
   Future<void> _confirmDeleteTax(
       BuildContext context, DisposalTaxModel tax) async {
-    final ok = await showDialog<bool>(
+    final ok = await showIctDialog<bool>(
       context: context,
       builder: (ctx) => StyledFormDialog(
         label: 'DELETE LEVY',

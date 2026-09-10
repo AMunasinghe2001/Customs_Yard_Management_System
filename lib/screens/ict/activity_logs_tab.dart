@@ -96,109 +96,258 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
   // query's bounds. "All Time" clears it, and retention keeps the table to a
   // year regardless.
 
-  Future<void> _pickPeriod(BuildContext anchor, LogPeriod period) async {
-    DateTimeRange? range;
-    switch (period) {
-      case LogPeriod.all:
-        range = null;
-      case LogPeriod.day:
-        final d = await showDatePicker(
-          context: context,
-          initialDate: DateTime.now(),
-          firstDate: DateTime(2020),
-          lastDate: DateTime.now(),
-        );
-        if (d == null) return;
-        range = DateTimeRange(start: d, end: d);
-      case LogPeriod.range:
-        final picked = await showDialog<dynamic>(
-          context: context,
-          builder: (_) => const custom.DateRangePickerDialog(),
-        );
-        if (picked is! DateTimeRange) return;
-        range = picked;
-      case LogPeriod.month:
-        final m = await _pickMonth(anchor);
-        if (m == null) return;
-        // The 0th day of the NEXT month is the last day of this one, so the
-        // window covers a short February without special-casing it.
-        range = DateTimeRange(
-            start: DateTime(m.year, m.month, 1),
-            end: DateTime(m.year, m.month + 1, 0));
-      case LogPeriod.year:
-        final y = await _pickYear(anchor);
-        if (y == null) return;
-        range = DateTimeRange(
-            start: DateTime(y, 1, 1), end: DateTime(y, 12, 31));
-    }
+  Future<void> _pickSingleDay() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final range = ref.read(ictLogRangeProvider);
+    final initial = range?.start ?? today;
+    final clampedInitial = initial.isAfter(today) ? today : initial;
 
-    ref.read(ictLogRangeProvider.notifier).state = range;
+    final picked = await custom.showOneTapCalendar(
+      context,
+      initialDate: clampedInitial,
+      firstDate: DateTime(2020),
+      lastDate: today,
+      label: 'Single Day',
+      accentColor: widget.accent,
+    );
+    if (picked == null) return;
+    final start = DateTime(picked.year, picked.month, picked.day);
+    final end = DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
+    ref.read(ictLogRangeProvider.notifier).state =
+        DateTimeRange(start: start, end: end);
     setState(() {
-      _period = period;
+      _period = LogPeriod.day;
       _resetPage();
     });
   }
 
-  /// The years the log has rows in, plus the current one and the next.
-  ///
-  /// ⚠️ Read from the database, not counted back from today. It used to offer
-  /// "this year and the four before it", so on a system installed this year
-  /// four of the five returned nothing, and on one running longer the sixth
-  /// year back was missing from the very filter meant to find it.
-  List<int> _years() {
-    final years = ref.read(ictLogYearsProvider).valueOrNull;
-    if (years != null && years.isNotEmpty) return years;
-    // Only while the list is still loading.
-    final y = DateTime.now().year;
-    return [y + 1, y];
+  Future<void> _pickCustomRange() async {
+    final initial = ref.read(ictLogRangeProvider);
+    final picked = await showIctDialog<dynamic>(
+      context: context,
+      builder: (_) => custom.DateRangePickerDialog(
+        initialRange: initial,
+        accentColor: widget.accent,
+      ),
+    );
+    if (picked is DateTimeRange) {
+      ref.read(ictLogRangeProvider.notifier).state = picked;
+      setState(() {
+        _period = LogPeriod.range;
+        _resetPage();
+      });
+    } else if (picked == false) {
+      ref.read(ictLogRangeProvider.notifier).state = null;
+      setState(() {
+        _period = LogPeriod.all;
+        _resetPage();
+      });
+    }
   }
 
-  /// ⚠️ Anchored under the segment that opened it, using the SAME popup every
-  /// other dropdown in the app opens (see showStyledOptionsMenu). Both pickers
-  /// were a centred AlertDialog full of tall white boxes — a control that
-  /// existed nowhere else in the app, for no reason other than that the menu
-  /// helper used to be private.
-  ///
-  /// A month is picked in TWO steps: the year, then the month in it. One flat
-  /// list of "September 2026, August 2026, …" can only ever reach back as far
-  /// as someone decided to build it — twelve months, here — so the month
-  /// before that was unreachable no matter how much log there was. Two steps
-  /// reach every month the log holds, and the first step is the same year list
-  /// the Year picker uses.
-  Future<DateTime?> _pickMonth(BuildContext anchor) async {
-    final year = await _pickYear(anchor);
-    if (year == null || !mounted) return null;
-
+  Future<void> _pickMonthDialog() async {
     final now = DateTime.now();
-    // Not months that have not happened yet: in the current year the list
-    // stops at this month, because a window over a future month is empty by
-    // definition.
-    final lastMonth = year == now.year ? now.month : 12;
-    if (!anchor.mounted) return null;
-    return showStyledOptionsMenu<DateTime>(
-      anchor,
-      menuWidth: 170,
-      perPage: 12,
-      options: [
-        for (var m = lastMonth; m >= 1; m--)
-          StyledDropdownOption(
-              DateTime(year, m), DateFormat('MMMM').format(DateTime(year, m))),
-      ],
+    final range = ref.read(ictLogRangeProvider);
+    int selectedYear = range?.start.year ?? now.year;
+    int selectedMonth = range?.start.month ?? now.month;
+    final currentYear = now.year;
+    final currentMonth = now.month;
+    if (selectedYear > currentYear) selectedYear = currentYear;
+    if (selectedYear == currentYear && selectedMonth > currentMonth) {
+      selectedMonth = currentMonth;
+    }
+    final years = List.generate(10, (i) => currentYear - i);
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
+    ];
+
+    final res = await showIctDialog<({int year, int month})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) {
+          final maxMonth = (selectedYear == currentYear) ? currentMonth : 12;
+          if (selectedMonth > maxMonth) selectedMonth = maxMonth;
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            backgroundColor: context.colors.cardDark,
+            title: Text('Select Month & Year',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold)),
+            content: SizedBox(
+              width: 320,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: StyledDropdownFormField<int>(
+                      label: 'Month',
+                      value: selectedMonth,
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      accentColor: widget.accent,
+                      options: List.generate(
+                        maxMonth,
+                        (i) => StyledDropdownOption(i + 1, months[i]),
+                      ),
+                      menuWidth: 160,
+                      onChanged: (v) {
+                        if (v != null) setDlgState(() => selectedMonth = v);
+                      },
+                    ),
+                  ),
+                  const Gap(12),
+                  Expanded(
+                    child: StyledDropdownFormField<int>(
+                      label: 'Year',
+                      value: selectedYear,
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      accentColor: widget.accent,
+                      options: years
+                          .map((y) => StyledDropdownOption(y, '$y'))
+                          .toList(),
+                      menuWidth: 140,
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDlgState(() {
+                            selectedYear = v;
+                            if (selectedYear == currentYear &&
+                                selectedMonth > currentMonth) {
+                              selectedMonth = currentMonth;
+                            }
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel',
+                    style: TextStyle(color: context.colors.textMuted)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(
+                    context, (year: selectedYear, month: selectedMonth)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.accent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                ),
+                child: const Text('Select',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
     );
+
+    if (res != null) {
+      final start = DateTime(res.year, res.month, 1);
+      final end = DateTime(res.year, res.month + 1, 0, 23, 59, 59);
+      ref.read(ictLogRangeProvider.notifier).state =
+          DateTimeRange(start: start, end: end);
+      setState(() {
+        _period = LogPeriod.month;
+        _resetPage();
+      });
+    }
   }
 
-  Future<int?> _pickYear(BuildContext anchor) {
-    return showStyledOptionsMenu<int>(
-      anchor,
-      menuWidth: 150,
-      perPage: 8,
-      options: [
-        for (final y in _years()) StyledDropdownOption(y, '$y'),
-      ],
+  Future<void> _pickYearDialog() async {
+    final now = DateTime.now();
+    final range = ref.read(ictLogRangeProvider);
+    int selectedYear = range?.start.year ?? now.year;
+    final currentYear = now.year;
+    if (selectedYear > currentYear) selectedYear = currentYear;
+    final years = List.generate(10, (i) => currentYear - i);
+
+    final res = await showIctDialog<int>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            backgroundColor: context.colors.cardDark,
+            title: Text('Select Year',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold)),
+            content: SizedBox(
+              width: 280,
+              child: StyledDropdownFormField<int>(
+                label: 'Year',
+                value: selectedYear,
+                floatingLabelBehavior: FloatingLabelBehavior.never,
+                accentColor: widget.accent,
+                options:
+                    years.map((y) => StyledDropdownOption(y, '$y')).toList(),
+                menuWidth: 260,
+                onChanged: (v) {
+                  if (v != null) setDlgState(() => selectedYear = v);
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel',
+                    style: TextStyle(color: context.colors.textMuted)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, selectedYear),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.accent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                ),
+                child: const Text('Select',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
     );
+
+    if (res != null) {
+      final start = DateTime(res, 1, 1);
+      final end = DateTime(res, 12, 31, 23, 59, 59);
+      ref.read(ictLogRangeProvider.notifier).state =
+          DateTimeRange(start: start, end: end);
+      setState(() {
+        _period = LogPeriod.year;
+        _resetPage();
+      });
+    }
   }
 
-  String _periodLabel(DateTimeRange? range) {
+  String _dateDropdownDisplay(DateTimeRange? range) {
     if (range == null) return 'All Time';
     switch (_period) {
       case LogPeriod.day:
@@ -209,18 +358,11 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
         return '${range.start.year}';
       case LogPeriod.range:
       case LogPeriod.all:
-        return '${DateFormat('dd MMM').format(range.start)} — '
-            '${DateFormat('dd MMM yyyy').format(range.end)}';
+        return '${DateFormat('dd MMM').format(range.start)} – ${DateFormat('dd MMM yyyy').format(range.end)}';
     }
   }
 
   // ── Filtering ───────────────────────────────────────────────────────────
-  //
-  // ⚠️ There is none here any more. Narrowing lives in SQL (see
-  // getAllLogsAcrossOffices): with one page in hand, a filter applied here
-  // would hide rows from the page you are on and leave every row behind it,
-  // and the count under the table would be a different number from the rows
-  // above it.
 
   String _prettyEntity(String raw) => raw
       .split('_')
@@ -241,150 +383,134 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
 
     return Padding(
       padding: const EdgeInsets.all(24),
-      // ⚠️ No page heading here. The console header names this section and
-      // says what it holds; a screen that prints its own title again twenty
-      // pixels below is the surest sign of a page designed on its own rather
-      // than as one module of a console.
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Period ────────────────────────────────────────────
-          // One setting with five positions, so it is drawn as one track --
-          // see IctSegmented for why five separate buttons read wrongly.
-          Row(children: [
-            IctSegmented(
-              accent: accent,
-              children: [
-                for (final p in LogPeriod.values)
-                  IctSegment(
-                    label: p.label,
-                    icon: switch (p) {
-                      LogPeriod.all => Icons.all_inclusive_rounded,
-                      LogPeriod.day => Icons.today_rounded,
-                      LogPeriod.range => Icons.date_range_rounded,
-                      LogPeriod.month => Icons.calendar_view_month_rounded,
-                      LogPeriod.year => Icons.calendar_today_rounded,
-                    },
-                    selected: _period == p,
-                    onTap: (anchor) => _pickPeriod(anchor, p),
-                  ),
-              ],
-            ),
-            const Gap(12),
-            // The exact window in force, and a one-tap way out of it. Only
-            // once one IS in force: with no window the segmented control
-            // already says "All Time", and a chip repeating it is noise.
-            if (range != null)
-              _PeriodChip(
-                label: _periodLabel(range),
+          // ── Toolbar ───────────────────────────────────────────
+          IctToolbar(children: [
+            Expanded(
+              flex: 3,
+              child: IctSearchField(
+                controller: _searchCtrl,
                 accent: accent,
-                active: true,
+                hintText: 'Search action, user, entity or details',
+                onChanged: (v) => setState(() {
+                  _search = v;
+                  _resetPage();
+                }),
                 onClear: () {
-                  ref.read(ictLogRangeProvider.notifier).state = null;
+                  _searchCtrl.clear();
                   setState(() {
-                    _period = LogPeriod.all;
+                    _search = '';
                     _resetPage();
                   });
                 },
               ),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
-
-          // ── Toolbar ───────────────────────────────────────────
-          IctToolbar(children: [
-              Expanded(
-                flex: 3,
-                child: IctSearchField(
-                  controller: _searchCtrl,
-                  accent: accent,
-                  hintText: 'Search action, user, entity or details',
-                  onChanged: (v) => setState(() {
-                    _search = v;
-                    _resetPage();
-                  }),
-                  onClear: () {
-                    _searchCtrl.clear();
+            ),
+            Expanded(
+              flex: 2,
+              child: IctSelect(
+                label: 'Yard',
+                icon: Icons.warehouse_rounded,
+                accent: accent,
+                value: _selectedYard,
+                options: [
+                  const StyledDropdownOption('all', 'All Yards'),
+                  for (final o
+                      in ref.watch(yardFilterOptionsProvider).valueOrNull ??
+                          [
+                            for (final y in kYards)
+                              YardFilterOption(
+                                  value: y.code,
+                                  label: y.name,
+                                  filterYard: y.code)
+                          ])
+                    StyledDropdownOption(o.value, o.label),
+                ],
+                onChanged: (v) => setState(() {
+                  _selectedYard = v ?? 'all';
+                  _resetPage();
+                }),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: IctSelect(
+                label: 'Directorate / Role',
+                icon: Icons.badge_rounded,
+                accent: accent,
+                value: _selectedRole,
+                options: const [
+                  StyledDropdownOption('all', 'All Roles'),
+                  StyledDropdownOption('officer', 'Officer'),
+                  StyledDropdownOption('admin', 'DC / SDDC'),
+                  StyledDropdownOption('disposal', 'Central Disposal'),
+                  StyledDropdownOption('valuation', 'Valuation'),
+                  StyledDropdownOption('appeal', 'Appeal'),
+                  StyledDropdownOption('executive', 'Top Management'),
+                  StyledDropdownOption('ict', 'ICT'),
+                ],
+                onChanged: (v) => setState(() {
+                  _selectedRole = v ?? 'all';
+                  _resetPage();
+                }),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: IctSelect(
+                label: 'Activity',
+                icon: Icons.category_rounded,
+                accent: accent,
+                value: _selectedEntity,
+                options: [
+                  const StyledDropdownOption('all', 'All Activity'),
+                  for (final e
+                      in ref.watch(ictLogEntityTypesProvider).valueOrNull ??
+                          const <String>[])
+                    StyledDropdownOption(e, _prettyEntity(e)),
+                ],
+                onChanged: (v) => setState(() {
+                  _selectedEntity = v ?? 'all';
+                  _resetPage();
+                }),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: IctSelect(
+                label: 'Date / Period',
+                icon: Icons.date_range_rounded,
+                accent: accent,
+                value: range == null ? 'all' : _period.name,
+                customDisplayLabel: _dateDropdownDisplay(range),
+                options: const [
+                  StyledDropdownOption('all', 'All Time'),
+                  StyledDropdownOption('day', 'Single Day'),
+                  StyledDropdownOption('range', 'Custom Date Range'),
+                  StyledDropdownOption('month', 'By Month'),
+                  StyledDropdownOption('year', 'By Year'),
+                ],
+                onChanged: (v) {
+                  if (v == 'all') {
+                    ref.read(ictLogRangeProvider.notifier).state = null;
                     setState(() {
-                      _search = '';
+                      _period = LogPeriod.all;
                       _resetPage();
                     });
-                  },
-                ),
+                  } else if (v == 'day') {
+                    _pickSingleDay();
+                  } else if (v == 'range') {
+                    _pickCustomRange();
+                  } else if (v == 'month') {
+                    _pickMonthDialog();
+                  } else if (v == 'year') {
+                    _pickYearDialog();
+                  }
+                },
               ),
-              Expanded(
-                flex: 2,
-                child: IctSelect(
-                  label: 'Yard',
-                  icon: Icons.warehouse_rounded,
-                  accent: accent,
-                  value: _selectedYard,
-                  options: [
-                    const StyledDropdownOption('all', 'All Yards'),
-                    for (final o
-                        in ref.watch(yardFilterOptionsProvider).valueOrNull ??
-                            [
-                              for (final y in kYards)
-                                YardFilterOption(
-                                    value: y.code,
-                                    label: y.name,
-                                    filterYard: y.code)
-                            ])
-                      StyledDropdownOption(o.value, o.label),
-                  ],
-                  onChanged: (v) => setState(() {
-                    _selectedYard = v ?? 'all';
-                    _resetPage();
-                  }),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: IctSelect(
-                  label: 'Directorate / Role',
-                  icon: Icons.badge_rounded,
-                  accent: accent,
-                  value: _selectedRole,
-                  // Every role that writes to the log, so ICT can watch one
-                  // office at a time.
-                  options: const [
-                    StyledDropdownOption('all', 'All Roles'),
-                    StyledDropdownOption('officer', 'Officer'),
-                    StyledDropdownOption('admin', 'DC / SDDC'),
-                    StyledDropdownOption('disposal', 'Central Disposal'),
-                    StyledDropdownOption('valuation', 'Valuation'),
-                    StyledDropdownOption('appeal', 'Appeal'),
-                    StyledDropdownOption('executive', 'Top Management'),
-                    StyledDropdownOption('ict', 'ICT'),
-                  ],
-                  onChanged: (v) => setState(() {
-                    _selectedRole = v ?? 'all';
-                    _resetPage();
-                  }),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: IctSelect(
-                  label: 'Activity',
-                  icon: Icons.category_rounded,
-                  accent: accent,
-                  value: _selectedEntity,
-                  // Its own query, not the page's rows -- see
-                  // ictLogEntityTypesProvider.
-                  options: [
-                    const StyledDropdownOption('all', 'All Activity'),
-                    for (final e
-                        in ref.watch(ictLogEntityTypesProvider).valueOrNull ??
-                            const <String>[])
-                      StyledDropdownOption(e, _prettyEntity(e)),
-                  ],
-                  onChanged: (v) => setState(() {
-                    _selectedEntity = v ?? 'all';
-                    _resetPage();
-                  }),
-                ),
-              ),
-          ]).animate().fadeIn(duration: 300.ms, delay: 120.ms),
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
           const Gap(16),
 
           // ── Table ─────────────────────────────────────────────
@@ -523,52 +649,6 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The window currently in force, with a clear button once one is set.
-class _PeriodChip extends StatelessWidget {
-  final String label;
-  final Color accent;
-  final bool active;
-  final VoidCallback? onClear;
-
-  const _PeriodChip({
-    required this.label,
-    required this.accent,
-    required this.active,
-    this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = active ? accent : context.colors.textMuted;
-    return Container(
-      padding: EdgeInsets.fromLTRB(12, 7, active ? 4 : 12, 7),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.35)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.event_rounded, size: 15, color: color),
-        const Gap(7),
-        Text(label,
-            style: TextStyle(
-                color: color, fontSize: 12.5, fontWeight: FontWeight.w700)),
-        if (active) ...[
-          const Gap(2),
-          IconButton(
-            icon: Icon(Icons.close_rounded, size: 15, color: color),
-            onPressed: onClear,
-            tooltip: 'Show all time',
-            padding: const EdgeInsets.all(4),
-            constraints: const BoxConstraints(),
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
-      ]),
     );
   }
 }

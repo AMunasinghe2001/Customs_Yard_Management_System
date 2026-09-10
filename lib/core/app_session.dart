@@ -1,3 +1,4 @@
+import 'db/pg_realtime.dart';
 import 'yards.dart';
 
 /// Lightweight global holder for the signed-in user's yard, so services can
@@ -21,6 +22,38 @@ class AppSession {
     currentYard = (yard == null || yard.isEmpty) ? kDefaultYardCode : yard;
   }
 
+  /// The roles whose screens legitimately read EVERY yard.
+  ///
+  /// The head-office directorates work across the whole country by design —
+  /// Disposal approves requests from every yard, Appeal hears every yard's
+  /// appeals, Valuation prices every yard's goods, Executive signs off on all
+  /// of it, and ICT administers the lot. A realtime filter must never hide
+  /// another yard's change from them.
+  ///
+  /// Only 'officer' and 'admin' are bound to one yard, and they are the bulk
+  /// of the 100 clients — which is exactly where the saved queries come from.
+  static const Set<String> _crossYardRoles = {
+    'disposal',
+    'appeal',
+    'valuation',
+    'executive',
+    'ict',
+  };
+
+  /// Decides whether this client may ignore other yards' realtime
+  /// notifications, from the role it just signed in as.
+  ///
+  /// ⚠️ Called on sign-in and on sign-out, and it must be BOTH directions:
+  /// leaving it on after a Disposal user signs out would let the next,
+  /// yard-bound user keep paying for every yard's traffic, and leaving it off
+  /// after an officer signs out would silently blind a Disposal user to other
+  /// yards. [PgRealtime.watchAllYards] therefore defaults to the safe value
+  /// (true, see there) and is narrowed only when the role is known.
+  static void applyYardFilterToRealtime(String? role) {
+    final r = (role ?? '').trim().toLowerCase();
+    PgRealtime.instance.watchAllYards = r.isEmpty || _crossYardRoles.contains(r);
+  }
+
   static void setDirectorate(String? directorate) {
     currentDirectorate =
         (directorate == null || directorate.isEmpty) ? null : directorate;
@@ -29,5 +62,8 @@ class AppSession {
   static void clear() {
     currentYard = kDefaultYardCode;
     currentDirectorate = null;
+    // Back to "see everything" on sign-out: the next user's role is unknown
+    // until they sign in, and missing an update is worse than an extra query.
+    applyYardFilterToRealtime(null);
   }
 }

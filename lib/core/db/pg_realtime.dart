@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:postgres/postgres.dart';
 
+import '../app_session.dart';
 import 'pg_connection.dart';
 
 /// Which changes a subscription wants. Named to match the SDK's enum so the
@@ -14,13 +15,22 @@ enum PostgresChangeEvent { all, insert, update, delete }
 /// The payload handed to a callback.
 ///
 /// The app's 19 callbacks all ignore their argument and just fire a refresh,
-/// so this carries only what the NOTIFY actually sends — the table and the
-/// operation. Row data is deliberately not pushed: see 03_realtime.sql.
+/// so this carries only what the NOTIFY actually sends — the table, the
+/// operation, and which yard it happened in. Row data is deliberately not
+/// pushed: see 03_realtime.sql.
 @immutable
 class PostgresChangePayload {
-  const PostgresChangePayload({required this.table, required this.eventType});
+  const PostgresChangePayload({
+    required this.table,
+    required this.eventType,
+    this.yard,
+  });
   final String table;
   final String eventType;
+
+  /// The yard the change belongs to, or null for a table that has no yard
+  /// column (profiles, categories, storage rates) — those concern everyone.
+  final String? yard;
 }
 
 typedef PgChangeCallback = void Function(PostgresChangePayload payload);
@@ -59,15 +69,58 @@ class PgChannel {
     return this;
   }
 
-  void _dispatch(String table, String op) {
-    for (final s in _subs) {
-      if (s.table != table) continue;
-      if (s.event != PostgresChangeEvent.all &&
-          s.event.name.toUpperCase() != op.toUpperCase()) {
-        continue;
+  /// Changes seen since the last flush, and the timer that will deliver them.
+  ///
+  /// ⚠️ The debounce is per CHANNEL, not global: coalescing across channels
+  /// would let a busy table (audit_logs, which every action writes) delay an
+  /// unrelated screen's refresh.
+  final Map<String, PostgresChangePayload> _pending = {};
+  Timer? _debounce;
+
+  void _dispatch(String table, String op, String? yard) {
+    // Does any subscription on this channel care? Checked BEFORE starting a
+    // timer, so a channel watching three tables is not woken by a fourth.
+    final wanted = _subs.any((s) =>
+        s.table == table &&
+        (s.event == PostgresChangeEvent.all ||
+            s.event.name.toUpperCase() == op.toUpperCase()));
+    if (!wanted) return;
+
+    // Keyed by table: ten inserts into `packages` inside the debounce window
+    // are one refresh, because the callback re-reads the whole list anyway.
+    _pending[table] = PostgresChangePayload(
+      table: table,
+      eventType: op,
+      yard: yard,
+    );
+
+    _debounce?.cancel();
+    _debounce = Timer(PgRealtime.debounceWindow, _flush);
+  }
+
+  /// Delivers one callback per distinct table changed during the window.
+  void _flush() {
+    _debounce = null;
+    if (_pending.isEmpty) return;
+    final batch = List<PostgresChangePayload>.from(_pending.values);
+    _pending.clear();
+
+    for (final payload in batch) {
+      for (final s in _subs) {
+        if (s.table != payload.table) continue;
+        if (s.event != PostgresChangeEvent.all &&
+            s.event.name.toUpperCase() != payload.eventType.toUpperCase()) {
+          continue;
+        }
+        s.callback(payload);
       }
-      s.callback(PostgresChangePayload(table: table, eventType: op));
     }
+  }
+
+  void _cancelPending() {
+    _debounce?.cancel();
+    _debounce = null;
+    _pending.clear();
   }
 }
 
@@ -85,6 +138,28 @@ class PgChannel {
 class PgRealtime {
   PgRealtime._();
   static final PgRealtime instance = PgRealtime._();
+
+  /// How long to gather notifications before delivering them.
+  ///
+  /// Saving one form typically writes several tables in one transaction (the
+  /// package, its items, an audit row), and each is a separate NOTIFY. Without
+  /// a window every client refetches once per table; with it, once per burst.
+  ///
+  /// 300ms is chosen to sit under the threshold where a person perceives the
+  /// update as anything but instant, while being long enough to absorb a
+  /// multi-table save. The sub-second sync requirement is comfortably met:
+  /// worst case is 300ms of batching plus the query itself.
+  static const Duration debounceWindow = Duration(milliseconds: 300);
+
+  /// Set by the cross-yard screens (Disposal and Executive directorates, ICT)
+  /// which legitimately read every yard's data and must therefore refresh on
+  /// any yard's change.
+  ///
+  /// ⚠️ Defaults to TRUE — filtering is opt-IN per client session. A client
+  /// that has not yet established which yard it is showing must not silently
+  /// miss updates; [AppSession.applyYardFilterToRealtime] turns it off once a
+  /// single-yard user signs in.
+  bool watchAllYards = true;
 
   Connection? _conn;
   StreamSubscription<String>? _sub;
@@ -116,6 +191,9 @@ class PgRealtime {
   }
 
   void removeChannel(PgChannel c) {
+    // Cancel the debounce first: a pending timer would otherwise fire into a
+    // provider that has already been disposed.
+    c._cancelPending();
     _channels.remove(c);
   }
 
@@ -153,14 +231,43 @@ class PgRealtime {
       final map = jsonDecode(payload) as Map<String, dynamic>;
       final table = map['table'] as String? ?? '';
       final op = map['op'] as String? ?? 'UPDATE';
+      final yard = map['yard'] as String?;
       if (table.isEmpty) return;
+
+      // ⚠️ The storm stops HERE. One officer saving a form notifies every
+      // connected PC; without this each of them re-queries, so one click costs
+      // the server one query per client. A PC showing yard GL1 has nothing to
+      // redraw when CED changes, so it drops the notification and never asks.
+      //
+      // A null yard is NOT filtered: it means the table has no yard column
+      // (profiles, categories, storage rates) and the change concerns everyone.
+      // Erring that way keeps correctness independent of the optimisation.
+      if (!_concernsThisClient(yard)) return;
+
       // Snapshot: a callback may add or remove a channel while we iterate.
       for (final c in List<PgChannel>.from(_channels)) {
-        c._dispatch(table, op);
+        c._dispatch(table, op, yard);
       }
     } catch (e) {
       debugPrint('PgRealtime bad payload "$payload": $e');
     }
+  }
+
+  /// Whether a change in [yard] should wake this client.
+  ///
+  /// Deliberately permissive in every uncertain case — a missed refresh shows
+  /// the user stale data, which is far worse than a redundant query:
+  ///
+  ///   * null yard        → a shared table; everyone cares.
+  ///   * no yard selected → we cannot tell yet; take it.
+  ///   * cross-yard views → the Disposal and Executive directorates read every
+  ///     yard, so they opt out of filtering entirely via [watchAllYards].
+  bool _concernsThisClient(String? yard) {
+    if (yard == null || yard.isEmpty) return true;
+    if (watchAllYards) return true;
+    final mine = AppSession.currentYard;
+    if (mine.isEmpty) return true;
+    return yard == mine;
   }
 
   void _scheduleReconnect() {
@@ -185,6 +292,9 @@ class PgRealtime {
 
   Future<void> dispose() async {
     _retryTimer?.cancel();
+    for (final c in _channels) {
+      c._cancelPending();
+    }
     _channels.clear();
     _closeQuietly();
   }
