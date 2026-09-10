@@ -208,8 +208,17 @@ void main() {
     final dash = _read('lib/screens/ict/ict_dashboard_screen.dart');
 
     test('the controller has room for it', () {
-      expect(dash, allOf(contains('TabController('), contains('length: 4,')),
-          reason: 'a fourth tab needs a fourth slot, or the view throws');
+      // ⚠️ A slot per rail entry, or the view throws. Counted from the
+      // rail rather than written out: the number changes whenever ICT gains
+      // a section, and a literal here is a test that has to be edited
+      // instead of one that checks the rule.
+      final items = dash.substring(dash.indexOf('static const _items = ['));
+      final n = '_IctRailItem('
+          .allMatches(items.substring(0, items.indexOf('];')))
+          .length;
+      expect(dash, contains('TabController('));
+      expect(dash, contains('length: $n,'),
+          reason: 'the controller must have one slot per rail entry');
       // The label now names a rail entry, not a Tab.
       expect(dash, contains("_IctRailItem('Directorate Access'"));
       expect(dash, contains('DirectorateAccessTab(accent: accent)'));
@@ -222,7 +231,8 @@ void main() {
       // resolves clicks against the shorter list, so tapping does nothing.
       final railStart = dash.indexOf('static const _items = [');
       final rail = dash.substring(railStart, dash.indexOf('];', railStart));
-      expect('_IctRailItem('.allMatches(rail).length, 4);
+      final railCount = '_IctRailItem('.allMatches(rail).length;
+      expect(railCount, greaterThanOrEqualTo(4));
       // The four bodies the TabBarView holds. Counted by NAME rather than by
       // slicing the children list: its first child is a large inline widget,
       // so the first "]," closes an inner list, not the TabBarView's.
@@ -230,11 +240,21 @@ void main() {
       for (final tab in const [
         'YardDirectorateTab(',
         'DirectorateAccessTab(',
+        'SystemRatesTab(',
         'ActivityLogsTab(',
       ]) {
         expect(views, contains(tab));
       }
-      expect(dash, allOf(contains('TabController('), contains('length: 4,')));
+      // ⚠️ All three counts, against each other. A controller shorter than
+      // the rail paints every entry but resolves clicks against the shorter
+      // list, so a tap on the last one does nothing at all.
+      expect(dash, contains('length: $railCount,'));
+      // The first module is a large inline widget, so the modules are
+      // counted by their index argument rather than by slicing children.
+      for (var i = 1; i < railCount; i++) {
+        expect(views, contains('index: $i,'),
+            reason: 'rail entry $i has no module in the view');
+      }
     });
   });
 }

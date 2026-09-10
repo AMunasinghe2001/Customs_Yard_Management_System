@@ -124,7 +124,10 @@ void main() {
       'Perishable',
       'Sold Goods', 'Unsold Goods', 'Destroyed Goods',
       'Government Use', 'Auction', 'Re-export', 'Converted', 'Removed',
-      'Taxes', 'Expenses', 'Reports',
+      // ⚠️ No 'Taxes': it moved to the ICT portal, where the storage
+      // rate went too. Both are statutory figures that must be the same
+      // everywhere, so neither belongs to the office it bills.
+      'Expenses', 'Reports',
     ];
 
     final stripStart = disposal.indexOf('tabs: const [');

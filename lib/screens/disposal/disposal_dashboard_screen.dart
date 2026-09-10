@@ -17,7 +17,6 @@ import '../../widgets/storage_charge_note.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import 'disposal_shared.dart';
-import 'taxes_tab.dart';
 import 'expenses_tab.dart';
 import '../packages/perishable_goods_screen.dart';
 import '../reports/reports_screen.dart';
@@ -82,7 +81,6 @@ enum DisposalTab {
   reExport,
   converted,
   removed,
-  taxes,
   expenses,
   reports,
 }
@@ -404,16 +402,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.receipt_long_rounded, size: 18),
-                              Gap(8),
-                              Text('Taxes'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
                               Icon(Icons.payments_rounded, size: 18),
                               Gap(8),
                               Text('Expenses'),
@@ -517,7 +505,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     emptySubtitle:
                         'Unsold goods removed from customs premises will '
                         'appear here.'),
-                TaxesTab(),
                 ExpensesTab(),
                 ReportsScreen(disposalMode: true),
               ]),
@@ -1375,11 +1362,11 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                             DataColumn2(
                                 label: Text('Sold Date'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Receipt No'), size: ColumnSize.S),
-                            DataColumn2(
-                                label: Text('Valuation'),
+                                label: Text('Latest Valuation'),
                                 size: ColumnSize.S,
                                 fixedWidth: 132),
+                            DataColumn2(
+                                label: Text('Sold Receipt No'), size: ColumnSize.S),
                             DataColumn2(
                                 label: Text('Sold Price'), size: ColumnSize.M),
                             // %s Tax and total in their OWN columns.
@@ -1401,9 +1388,8 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                             // the figure and the button that collects
                             // it belong side by side.
                             DataColumn2(
-                                label: Center(child: Text('Storage')),
-                                size: ColumnSize.S,
-                                fixedWidth: 132),
+                                label: Center(child: Text('Storage Charges')),
+                                size: ColumnSize.S),
                             DataColumn2(
                                 label: Center(child: Text('Delivery')),
                                 fixedWidth: kDestructionStatusColumnWidth),
@@ -1428,11 +1414,11 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                             ? DateFormat('yyyy-MM-dd')
                                                 .format(r.entry.returnedAt!)
                                             : '—')),
-                                    DataCell(_SaleReceiptCell(
-                                        saleItemKey: r.saleItemKey)),
                                     DataCell(_SaleValuationCell(
                                         saleItemKey: r.saleItemKey,
                                         qty: r.entry.itemCount)),
+                                    DataCell(_SaleReceiptCell(
+                                        saleItemKey: r.saleItemKey)),
                                     DataCell(_SaleFinancialsCell(
                                         saleItemKey: r.saleItemKey)),
                                     DataCell(_SaleFinancialsCell(
@@ -1451,7 +1437,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                           packageId: r.package.id,
                                           packageItemId:
                                               r.entry.packageItemId,
-                                          compact: true),
+                                          priceOnly: true),
                                     )),
                                     DataCell(Center(
                                         child: _DeliveryStatusCell(
@@ -3673,13 +3659,13 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     DataColumn2(
                         label: Text('SR Number'),
                         size: ColumnSize.S,
-                        fixedWidth: 135),
+                        fixedWidth: 165),
                     DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
                     DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('HS Code'),
                         size: ColumnSize.S,
-                        fixedWidth: 106),
+                        fixedWidth: 96),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Center(child: Text('Qty')),
@@ -3688,7 +3674,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     DataColumn2(
                         label: Center(child: Text('Source')),
                         size: ColumnSize.S,
-                        fixedWidth: 100),
+                        fixedWidth: 88),
                     // The DECLARED value off the SR form -- what the goods
                     // were entered as being worth. Replaces Goods Description,
                     // which repeated the Goods Name for most rows and pushed
@@ -3710,7 +3696,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     DataColumn2(
                         label: Center(child: Text('Status')),
                         size: ColumnSize.M,
-                        fixedWidth: 235),
+                        fixedWidth: 220),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,

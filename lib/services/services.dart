@@ -8926,6 +8926,20 @@ class DisposalService {
 
   // --- Taxes ---
 
+  /// Set the national daily storage rate.
+  ///
+  /// ⚠️ Through the RPC, not a direct insert. One row governs every yard
+  /// in the country, so "may this user write here" is a question about
+  /// their office rather than about a row they own -- and the function
+  /// checks that, refuses a rate of zero (which would silently stop every
+  /// warehouse charge, showing only as invoices reading LKR 0), and records
+  /// WHO set it. The old path inserted straight into the table with no
+  /// author column at all, so the history read "System" for every change.
+  Future<void> setStorageRate(double rate) async {
+    await AuthService._withNetworkRetry(
+        () => supabase.rpc('set_storage_rate', params: {'p_rate': rate}));
+  }
+
   Future<List<DisposalTaxModel>> getTaxes() async {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_taxes')
@@ -8934,10 +8948,20 @@ class DisposalService {
     return (data as List).map((e) => DisposalTaxModel.fromJson(e)).toList();
   }
 
-  Future<void> createTax(String name, double percentage) async {
-    await AuthService._withNetworkRetry(() => supabase
-        .from('disposal_taxes')
-        .insert({'name': name, 'percentage': percentage}));
+  /// Add a levy.
+  ///
+  /// ⚠️ [isActive] is passed, not assumed. The form offers the switch
+  /// when adding as well as editing -- a levy legislated but not yet in
+  /// force is a real case, and creating it active would charge it from the
+  /// moment it was typed.
+  Future<void> createTax(String name, double percentage,
+      {bool isActive = true}) async {
+    await AuthService._withNetworkRetry(() =>
+        supabase.from('disposal_taxes').insert({
+          'name': name,
+          'percentage': percentage,
+          'is_active': isActive,
+        }));
   }
 
   Future<void> updateTax(

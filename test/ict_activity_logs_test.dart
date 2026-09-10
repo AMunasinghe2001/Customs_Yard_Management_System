@@ -71,7 +71,14 @@ void main() {
 
   group('the tab is wired into the ICT dashboard', () {
     test('the controller has room for it', () {
-      expect(dash, allOf(contains('TabController('), contains('length: 4,')),
+      // ⚠️ A slot per rail entry, counted rather than written out:
+      // the number changes whenever ICT gains a section.
+      final items = dash.substring(dash.indexOf('static const _items = ['));
+      final n = '_IctRailItem('
+          .allMatches(items.substring(0, items.indexOf('];')))
+          .length;
+      expect(dash, contains('TabController('));
+      expect(dash, contains('length: $n,'),
           reason: 'every tab needs a slot, or the view throws');
       // The label now names a rail entry, not a Tab.
       expect(dash, contains("_IctRailItem('Activity Logs'"));
@@ -85,7 +92,8 @@ void main() {
       // resolves clicks against the shorter list, so tapping does nothing.
       final railStart = dash.indexOf('static const _items = [');
       final rail = dash.substring(railStart, dash.indexOf('];', railStart));
-      expect('_IctRailItem('.allMatches(rail).length, 4);
+      final railCount = '_IctRailItem('.allMatches(rail).length;
+      expect(railCount, greaterThanOrEqualTo(4));
       // The four bodies the TabBarView holds. Counted by NAME rather than by
       // slicing the children list: its first child is a large inline widget,
       // so the first "]," closes an inner list, not the TabBarView's.
@@ -97,7 +105,7 @@ void main() {
       ]) {
         expect(views, contains(tab));
       }
-      expect(dash, allOf(contains('TabController('), contains('length: 4,')));
+      expect(dash, contains('length: $railCount,'));
     });
   });
 

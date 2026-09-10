@@ -932,12 +932,28 @@ final currentStorageRateProvider = FutureProvider<double>((ref) async {
   return latest.value;
 });
 
+/// The statutory levies applied to a tender sale.
+///
+/// ⚠️ It lived in `taxes_tab.dart`, which was Central Disposal's own page
+/// for editing them. That page is gone -- the levies are set by ICT now,
+/// because they are national figures rather than one directorate's -- but
+/// the SALE still reads them, so the provider outlives the screen and
+/// belongs here with the rest.
+final taxesProvider = FutureProvider<List<DisposalTaxModel>>((ref) async {
+  return ref.read(disposalServiceProvider).getTaxes();
+});
+
 final storageRateHistoryProvider =
     FutureProvider<List<AuditLogModel>>((ref) async {
   ref.watch(storageRatesChangeTriggerProvider);
+  // ⚠️ The AUTHOR too. This printed "System" against every change
+  // because the table had no column to read instead -- a gap in the audit
+  // trail for the figure that decides what every yard in the country
+  // bills. postgres/64 added `set_by`; rows predating it stay unattributed,
+  // which is true of them.
   final data = await supabase
       .from('storage_rates')
-      .select('rate, effective_from, id')
+      .select('rate, effective_from, id, profiles!set_by(full_name, badge_number)')
       .order('effective_from', ascending: false);
 
   // Typed explicitly: `data` is dynamic, so a bare .map().toList() infers
@@ -951,7 +967,12 @@ final storageRateHistoryProvider =
         entityType: 'storage_rate',
         entityId: row['id'].toString(),
         createdAt: parseDbDateRequired(row['effective_from']),
-        details: {'rate': parseDbNum(row['rate']) ?? 0},
+        details: {
+          'rate': parseDbNum(row['rate']) ?? 0,
+          // Null for a seeded row, which the table renders as "System".
+          'set_by': (row['profiles'] as Map<String, dynamic>?)?['full_name'] ??
+              (row['profiles'] as Map<String, dynamic>?)?['badge_number'],
+        },
       )
   ];
 });

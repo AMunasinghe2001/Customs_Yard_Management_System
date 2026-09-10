@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../core/supabase_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/supabase_client.dart';
-import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
-import '../../core/yards.dart';
-import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/account_cells.dart';
 import '../../widgets/app_shell.dart';
@@ -66,7 +61,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 5,
+        length: 4,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -132,9 +127,6 @@ class AdminScreen extends ConsumerWidget {
                                 icon: Icon(Icons.category_rounded, size: 20),
                                 text: 'Items'),
                             Tab(
-                                icon: Icon(Icons.payments_rounded, size: 20),
-                                text: 'Storage Charges'),
-                            Tab(
                                 icon: Icon(Icons.history_toggle_off_rounded,
                                     size: 20),
                                 text: 'Logs'),
@@ -154,7 +146,6 @@ class AdminScreen extends ConsumerWidget {
                 _OfficersTab(),
                 _WarehousesTab(),
                 _CategoriesTab(),
-                _StorageChargesTab(),
                 _LogsTab()
               ])),
             ],
@@ -2202,267 +2193,6 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
   }
 }
 
-// ── Storage Charges Tab ───────────────────────────────────────
-
-class _StorageChargesTab extends ConsumerStatefulWidget {
-  const _StorageChargesTab();
-  @override
-  ConsumerState<_StorageChargesTab> createState() => _StorageChargesTabState();
-}
-
-class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
-  final _chargeCtrl = TextEditingController();
-  bool _loading = false;
-
-  double? _latestRate(Map<DateTime, double>? rates) {
-    if (rates == null || rates.isEmpty) return null;
-    final latestEntry = rates.entries.reduce(
-      (a, b) => a.key.isAfter(b.key) ? a : b,
-    );
-    return latestEntry.value;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final rates = ref.read(storageRateProvider).valueOrNull;
-      final rate = _latestRate(rates);
-      _chargeCtrl.text = rate?.toStringAsFixed(2) ?? '';
-    });
-  }
-
-  @override
-  void dispose() {
-    _chargeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_chargeCtrl.text.isEmpty) return;
-    final rate = double.tryParse(_chargeCtrl.text) ?? 0;
-    setState(() => _loading = true);
-    try {
-      final previousRate = _latestRate(
-        ref.read(storageRateProvider).valueOrNull,
-      );
-      final insertRes = await supabase
-          .from('storage_rates')
-          .insert({
-            'rate': rate,
-            'effective_from': DateTime.now().toIso8601String(),
-          })
-          .select('id')
-          .single();
-
-      final user = supabase.auth.currentUser;
-      if (user != null) {
-        await AuditLogService().recordLog(
-          userId: user.id,
-          action: 'Updated storage rate',
-          entityType: 'storage_rate',
-          entityId: insertRes['id'].toString(),
-          details: {
-            'old_rate': previousRate,
-            'new_rate': rate,
-          },
-        );
-      }
-
-      ref.invalidate(storageRateProvider);
-      ref.invalidate(storageRateHistoryProvider);
-      // ⚠️ The PAGED log, which is what the screen reads now. Invalidating
-      // allLogsProvider alone refreshed a fetch nothing renders any more, and
-      // the rate change would not show in the log until the admin navigated
-      // away and back.
-      ref.invalidate(yardLogsPageProvider);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Storage rate updated successfully'),
-            backgroundColor: context.colors.successGreen));
-        Navigator.pop(context);
-        _chargeCtrl.clear();
-      }
-    } catch (e) {
-      if (mounted)
-        showErrorSnack(context, e);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final history = ref.watch(storageRateHistoryProvider);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Storage Rates & Charges',
-                  style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700)),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: context.colors.primaryGold,
-                  foregroundColor: context.colors.primaryNavy,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                icon: const Icon(Icons.edit_rounded, size: 18),
-                label: const Text('Change Charges',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                onPressed: () => _showUpdateDialog(context),
-              ),
-            ],
-          ),
-          const Gap(16),
-          Expanded(
-            child: history.when(
-              loading: () => Center(
-                  child: CircularProgressIndicator(
-                      color: context.colors.primaryGold)),
-              error: (e, _) => ErrorView(
-                  error: e,
-                  onRetry: () => ref.refresh(storageRateHistoryProvider)),
-              data: (list) => Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                    color: context.colors.cardDark,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: context.colors.borderColor)),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: DataTable2(
-                    horizontalMargin: 24,
-                    columnSpacing: 20,
-                    fixedTopRows: 1,
-                    empty: const EmptyTableState(
-                        icon: Icons.history_rounded,
-                        message: 'No activity yet',
-                        subtitle: 'System actions will be logged here.'),
-                    isHorizontalScrollBarVisible: false,
-                    dataRowColor: WidgetStateProperty.all(Colors.transparent),
-                    headingRowColor:
-                        WidgetStateProperty.all(context.colors.surfaceDark),
-                    columns: [
-                      DataColumn2(
-                          label: Text('Date & Time',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13)),
-                          size: ColumnSize.M),
-                      DataColumn2(
-                          label: Text('Officer/Admin',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13)),
-                          size: ColumnSize.L),
-                      DataColumn2(
-                          label: Text('Action / Value Change',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13)),
-                          size: ColumnSize.L),
-                    ],
-                    rows: list
-                        .map((h) => DataRow(cells: [
-                              DataCell(TooltipText(
-                                  DateFormat('dd MMM yyyy, HH:mm')
-                                      .format(h.createdAt),
-                                  style: TextStyle(
-                                      color: context.colors.textMuted,
-                                      fontSize: 13))),
-                              DataCell(TooltipText(
-                                  h.userId == 'system'
-                                      ? 'System'
-                                      : (h.userFullName ?? 'Admin'),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600))),
-                              DataCell(TooltipText(
-                                  h.action == 'RATE_UPDATE'
-                                      ? 'Rate Set: LKR ${NumberFormat('#,##0.00').format(h.details?['rate'] ?? 0)}'
-                                      : h.action,
-                                  style: TextStyle(
-                                      color: context.colors.primaryGold,
-                                      fontSize: 13))),
-                            ]))
-                        .toList(),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showUpdateDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => StyledFormDialog(
-          label: 'Storage Rate',
-          title: 'Update Storage Charges',
-          icon: Icons.payments_rounded,
-          width: 440,
-          child: StyledFormSection(
-            title: 'Daily Charge',
-            icon: Icons.attach_money_rounded,
-            children: [
-              Text(
-                'Set the daily storage fee per package. This rate is used to calculate the total cost for held items.',
-                style: TextStyle(
-                    color: context.colors.textSecondary, fontSize: 13),
-              ),
-              TextField(
-                controller: _chargeCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                autofocus: true,
-                style: TextStyle(color: context.colors.textPrimary),
-                decoration: const InputDecoration(
-                  labelText: 'Daily Charge Rate (LKR)',
-                  prefixText: 'LKR ',
-                  helperText: 'e.g. 150.00',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            StyledDialogPrimaryButton(
-              labelText: 'Update Rate',
-              icon: Icons.save_rounded,
-              loading: _loading,
-              onPressed: _save,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Zones of one warehouse, each with its own capacity.
-///
-/// Capacity lives here rather than on the warehouse: space is organised zone
-/// by zone, and the warehouse's figure is simply their sum. Setting it in one
-/// place means the two can never disagree.
 class _WarehouseZonesDialog extends ConsumerStatefulWidget {
   final WarehouseModel warehouse;
   const _WarehouseZonesDialog({required this.warehouse});

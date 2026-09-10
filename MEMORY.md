@@ -2842,3 +2842,121 @@ Retention (`purge_old_audit_logs`, 365 days) is the **one** sanctioned deletion,
 ⚠️ **`archive_mode = off` — PITR is not available**, so up to 24h is recoverable only to the last nightly dump. `wal_level` is already `replica`; only archiving is missing. Enabling it needs a **restart**, not a reload, and a failing `archive_command` silently fills `pg_wal` until the disk is full — the audit checks `pg_stat_archiver.failed_count`.
 
 **Verified the audit by breaking it**: dropping the delete and truncate triggers turned 0 failures into 5.
+
+---
+
+## Scaling to 100+ concurrent clients (2026-09-09)
+
+The app is a desktop client that talks **straight to PostgreSQL** — no middle tier. That one fact drives every finding below: there is no shared pool, so every PC holds its own, and the server's limits are divided between all of them.
+
+### ⚠️ The ceiling was 11 users, and nothing in the app said so
+
+`max_connections = 100` (stock) and the app opened **9 sockets per PC** (pool of 8 + the LISTEN connection). So:
+
+```
+(100 - 3 reserved) / 9  =  10 clients
+```
+
+The **12th user** is refused with `53300: too many connections for role` — which reads like a server fault and is pure arithmetic. It appears nowhere in testing, because one developer on one machine uses 9 of 97.
+
+Fixed from **both ends**, and both are required:
+
+- `PG_POOL_SIZE` default **8 → 3** ([pg_connection.dart](lib/core/db/pg_connection.dart)). Verified live: the running app holds **2 idle sockets** (1 pooled + 1 listener), 4 at peak.
+- `max_connections = 400` in [postgres/63_server_tuning.conf](postgres/63_server_tuning.conf) → `397/4 ≈ 99 clients` with headroom for pgAdmin and backups.
+
+Pooled connections now also have a **bounded lifetime** (`maxConnectionAge`/`maxSessionUse`, 10 min). Without it an all-day client reaches its peak during the busy minute and never hands those sockets back. `maxQueryCount` is **not** used — the driver documents it as not yet implemented.
+
+### The notification storm: one click cost ~100 queries
+
+`03_realtime.sql` announced *"table X changed"* to every listener, and all 19 callbacks respond by refetching. So one officer saving one form woke all 100 PCs, each re-running its dashboard query in the same millisecond — and **most of that work was wasted**, since a PC showing GL1 has nothing to redraw when CED changes.
+
+[postgres/64_realtime_yard_scoped.sql](postgres/64_realtime_yard_scoped.sql) puts the **yard in the payload**, and the client drops what it isn't showing.
+
+⚠️ **A statement-level trigger has no `NEW`/`OLD` row.** These are `FOR EACH STATEMENT` on purpose (a 500-row insert should wake listeners once, not 500 times), so the yard is read from **transition tables** (`REFERENCING NEW TABLE AS new_rows`) and the *distinct* yards touched are collected — a statement spanning two yards correctly notifies both.
+
+⚠️ **The `REFERENCING` clause is per-operation**: INSERT has no OLD, DELETE has no NEW. One combined trigger cannot declare both, so each table gets **three** narrow triggers (54 total), still one notification per statement.
+
+⚠️ **A table with no `yard` column notifies `yard: null`, meaning "everyone".** Filtering is a pure optimisation layered on top of correct behaviour — a missed refresh shows stale seizure data, which is far worse than a redundant query. For the same reason `watchAllYards` **defaults to true** and the five cross-yard roles (`disposal`, `appeal`, `valuation`, `executive`, `ict`) never filter; only `officer`/`admin` do — and they are the bulk of the 100 clients.
+
+**Verified by actually listening**: a 176-row update in one yard produced **one** `{"table":"packages","op":"UPDATE","yard":"GL1"}`, and a yard-less table correctly produced `"yard":null`.
+
+Plus a **300ms per-channel debounce** — saving one form writes several tables in one transaction, each its own NOTIFY. Per *channel*, not global, so a busy table (`audit_logs`, written by every action) cannot delay an unrelated screen.
+
+### Indexes: `yard` was filtered 23 times and indexed nowhere
+
+The schema indexed its foreign keys well (19, 31) but not the two columns almost every screen narrows by. `packages` had **no index on `status` or `yard`** at all.
+
+With 200 rows a sequential scan is sub-millisecond and the planner is right to prefer it — **the cost is multiplied by clients, not rows**. [postgres/63_scale_indexes.sql](postgres/63_scale_indexes.sql) adds 19, shaped `(yard, created_at DESC)` because nearly every query is *"this yard, newest first, one page"* — that shape makes the `ORDER BY` and `LIMIT` free, where two single-column indexes would still sort every matching row.
+
+`CREATE INDEX CONCURRENTLY`, so it runs on the live server without locking writers — which is also why the file must **not** be wrapped in a transaction.
+
+**Verified with `EXPLAIN ANALYZE`**, not assumed: `packages_yard_created_idx` and `audit_logs_entity_idx` are chosen by the planner. Also `ANALYZE`d at the end — a new index is invisible to the planner until statistics refresh, which otherwise looks like "the indexes did nothing".
+
+⚠️ `random_page_cost` was still **4.0** (a spinning-disk assumption). On an SSD that is the most common reason a server *ignores* a perfectly good index — it would have wasted the work above. Now 1.1.
+
+### Parsing off the UI thread
+
+Dart is single-threaded: UI, animation and every `fromJson` share one isolate. `PackageModel.fromJson` is the heaviest parse in the app because it is **nested** — each package also parses its items, its warehouse entries, and each entry's warehouse and officer. `reports_screen.dart` calls `getAllPackages()` **21 times** with no pagination.
+
+[lib/core/parse_isolate.dart](lib/core/parse_isolate.dart) moves it to `compute()` **past a 150-row threshold** — below that, spawning an isolate costs more than the parse it saves, so small per-dialog reads correctly stay inline.
+
+⚠️ Entry points must be **top-level**, and what crosses the boundary is **copied** — which is why these take raw decoded rows (cheap to copy) and not a `Connection` or `PgQuery`, neither of which can be sent to an isolate at all.
+
+### Already fine — checked, not assumed
+
+- **Pagination exists**: `getPackagesPaged`, `getPerishableRowsPaged` etc. page in SQL.
+- **`DataTable` does not virtualize**, but **23 of 27** tables page at 20 rows via `TablePager`, so only 20 rows are ever built. The ICT Activity Logs tab is **server**-paged at 25 (`offset`/`limit`) with its own pager.
+
+Full suite green: **1518 tests**, plus 13 new in [test/scale_100_clients_test.dart](test/scale_100_clients_test.dart) covering the connection arithmetic, the yard filter in both directions, and sign-out restoring the safe default.
+
+## Rates & taxes moved to ICT: nobody sets the figure they are billed (2026-09-10)
+
+The daily **storage rate** lived in the yard's Admin Panel and the **sale
+taxes** in Central Disposal's own Taxes tab — each in the portal it was
+charged against. Both are now one ICT page,
+[lib/screens/ict/system_rates_tab.dart](lib/screens/ict/system_rates_tab.dart),
+reached from the rail as **Rates & Taxes** (index 3; Activity Logs moved to 4).
+
+The reason is not tidiness. These are **statutory figures that must be the same
+everywhere**, and a rate one office can change under another's feet is not a
+rate. Both source pages are gone completely: the tab, the `TabView` child, the
+controller length and `taxes_tab.dart` itself, with `taxesProvider` relocated to
+[lib/core/providers.dart](lib/core/providers.dart).
+
+⚠️ `DefaultTabController` asserts the tab list and the child list match, so
+dropping a tab without its child is a **runtime crash, not a compile error**.
+The enum in Central Disposal *is* the controller length, so `DisposalTab.taxes`
+had to go with it.
+
+### The audit gap the move exposed
+
+`postgres/65_storage_rate_author.sql` adds `storage_rates.set_by` and a
+`set_storage_rate(p_rate numeric)` SECURITY DEFINER that refuses a non-positive
+rate and any role outside `('ict','admin')`. The verify block proves **both**
+guards fire. Measured against the live DB afterwards: exactly **one** signature,
+no overload — `create or replace` matches on the argument list, which is how
+migration 60 once ended up with four functions where it wanted two. The single
+existing rate row stays `(unattributed)`; it predates the column and there is no
+honest value to backfill.
+
+Setting a rate writes an audit row, and ICT's Activity Logs sits one tab over,
+so the dialog now also invalidates `ictAllOfficeLogsProvider`. This is the same
+bug the yard portal had before the move — invalidating a provider nothing
+renders any more refreshes nothing, and the change stays invisible until you
+navigate away and back. The test that guarded it followed the page rather than
+being deleted.
+
+### Proving the tables, not assuming them
+
+[test/ict_system_rates_test.dart](test/ict_system_rates_test.dart) renders the
+tab, because `DataTable2` fails at **runtime** in two ways the compiler cannot
+see: cells that do not match columns, and
+`totalFixedWidth < totalColAvailableWidth`. The Sale Taxes table carries 360px
+of fixed columns against one flexible column, so it is the one at risk.
+
+⚠️ The narrow-width test was **checked for teeth**: forced to 420px it fails on
+exactly that assert, and passes at 1100px. So no `minWidth` was added — it was
+demonstrated to be unnecessary, not assumed to be.
+
+Full suite green: **1520 tests**, `flutter analyze` clean of errors, release
+build succeeds.

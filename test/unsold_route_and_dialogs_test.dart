@@ -32,7 +32,9 @@ void main() {
         'disposalRequests', 'tenderSales', 'unsoldTenders', 'committees',
         'perishable', 'soldGoods', 'unsoldGoods', 'destroyedGoods',
         'governmentUse', 'auction', 'reExport', 'converted', 'removed',
-        'taxes', 'expenses', 'reports',
+        // ⚠️ `taxes` is gone: the levies are national figures, set by
+        // ICT, not by the directorate they are charged on.
+        'expenses', 'reports',
       ];
       expect(DisposalTab.values.map((t) => t.name).toList(), expected);
     });

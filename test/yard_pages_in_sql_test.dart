@@ -198,11 +198,14 @@ void main() {
     });
 
     test('a rate change still refreshes the log the screen reads', () {
-      // ⚠️ Invalidating allLogsProvider alone refreshed a fetch nothing
-      // renders any more, so the change would not appear until the admin
-      // navigated away and back.
-      final c = code(adminScreen);
-      expect(c, contains('invalidate(yardLogsPageProvider)'));
+      // ⚠️ Invalidating a provider nothing renders any more refreshes
+      // nothing: the change would not appear until the page was navigated
+      // away from and back. The rate now lives in the ICT portal, so the
+      // log to refresh is the one THAT portal shows -- the rule is the
+      // same, the page and the provider are not.
+      final c = code(File('lib/screens/ict/system_rates_tab.dart')
+          .readAsStringSync());
+      expect(c, contains('invalidate(ictAllOfficeLogsProvider)'));
     });
   });
 }

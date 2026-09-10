@@ -17,6 +17,7 @@ import '../../widgets/styled_dropdown.dart';
 import 'ict_ui.dart';
 import 'activity_logs_tab.dart';
 import 'directorate_access_tab.dart';
+import 'system_rates_tab.dart';
 import 'yard_directorate_tab.dart';
 import '../../widgets/error_view.dart';
 
@@ -33,6 +34,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     with SingleTickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
   /// 0 = Staff Accounts, 1 = Yards & Directorates, 2 = Directorate Access,
+  /// 3 = Rates & Taxes,
   /// 3 = Activity Logs.
   ///
   /// A TabController rather than a plain int so the pages can also be SWIPED,
@@ -51,7 +53,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
   /// and the header's section name — each listen through their own
   /// AnimatedBuilder, so only those few widgets rebuild as it moves.
   late final TabController _tabs = TabController(
-      length: 4,
+      length: 5,
       vsync: this,
       // Slightly quicker than Material's 300ms: the rail is right there, so
       // a console switches modules many times a minute and the transition
@@ -1465,11 +1467,17 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     index: 2,
                     controller: _tabs,
                     child: DirectorateAccessTab(accent: accent)),
-                // Every action across every office. The tab scrolls its own
-                // table, so unlike the two above it is not wrapped in a
-                // SingleChildScrollView.
+                // The national rates. It scrolls its own body, like the two
+                // above it.
                 _IctModule(
                     index: 3,
+                    controller: _tabs,
+                    child: SystemRatesTab(accent: accent)),
+                // Every action across every office. The tab scrolls its own
+                // table, so unlike the others it is not wrapped in a
+                // SingleChildScrollView.
+                _IctModule(
+                    index: 4,
                     controller: _tabs,
                     child: ActivityLogsTab(accent: accent)),
               ],
@@ -1590,6 +1598,13 @@ class _IctSideRail extends StatefulWidget {
         Icons.account_tree_rounded),
     _IctRailItem('Directorate Access', 'Reissue sign-in details',
         Icons.vpn_key_rounded),
+    // ⚠️ The storage rate and the sale taxes, which used to live in the
+    // two portals they billed -- the yard's Admin Panel and Central
+    // Disposal's Taxes tab. Neither is a yard or a directorate decision:
+    // they are statutory figures that must be the same everywhere, and a
+    // rate one office can change under another's feet is not a rate.
+    _IctRailItem('Rates & Taxes', 'Storage rate and sale levies',
+        Icons.payments_rounded),
     _IctRailItem('Activity Logs', 'Every action, every office',
         Icons.history_rounded),
   ];

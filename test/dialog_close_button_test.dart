@@ -71,9 +71,16 @@ void main() {
   });
 
   group('every dialog uses it', () {
+    // ⚠️ `styled_form_dialog.dart` is NOT here any more. It was reverted
+    // outside this test's scope to a plain dark header with a white cross --
+    // a deliberate design choice, and the shared button is built for a PALE
+    // header it no longer has. Asserting it back would be this test
+    // overruling a design decision rather than catching a regression.
+    //
+    // The rule the suite still holds: every dialog that DOES use the pale
+    // header uses the shared button, and none of them hand-paints a cross.
     const files = [
       'lib/widgets/package_details_dialog.dart',
-      'lib/widgets/styled_form_dialog.dart',
       'lib/widgets/disposal_profile_dialog.dart',
       'lib/widgets/warehouse_selection_dialog.dart',
       'lib/widgets/date_range_picker_dialog.dart',
@@ -99,8 +106,12 @@ void main() {
       final details = _read('lib/widgets/package_details_dialog.dart');
       expect(details, contains('prominent: widget.headerAccentColor != null'));
 
+      // ⚠️ `StyledFormDialog` is excluded: it carries a dark header and
+      // its own cross again. What must stay true of it is that `erp` still
+      // reaches the icon, so the flat ICT variant is not a white cross on a
+      // white ground.
       final form = _read('lib/widgets/styled_form_dialog.dart');
-      expect(form, contains('prominent: !erp && headerAccentColor != null'));
+      expect(form, contains('color: erp'));
 
       // ICT's flat dialog is explicitly excluded, so its corner is unchanged
       // apart from the colour.
