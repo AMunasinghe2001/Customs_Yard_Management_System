@@ -632,10 +632,15 @@ class PackageService {
   /// the package row: Release, Re-export and Forfeit write only to
   /// `warehouse_entries`, so a package's own timestamps cannot answer it.
   /// `recent_package_activity` (postgres/51) settles that in SQL.
-  Future<List<PackageModel>> getRecentActivity({int limit = 20}) async {
-    final idRows = await AuthService._withNetworkRetry(() => supabase
-        .from('recent_package_activity')
-        .select('package_id')
+  Future<List<PackageModel>> getRecentActivity(
+      {int limit = 20, String? yard}) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
+    var query = supabase.from('recent_package_activity').select('package_id');
+    if (effectiveYard != null && effectiveYard.isNotEmpty) {
+      query = query.eq('yard', effectiveYard);
+    }
+    final idRows = await AuthService._withNetworkRetry(() => query
         .order('touched_at', ascending: false)
         .limit(limit));
     final ids = [
@@ -645,9 +650,14 @@ class PackageService {
     if (ids.isEmpty) return const [];
 
     final byId = await getPackagesByIds(ids);
-    // Keep the view's order -- it sorted by the latest touch, which is what
-    // the dashboard is showing.
-    return [for (final id in ids) if (byId[id] != null) byId[id]!];
+    // Keep the view's order and respect yard scoping.
+    return [
+      for (final id in ids)
+        if (byId[id] != null &&
+            (effectiveYard == null ||
+                yardOfSrNumber(byId[id]!.srNumber) == effectiveYard))
+          byId[id]!
+    ];
   }
 
   Future<PackageModel?> getPackageBySrNumber(String srNumber) async {
@@ -782,12 +792,17 @@ class PackageService {
 
   Future<List<PackageModel>> getAllPackages(
       {String? status, String? search, DateTime? since, String? yard}) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
     var query = supabase.from('packages').select(
         '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)');
-    if (status != null && status != 'all' && status != 'returned')
+    if (status != null && status != 'all' && status != 'returned') {
       query = query.eq('status', status);
-    // Explicit yard filter (used by the cross-yard Disposal Directorate views).
-    if (yard != null) query = query.eq('yard', yard);
+    }
+    // Explicit yard filter (or default to current yard for yard-bound staff).
+    if (effectiveYard != null && effectiveYard.isNotEmpty) {
+      query = query.eq('yard', effectiveYard);
+    }
     if (since != null) query = query.gte('created_at', since.toIso8601String());
     if (search != null && search.isNotEmpty) {
       query =
@@ -822,8 +837,12 @@ class PackageService {
   /// number. [srYears] then adds the current and next year, exactly as it does
   /// elsewhere.
   Future<List<String>> getPackageYears({String? yard}) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
     var q = supabase.from('packages').select('sr_number');
-    if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+    if (effectiveYard != null && effectiveYard.isNotEmpty) {
+      q = q.eq('yard', effectiveYard);
+    }
     final data = await AuthService._withNetworkRetry(() => q);
     return [
       for (final row in (data as List))
@@ -1445,9 +1464,14 @@ class PackageService {
     String? year,
     String? yard,
   }) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
+
     // Apply the same filters to either query (rows or count).
     PgQuery applyFilters(PgQuery q) {
-      if (yard != null) q = q.eq('yard', yard);
+      if (effectiveYard != null && effectiveYard.isNotEmpty) {
+        q = q.eq('yard', effectiveYard);
+      }
       if (search != null && search.trim().isNotEmpty) {
         final s = search.trim();
         q = q.or(
@@ -1499,12 +1523,17 @@ class PackageService {
     String? year,
     String? yard,
   }) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
+
     PgQuery narrow(PgQuery q) {
       // ⚠️ The page IS "packages with a legacy number", so this is not a
       // filter the user can clear -- it is the list's definition.
       q = q.not('old_sr_number', 'is', null);
       q = q.neq('old_sr_number', '');
-      if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+      if (effectiveYard != null && effectiveYard.isNotEmpty) {
+        q = q.eq('yard', effectiveYard);
+      }
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
         q = q.or('old_sr_number.ilike.%$s%,sr_number.ilike.%$s%,'
@@ -1548,12 +1577,18 @@ class PackageService {
 
   /// The years Old Entries can be filtered by — every year appearing in any of
   /// the four places the page looks.
-  Future<List<String>> getOldEntryYears() async {
-    final data = await AuthService._withNetworkRetry(() => supabase
+  Future<List<String>> getOldEntryYears({String? yard}) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
+    var query = supabase
         .from('packages')
         .select('old_sr_number, sr_number, entry_date, cusdec_date')
         .not('old_sr_number', 'is', null)
-        .neq('old_sr_number', ''));
+        .neq('old_sr_number', '');
+    if (effectiveYard != null && effectiveYard.isNotEmpty) {
+      query = query.eq('yard', effectiveYard);
+    }
+    final data = await AuthService._withNetworkRetry(() => query);
     final years = <String>{};
     final re = RegExp(r'(19|20)\d{2}');
     for (final row in (data as List)) {
@@ -2042,9 +2077,14 @@ class WarehouseService {
   /// per-package fetch four times over. `warehouse_rows` already excludes the
   /// departed goods and carries the normalised status.
   Future<({int total, int detain, int forfeit, int abandoned})>
-      getWarehouseStatusCounts(String warehouseId) async {
+      getWarehouseStatusCounts(String warehouseId, {String? yard}) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
     Future<int> countOf(String? status) async {
       var q = supabase.from('warehouse_rows').eq('warehouse_id', warehouseId);
+      if (effectiveYard != null && effectiveYard.isNotEmpty) {
+        q = q.eq('yard', effectiveYard);
+      }
       if (status != null) q = q.eq('item_status', status);
       return await AuthService._withNetworkRetry(() => q.count()) as int;
     }
@@ -2161,13 +2201,18 @@ class WarehouseService {
   }
 
   Future<List<WarehouseEntryModel>> getEntriesByWarehouse(String warehouseId,
-      {bool? isReturned}) async {
+      {bool? isReturned, String? yard}) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
     var query = supabase
         .from('warehouse_entries')
         .select(
             '*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)')
         .eq('warehouse_id', warehouseId);
     if (isReturned != null) query = query.eq('is_returned', isReturned);
+    if (effectiveYard != null && effectiveYard.isNotEmpty) {
+      query = query.eq('yard', effectiveYard);
+    }
     final data = await query.order('admitted_at', ascending: false);
     return [
       for (final e in (data as List))
@@ -2177,11 +2222,14 @@ class WarehouseService {
 
   Future<List<WarehouseEntryModel>> getAllWarehouseEntries(
       {bool? isReturned, String? yard}) async {
+    final effectiveYard =
+        yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
     var query = supabase.from('warehouse_entries').select(
         '*, warehouses(*), packages(*, package_items(*)), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)');
     if (isReturned != null) query = query.eq('is_returned', isReturned);
-    // Executive-Office reports scope by yard; officers rely on RLS.
-    if (yard != null) query = query.eq('yard', yard);
+    if (effectiveYard != null && effectiveYard.isNotEmpty) {
+      query = query.eq('yard', effectiveYard);
+    }
     final data = await query.order('admitted_at', ascending: false);
     return [
       for (final e in (data as List))
@@ -3705,10 +3753,21 @@ class IctService {
     return username;
   }
 
-  Future<void> toggleUserStatus(String profileId, bool active) async {
+  Future<void> toggleUserStatus(String profileId, bool active, {String? staffName}) async {
     await supabase
         .from('profiles')
         .update({'is_active': active}).eq('id', profileId);
+
+    await AuditLogService().recordLog(
+      userId: supabase.auth.currentUser?.id,
+      action: active ? 'Activated user account' : 'Deactivated user account',
+      entityType: 'profile',
+      entityId: profileId,
+      details: {
+        'status': active ? 'active' : 'inactive',
+        if (staffName != null) 'staff_name': staffName,
+      },
+    );
   }
 
   /// Update user details (name, salary, mobile, yard, role)
@@ -3723,6 +3782,8 @@ class IctService {
     /// The POST held — a key of `kPostTitles`. See verifyAndCreateUser.
     String? jobRole,
     String? directorate,
+    String? oldYard,
+    String? oldPost,
   }) async {
     await supabase.from('profiles').update({
       'full_name': fullName.trim(),
@@ -3738,6 +3799,114 @@ class IctService {
           ? null
           : directorate,
     }).eq('id', profileId);
+
+    final isYardChanged = oldYard != null && oldYard.isNotEmpty && oldYard != yard;
+    final isPostChanged = oldPost != null && oldPost.isNotEmpty && jobRole != null && oldPost != jobRole;
+
+    String action;
+    final postTitle = (jobRole != null && kPostTitles.containsKey(jobRole)) ? kPostTitles[jobRole]! : (jobRole ?? role);
+    final oldPostTitle = (oldPost != null && kPostTitles.containsKey(oldPost)) ? kPostTitles[oldPost]! : oldPost;
+
+    if (isYardChanged && isPostChanged) {
+      action = 'Transferred from $oldYard to $yard & changed post from $oldPostTitle to $postTitle';
+    } else if (isYardChanged) {
+      action = 'Transferred officer from $oldYard to $yard';
+    } else if (isPostChanged) {
+      action = 'Changed post from $oldPostTitle to $postTitle';
+    } else {
+      action = 'Updated officer profile details';
+    }
+
+    await AuditLogService().recordLog(
+      userId: supabase.auth.currentUser?.id,
+      action: action,
+      entityType: 'profile',
+      entityId: profileId,
+      details: {
+        'staff_name': fullName.trim(),
+        if (isYardChanged) 'old_yard': oldYard,
+        if (isYardChanged) 'new_yard': yard,
+        if (isPostChanged) 'old_post': oldPostTitle,
+        if (isPostChanged) 'new_post': postTitle,
+        'role': role,
+        if (directorate != null) 'directorate': directorate,
+      },
+    );
+  }
+
+  /// Fetches history of lifecycle events (yard transfers, post changes, status toggles, account creation) for a staff member
+  Future<List<AuditLogModel>> getStaffHistory(
+    String profileId, {
+    String? username,
+    String? fullName,
+  }) async {
+    bool isRelevantLog(AuditLogModel log) {
+      final a = log.action.toLowerCase();
+      // Exclude all login, logout, failed attempt, session and raw privilege trigger noise
+      if (a.contains('login') ||
+          a.contains('logout') ||
+          a.contains('signed in') ||
+          a.contains('signed out') ||
+          a.contains('sign in') ||
+          a.contains('sign out') ||
+          a.contains('failed') ||
+          a.contains('password') ||
+          a.contains('otp') ||
+          a.contains('session') ||
+          a.contains('privilege change')) {
+        return false;
+      }
+
+      // Explicitly allow officer lifecycle actions
+      return a.contains('transfer') ||
+          a.contains('post') ||
+          a.contains('role') ||
+          a.contains('activated') ||
+          a.contains('deactivated') ||
+          a.contains('created') ||
+          a.contains('profile') ||
+          a.contains('yard');
+    }
+
+    try {
+      final filters = <String>['entity_id.eq.$profileId'];
+      if (fullName != null && fullName.trim().isNotEmpty) {
+        filters.add('action.ilike.*${fullName.trim()}*');
+      }
+      if (username != null && username.trim().isNotEmpty) {
+        filters.add('action.ilike.*${username.trim()}*');
+      }
+
+      final res = await supabase
+          .from('audit_logs')
+          .select('*, profiles(full_name, role)')
+          .or(filters.join(','))
+          .order('created_at', ascending: false);
+
+      return (res as List)
+          .map((e) => AuditLogModel.fromJson(e as Map<String, dynamic>))
+          .where(isRelevantLog)
+          .toList();
+    } catch (e) {
+      AppLog.warn('failed to fetch staff history with relation: $e',
+          error: e, tag: 'ict');
+      // Resilient fallback query without foreign key embed
+      try {
+        final fallback = await supabase
+            .from('audit_logs')
+            .select('*')
+            .eq('entity_id', profileId)
+            .order('created_at', ascending: false);
+        return (fallback as List)
+            .map((e) => AuditLogModel.fromJson(e as Map<String, dynamic>))
+            .where(isRelevantLog)
+            .toList();
+      } catch (err) {
+        AppLog.error('failed fallback staff history query: $err',
+            error: err, tag: 'ict');
+        return [];
+      }
+    }
   }
 }
 

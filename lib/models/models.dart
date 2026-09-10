@@ -889,9 +889,9 @@ class ProfileModel {
   /// Central Disposal Directorate user (cross-yard sold-package visibility).
   bool get isDisposal => role == 'disposal';
 
-  /// Accounts automatically deactivate 8 months after they were created.
-  /// (Applies to admins and officers alike.)
-  DateTime get expiresAt => DateTime(createdAt.year, createdAt.month + 8,
+  /// Auto-deactivation is disabled — accounts remain active until explicitly
+  /// deactivated by ICT.
+  DateTime get expiresAt => DateTime(createdAt.year + 20, createdAt.month,
       createdAt.day, createdAt.hour, createdAt.minute, createdAt.second);
 
   /// Appeal Directorate (AD/ADD) user — cross-yard forfeited-package review +
@@ -910,35 +910,14 @@ class ProfileModel {
   /// user provisioning, administration, and system management. Institutional, never auto-expires.
   bool get isIct => role == 'ict';
 
-  /// True once the account is past its 8-month lifetime. Directorate accounts
-  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC, ICT) are institutional and
-  /// never auto-expire (officers transfer in/out of the post).
-  bool get isExpired =>
-      !isDisposal &&
-      !isAppeal &&
-      !isValuation &&
-      !isExecutive &&
-      !isIct &&
-      DateTime.now().isAfter(expiresAt);
+  /// Accounts do not auto-expire; status is managed manually by ICT.
+  bool get isExpired => false;
 
-  /// Whether the account may currently sign in: explicitly active AND not
-  /// past its 8-month auto-deactivation window.
-  bool get isEffectivelyActive => isActive && !isExpired;
+  /// Whether the account may currently sign in.
+  bool get isEffectivelyActive => isActive;
 
-  /// Whole days until the account auto-deactivates (its 8-month lifetime).
-  /// Negative once already expired. `null` for institutional directorate
-  /// accounts that never auto-expire.
-  ///
-  /// The exemptions here MUST match [isExpired]'s. ICT was missing, so an ICT
-  /// account was counted down towards an expiry [isExpired] would never let
-  /// happen -- harmless while only ICT's own staff table read this, wrong the
-  /// moment a profile shows the officer their own countdown.
-  int? get daysUntilExpiry {
-    if (isDisposal || isAppeal || isValuation || isExecutive || isIct) {
-      return null;
-    }
-    return expiresAt.difference(DateTime.now()).inDays;
-  }
+  /// Days until account expiry — null as auto-expiration is disabled.
+  int? get daysUntilExpiry => null;
 
   // ── Password expiry (90-day rotation policy) ───────────────────────────
   /// Passwords must be rotated every 90 days. The clock starts from
@@ -1170,13 +1149,15 @@ class AuditLogModel {
   factory AuditLogModel.fromJson(Map<String, dynamic> json) {
     final profile = json['profiles'] as Map<String, dynamic>?;
     return AuditLogModel(
-      id: json['id'] as String,
-      userId: json['user_id'] as String,
-      action: json['action'] as String,
-      entityType: json['entity_type'] as String,
-      entityId: json['entity_id'] as String,
+      id: (json['id'] as String?) ?? '',
+      userId: (json['user_id'] as String?) ?? '',
+      action: (json['action'] as String?) ?? '',
+      entityType: (json['entity_type'] as String?) ?? '',
+      entityId: (json['entity_id'] as String?) ?? '',
       details: json['details'] as Map<String, dynamic>?,
-      createdAt: parseDbDateRequired(json['created_at']),
+      createdAt: json['created_at'] != null
+          ? parseDbDateRequired(json['created_at'])
+          : DateTime.now(),
       yard: json['yard'] as String?,
       userFullName: profile?['full_name'] as String?,
       userRole: profile?['role'] as String?,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
+import 'package:intl/intl.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
@@ -640,6 +641,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     role: kPostRoles[selectedPost] ?? 'officer',
                     jobRole: selectedPost,
                     directorate: selectedDirectorate,
+                    oldYard: staff.yard,
+                    oldPost: staff.jobRole,
                   );
               if (ctx.mounted) Navigator.pop(ctx);
               _loadData();
@@ -771,7 +774,11 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
   Future<void> _toggleStaffStatus(ProfileModel staff) async {
     final newStatus = !staff.isActive;
     try {
-      await ref.read(ictServiceProvider).toggleUserStatus(staff.id, newStatus);
+      await ref.read(ictServiceProvider).toggleUserStatus(
+            staff.id,
+            newStatus,
+            staffName: staff.fullName,
+          );
       _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -788,6 +795,321 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
         showErrorSnack(context, e);
       }
     }
+  }
+
+  void _showStaffHistory(ProfileModel staff) {
+    final accent = AppTheme.ictCyan;
+    final yardObj = yardByCode(staff.yard);
+
+    showIctDialog(
+      context: context,
+      builder: (ctx) {
+        return StyledFormDialog(
+          label: 'OFFICER HISTORY',
+          title: '${staff.fullName} - Activity & Transfers',
+          headerAccentColor: accent,
+          erp: true,
+          icon: Icons.history_rounded,
+          width: 580,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Current details overview banner
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceDark.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: context.colors.borderColor),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: accent.withOpacity(0.15),
+                      child: Text(
+                        staff.fullName.isNotEmpty ? staff.fullName[0].toUpperCase() : '?',
+                        style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  staff.fullName,
+                                  style: TextStyle(
+                                    color: context.colors.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IctStatusPill(
+                                label: staff.postShortTitle,
+                                color: staff.isAdmin ? context.colors.primaryGold : accent,
+                                dot: false,
+                                width: 70,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 12,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                'Salary/Badge: ${staff.badgeNumber ?? '—'}',
+                                style: TextStyle(
+                                  color: context.colors.textMuted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.location_on_outlined, size: 13, color: context.colors.textMuted),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Current Yard: ${yardObj.name}',
+                                    style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IctStatusPill(
+                      label: staff.isActive ? 'ACTIVE' : 'INACTIVE',
+                      color: staff.isActive ? context.colors.successGreen : context.colors.textMuted,
+                      dot: true,
+                    ),
+                  ],
+                ),
+              ),
+              const Gap(16),
+              Row(
+                children: [
+                  Icon(Icons.timeline_rounded, size: 16, color: accent),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Yard Transfers & Status History',
+                    style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              const Gap(10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 340),
+                child: FutureBuilder<List<AuditLogModel>>(
+                  future: ref.read(ictServiceProvider).getStaffHistory(
+                    staff.id,
+                    username: staff.username,
+                    fullName: staff.fullName,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: CircularProgressIndicator(color: accent, strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'Failed to load history: ${snapshot.error}',
+                            style: TextStyle(color: context.colors.dangerRed, fontSize: 12),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    }
+                    final logs = snapshot.data ?? [];
+                    if (logs.isEmpty) {
+                      return Container(
+                        padding: const EdgeInsets.all(32),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: context.colors.cardDark.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: context.colors.borderColor),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.history_toggle_off_rounded, size: 36, color: context.colors.textMuted),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No transfer or status change history recorded yet.',
+                              style: TextStyle(color: context.colors.textMuted, fontSize: 12.5),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: logs.length,
+                      separatorBuilder: (_, __) => const Gap(8),
+                      itemBuilder: (context, index) {
+                        final log = logs[index];
+                        final actionLower = log.action.toLowerCase();
+
+                        IconData itemIcon = Icons.history_rounded;
+                        Color itemColor = accent;
+                        if (actionLower.contains('transfer')) {
+                          itemIcon = Icons.swap_horiz_rounded;
+                          itemColor = accent;
+                        } else if (actionLower.contains('post') || actionLower.contains('role')) {
+                          itemIcon = Icons.badge_outlined;
+                          itemColor = accent;
+                        } else if (actionLower.contains('activated')) {
+                          itemIcon = Icons.check_circle_outline_rounded;
+                          itemColor = context.colors.successGreen;
+                        } else if (actionLower.contains('deactivated')) {
+                          itemIcon = Icons.block_rounded;
+                          itemColor = context.colors.dangerRed;
+                        } else if (actionLower.contains('created') || log.entityType == 'auth') {
+                          itemIcon = Icons.person_add_outlined;
+                          itemColor = context.colors.primaryGold;
+                        }
+
+                        final formattedDate = DateFormat('yyyy-MM-dd • hh:mm a').format(log.createdAt);
+
+                        // Extract clean details without database trigger artifacts
+                        String? cleanDetail;
+                        if (log.details != null) {
+                          final d = log.details!;
+                          final parts = <String>[];
+                          if (d['old_yard'] != null && d['new_yard'] != null) {
+                            parts.add('Yard: ${d['old_yard']} ➔ ${d['new_yard']}');
+                          }
+                          if (d['old_post'] != null && d['new_post'] != null) {
+                            parts.add('Post: ${d['old_post']} ➔ ${d['new_post']}');
+                          }
+                          if (parts.isNotEmpty) {
+                            cleanDetail = parts.join('  •  ');
+                          }
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: context.colors.cardDark,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: context.colors.borderColor),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.only(top: 2),
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: itemColor.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Icon(itemIcon, size: 16, color: itemColor),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            log.action,
+                                            style: TextStyle(
+                                              color: context.colors.textPrimary,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          formattedDate,
+                                          style: TextStyle(
+                                            color: context.colors.textMuted,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (cleanDetail != null) ...[
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        cleanDetail,
+                                        style: TextStyle(
+                                          color: accent,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                    if (log.userFullName != null && log.userFullName!.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'By: ${log.userFullName}',
+                                        style: TextStyle(
+                                          color: context.colors.textMuted,
+                                          fontSize: 11,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -1299,8 +1621,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                       size: ColumnSize.S, fixedWidth: 100),
                                   ictCol('Assigned Yard', size: ColumnSize.M),
                                   ictCol('Contact', size: ColumnSize.M),
-                                  ictCol('Disables In',
-                                      size: ColumnSize.S, fixedWidth: 110),
                                   ictCol('Status',
                                       size: ColumnSize.S,
                                       fixedWidth: kIctPillWidth + 24),
@@ -1308,7 +1628,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                   // leaving the word far from the buttons under
                                   // it. The cell aligns its own contents.
                                   ictCol('Actions',
-                                      size: ColumnSize.S, fixedWidth: 110),
+                                      size: ColumnSize.S, fixedWidth: 140),
                                 ],
                                 rows: _staffList.asMap().entries.map((entry) {
                                   final i = entry.key;
@@ -1384,9 +1704,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                           ],
                                         ),
                                       ),
-                                      // Role — the POST held. This read
-                                      // "DC / SDDC" for both, which are two
-                                      // different posts.
+                                      // Role — the POST held.
                                       DataCell(IctStatusPill(
                                         label: staff.postShortTitle,
                                         color: postColor,
@@ -1416,37 +1734,54 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                           ),
                                         ),
                                       ),
-                                      // Disables In — the 8-month auto-expiry
-                                      // countdown the Admin Panel shows. ICT
-                                      // provisions these accounts, so it needs
-                                      // to see which are about to lapse.
-                                      DataCell(ExpiresInCell(profile: staff)),
-                                      // Status — the same decision the Admin
-                                      // Panel's chip makes (accountStatusOf),
-                                      // drawn as the console's fixed-width
-                                      // pill so the column lines up.
+                                      // Status
                                       DataCell(IctStatusPill(
                                         label: status.label,
                                         color: status.color,
                                         tooltip: status.tooltip,
                                       )),
-                                      // Actions — the shared Edit/Delete pair.
-                                      // "Delete" here deactivates rather than
-                                      // removes: the account's id is stamped on
-                                      // every package it ever registered.
-                                      DataCell(RowActionButtons(
-                                        accent: accent,
-                                        onEdit: () =>
-                                            _showEditStaffDialog(staff),
-                                        onDelete: () =>
-                                            _toggleStaffStatus(staff),
-                                        editTooltip: 'Edit Details',
-                                        deleteTooltip: staff.isActive
-                                            ? 'Deactivate Account'
-                                            : 'Activate Account',
-                                        deleteIcon: staff.isActive
-                                            ? Icons.block_rounded
-                                            : Icons.check_circle_outline_rounded,
+                                      // Actions — Edit, Toggle Status, History
+                                      DataCell(Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          RowActionButtons(
+                                            accent: accent,
+                                            onEdit: () =>
+                                                _showEditStaffDialog(staff),
+                                            onDelete: () =>
+                                                _toggleStaffStatus(staff),
+                                            editTooltip: 'Edit Details',
+                                            deleteTooltip: staff.isActive
+                                                ? 'Deactivate Account'
+                                                : 'Activate Account',
+                                            deleteIcon: staff.isActive
+                                                ? Icons.block_rounded
+                                                : Icons.check_circle_outline_rounded,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Tooltip(
+                                            message: 'View History',
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              child: InkWell(
+                                                onTap: () => _showStaffHistory(staff),
+                                                borderRadius: BorderRadius.circular(6),
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(6),
+                                                  decoration: BoxDecoration(
+                                                    color: accent.withOpacity(0.1),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    border: Border.all(
+                                                        color: accent.withOpacity(0.25),
+                                                        width: 0.8),
+                                                  ),
+                                                  child: Icon(Icons.history_rounded,
+                                                      size: 15, color: accent),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       )),
                                     ],
                                   );

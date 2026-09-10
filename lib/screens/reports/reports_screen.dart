@@ -109,13 +109,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// The yard passed to the data services. Executive mode → the picked yard
   /// (report cards are only shown once one is picked, so it's non-null here);
   /// disposal mode → the picked yard, or null for "All Yards" (cross-yard);
-  /// officer mode → null, so RLS scopes data to the officer's own yard.
-  String? get _yardArg =>
-      (widget.executiveMode || widget.disposalMode) ? _physicalYard : null;
+  /// officer mode → AppSession.currentYard so queries scope strictly to the officer's own yard.
+  String? get _yardArg => (widget.executiveMode || widget.disposalMode)
+      ? _physicalYard
+      : AppSession.currentYard;
 
   /// Checks whether an item/row matches the currently selected yard and directorate.
   bool _matchesSelectedYard(String? rowYard, String? rowSrNumber) {
-    if (!widget.executiveMode && !widget.disposalMode) return true;
+    if (!widget.executiveMode && !widget.disposalMode) {
+      final effectiveYard = rowYard ?? yardOfSrNumber(rowSrNumber);
+      return effectiveYard == null ||
+          effectiveYard.isEmpty ||
+          effectiveYard == AppSession.currentYard;
+    }
     if (_reportYard == null) return true;
     final dirMap = ref.read(directorateSrPrefixMapProvider).valueOrNull;
     final effectiveYard = rowYard ?? yardOfSrNumber(rowSrNumber);
@@ -124,13 +130,32 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   /// Client-side yard filter for report lists whose service can't take a yard
-  /// (e.g. forfeited packages). No-op in officer mode, and in disposal mode
-  /// when "All Yards" is selected.
+  /// (e.g. forfeited packages). No-op in disposal mode when "All Yards" is selected,
+  /// scopes to AppSession.currentYard in officer mode.
   List<T> _filterByYard<T>(List<T> rows, String? Function(T) yardOf,
       [String? Function(T)? srNumberOf]) {
-    if (!widget.executiveMode && !widget.disposalMode) return rows;
+    if (!widget.executiveMode && !widget.disposalMode) {
+      return rows.where((r) {
+        final y = yardOf(r);
+        String? sr = srNumberOf?.call(r);
+        if (sr == null) {
+          if (r is ForfeitedPackageModel) {
+            sr = r.srNumber;
+          } else if (r is PackageModel) {
+            sr = r.srNumber;
+          } else if (r is WarehouseEntryModel) {
+            sr = r.srNumber;
+          } else if (r is SrFinancials) {
+            sr = r.srNumber;
+          }
+        }
+        final effectiveYard = y ?? yardOfSrNumber(sr);
+        return effectiveYard == null ||
+            effectiveYard.isEmpty ||
+            effectiveYard == AppSession.currentYard;
+      }).toList();
+    }
     if (_reportYard == null) return rows;
-    final dirMap = ref.read(directorateSrPrefixMapProvider).valueOrNull;
     return rows.where((r) {
       final y = yardOf(r);
       String? sr = srNumberOf?.call(r);
@@ -143,8 +168,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           sr = r.srNumber;
         } else if (r is SrFinancials) {
           sr = r.srNumber;
-        } else if (r is ReTenderSaleInfo) {
-          sr = r.forfeited.srNumber;
         }
       }
       final effectiveYard = y ?? yardOfSrNumber(sr);

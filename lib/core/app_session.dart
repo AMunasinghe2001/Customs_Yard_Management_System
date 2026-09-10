@@ -17,9 +17,20 @@ class AppSession {
   /// (NNR is CED and PSD; Katunayaka is B/A and ACD), so the yard cannot
   /// stand in for it.
   static String? currentDirectorate;
+  static String? currentRole;
 
   static void setYard(String? yard) {
     currentYard = (yard == null || yard.isEmpty) ? kDefaultYardCode : yard;
+  }
+
+  static void setRole(String? role) {
+    currentRole = (role == null || role.isEmpty) ? null : role.trim().toLowerCase();
+  }
+
+  /// Whether this session is an officer or yard admin bound to a single yard.
+  static bool get isYardBound {
+    if (currentRole == null) return true; // Safe default
+    return currentRole == 'officer' || currentRole == 'admin';
   }
 
   /// The roles whose screens legitimately read EVERY yard.
@@ -50,6 +61,7 @@ class AppSession {
   /// yards. [PgRealtime.watchAllYards] therefore defaults to the safe value
   /// (true, see there) and is narrowed only when the role is known.
   static void applyYardFilterToRealtime(String? role) {
+    setRole(role);
     final r = (role ?? '').trim().toLowerCase();
     PgRealtime.instance.watchAllYards = r.isEmpty || _crossYardRoles.contains(r);
   }
@@ -62,6 +74,7 @@ class AppSession {
   static void clear() {
     currentYard = kDefaultYardCode;
     currentDirectorate = null;
+    currentRole = null;
     // Back to "see everything" on sign-out: the next user's role is unknown
     // until they sign in, and missing an update is worse than an extra query.
     applyYardFilterToRealtime(null);
