@@ -21,6 +21,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'package:intl/intl.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Opens the round-by-round history for one package: every valuation, and
 /// every bid.
@@ -29,7 +30,7 @@ import 'package:intl/intl.dart';
 /// reads what happened and decides. The same dialog serves both, so the two
 /// portals cannot come to describe one package's history differently.
 void _showHistory(BuildContext context, ReTenderSaleInfo info) {
-  showDialog(
+  showAppDialog(
     context: context,
     builder: (_) => EnterBidsDialog(
       info: info,
@@ -504,7 +505,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                                           ? 'View ($count)'
                                           : (appointing ? 'Appoint' : 'View'),
                                       style: const TextStyle(fontSize: 12)),
-                                  onPressed: () => showDialog(
+                                  onPressed: () => showAppDialog(
                                     context: context,
                                     builder: (_) => _CommitteeDialog(
                                         info: info, existing: committee),
@@ -527,7 +528,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                                   size: 18),
                               onPressed: pkg == null
                                   ? null
-                                  : () => showDialog(
+                                  : () => showAppDialog(
                                         context: context,
                                         builder: (_) => PackageDetailsDialog(
                                           package: pkg,
@@ -1068,7 +1069,7 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
             visualDensity: VisualDensity.compact),
         icon: const Icon(Icons.price_change_rounded, size: 14),
         label: const Text('Enter Value', style: TextStyle(fontSize: 11.5)),
-        onPressed: () => showDialog(
+        onPressed: () => showAppDialog(
           context: context,
           builder: (_) =>
               _CommitteeValuationDialog(info: info, qty: effQty, committee: c),
@@ -1141,7 +1142,7 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: () => showDialog(
+          onTap: () => showAppDialog(
             context: context,
             builder: (_) => _CommitteeValuationDialog(
                 info: info, qty: effQty, committee: c),

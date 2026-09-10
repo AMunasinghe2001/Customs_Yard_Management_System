@@ -22,11 +22,11 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/styled_dropdown.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../forfeited_packages/disposal_request_dialog.dart';
 import '../executive/unsold_shared.dart';
 import '../../widgets/destruction_status_pill.dart';
 import '../disposal/disposal_shared.dart';
+import '../../widgets/date_filter_button.dart';
 
 /// One perishable item, with the package it belongs to.
 class PerishableRow {
@@ -404,66 +404,20 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDialog<dynamic>(
-                        context: context,
-                        builder: (context) => custom.DateRangePickerDialog(
-                            initialRange: _dateRange),
-                      );
-                      if (picked is DateTimeRange) {
-                        setState(() {
-                          _dateRange = picked;
-                          _page = 0;
-                        });
-                      } else if (picked == false) {
-                        setState(() {
-                          _dateRange = null;
-                          _page = 0;
-                        });
-                      }
-                    },
-                    icon: Icon(Icons.date_range_rounded,
-                        size: 16,
-                        color: _dateRange != null
-                            ? context.colors.primaryGold
-                            : context.colors.textSecondary),
-                    label: Text(
-                      _dateRange != null
-                          ? '${DateFormat('MMM d').format(_dateRange!.start)} - '
-                              '${DateFormat('MMM d').format(_dateRange!.end)}'
-                          : 'Date Range',
-                      style: TextStyle(
-                          color: _dateRange != null
-                              ? context.colors.primaryGold
-                              : context.colors.textSecondary,
-                          fontSize: 12,
-                          fontWeight: _dateRange != null
-                              ? FontWeight.bold
-                              : FontWeight.normal),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                          color: _dateRange != null
-                              ? context.colors.primaryGold
-                              : context.colors.borderColor),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
+                  DateFilterButton(
+                    dateRange: _dateRange,
+                    year: _yearFilter,
+                    // ⚠️ Its own query: one page cannot know which years
+                    // the table covers.
+                    years: srYears(
+                        ref.watch(perishableYearsProvider).valueOrNull ??
+                            const <String>[]),
+                    onChanged: (range, year) => setState(() {
+                      _dateRange = range;
+                      _yearFilter = year;
+                      _page = 0;
+                    }),
                   ),
-                  if (_dateRange != null)
-                    IconButton(
-                      icon: Icon(Icons.clear_rounded,
-                          size: 16, color: context.colors.dangerRed),
-                      onPressed: () => setState(() {
-                        _dateRange = null;
-                        _page = 0;
-                      }),
-                      tooltip: 'Clear Date Filter',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
                   const SizedBox(width: 8),
                   StyledDropdownButton<String>(
                     value: _activity == 'all' ? null : _activity,
@@ -492,19 +446,6 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     includeSold: true,
                     onChanged: (v) => setState(() {
                       _outcomeFilter = v;
-                      _page = 0;
-                    }),
-                  ),
-                  const SizedBox(width: 8),
-                  YearFilterButton(
-                    value: _yearFilter,
-                    years: srYears(
-                        // ⚠️ Its own query: one page cannot know which years
-                        // the table covers.
-                        ref.watch(perishableYearsProvider).valueOrNull ??
-                            const <String>[]),
-                    onChanged: (v) => setState(() {
-                      _yearFilter = v;
                       _page = 0;
                     }),
                   ),

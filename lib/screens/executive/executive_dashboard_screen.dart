@@ -12,6 +12,7 @@ import 'tender_committee_tab.dart';
 import 'unsold_decision_tab.dart';
 import 'financials_tab.dart';
 import 'tender_sales_view_tab.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Executive Office (DG / ADG) portal. Standalone scaffold (not AppShell).
 /// Customs' two highest posts pick a yard and generate/view/print any report
@@ -116,7 +117,7 @@ class _ExecutiveDashboardScreenState
                   message: 'View profile',
                   child: InkWell(
                     borderRadius: BorderRadius.circular(999),
-                    onTap: () => showDialog(
+                    onTap: () => showAppDialog(
                       context: context,
                       builder: (_) => DisposalProfileDialog(accent: accent),
                     ),

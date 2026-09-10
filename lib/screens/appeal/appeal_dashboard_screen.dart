@@ -20,6 +20,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/app_dialog.dart';
 
 final _appealSearchProvider = StateProvider<String>((ref) => '');
 final _appealYardProvider = StateProvider<String?>((ref) => null); // null = all
@@ -130,7 +131,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                   message: 'View profile',
                   child: InkWell(
                     borderRadius: BorderRadius.circular(999),
-                    onTap: () => showDialog(
+                    onTap: () => showAppDialog(
                       context: context,
                       builder: (_) => DisposalProfileDialog(accent: accent),
                     ),
@@ -422,7 +423,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
         action = () => _setHold(context, f, true);
       }
     }
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => PackageDetailsDialog(
         package: f.packageDetails!,
@@ -477,7 +478,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
 
   Future<void> _showDecisionDialog(
       BuildContext context, ForfeitedPackageModel f) async {
-    final result = await showDialog<_AppealDecisionResult>(
+    final result = await showAppDialog<_AppealDecisionResult>(
       context: context,
       builder: (_) => _AppealDecisionDialog(srNumber: f.srNumber),
     );

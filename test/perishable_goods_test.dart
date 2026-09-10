@@ -534,12 +534,15 @@ void main() {
     });
 
     test('the yard copy offers the held-goods filters', () {
-      expect(src, contains('custom.DateRangePickerDialog'));
+      // ⚠️ The "Date Range" button and the "All Years" dropdown became one
+      // DateFilterButton. Both questions are still asked — the range and
+      // the SR-number year — through a single control.
+      expect(src, contains('DateFilterButton('));
       expect(src, contains("allLabel: 'Post Status Activity'"));
       // Every activity, not a narrowed list -- the SR form offers them all
       // for a perishable, so the filter has to be able to match them all.
       expect(src, contains('kAllPostStatusActivities'));
-      expect(src, contains('YearFilterButton('));
+      expect(src, contains('year: _yearFilter'));
     });
 
     test('the two arrangements are chosen by which portal it is', () {
@@ -572,8 +575,8 @@ void main() {
       // — they narrow by yard and by search — so it was the extra control
       // that made this header a different shape from the tab beside it. The
       // yard's copy keeps it, where every held-goods page has one.
-      expect(ro.contains('YearFilterButton'), isFalse);
-      expect(src, contains('YearFilterButton('),
+      expect(ro.contains('DateFilterButton'), isFalse);
+      expect(src, contains('DateFilterButton('),
           reason: "the yard's copy still needs it");
 
       // The same three pieces the neighbours use, in the same order.

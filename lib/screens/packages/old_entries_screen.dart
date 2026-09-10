@@ -12,8 +12,8 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
-import '../../widgets/year_filter.dart';
+import '../../widgets/date_filter_button.dart';
+import '../../widgets/app_dialog.dart';
 
 final oldEntrySearchProvider = StateProvider<String>((ref) => '');
 
@@ -149,66 +149,17 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                           runSpacing: 8,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final picked = await showDialog<DateTimeRange>(
-                                  context: context,
-                                  builder: (_) => custom.DateRangePickerDialog(
-                                      initialRange: _dateRange),
-                                );
-                                if (picked != null) {
-                                  setState(() {
-                                    _dateRange = picked;
-                                    _page = 0;
-                                  });
-                                }
-                              },
-                              icon: Icon(Icons.date_range_rounded,
-                                  size: 16,
-                                  color: _dateRange != null
-                                      ? context.colors.primaryGold
-                                      : context.colors.textSecondary),
-                              label: Text(
-                                _dateRange == null
-                                    ? 'Date Range'
-                                    : '${DateFormat('yyyy-MM-dd').format(_dateRange!.start)} → ${DateFormat('yyyy-MM-dd').format(_dateRange!.end)}',
-                                style: TextStyle(
-                                    color: _dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.textSecondary,
-                                    fontWeight: _dateRange != null
-                                        ? FontWeight.bold
-                                        : FontWeight.normal),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                    color: _dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.borderColor),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                            if (_dateRange != null)
-                              IconButton(
-                                icon: Icon(Icons.clear_rounded,
-                                    size: 16, color: context.colors.dangerRed),
-                                onPressed: () => setState(() {
-                                  _dateRange = null;
-                                  _page = 0;
-                                }),
-                                tooltip: 'Clear Date Filter',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            const SizedBox(width: 4),
-                            YearFilterButton(
-                              value: _yearFilter,
+                            // One control for both "when" questions — the
+                            // entry-date range and the SR-number year. They
+                            // used to be two buttons side by side, and the
+                            // reader had to know which held the live filter.
+                            DateFilterButton(
+                              dateRange: _dateRange,
+                              year: _yearFilter,
                               years: availableYears,
-                              onChanged: (v) => setState(() {
-                                _yearFilter = v;
+                              onChanged: (range, year) => setState(() {
+                                _dateRange = range;
+                                _yearFilter = year;
                                 _page = 0;
                               }),
                             ),
@@ -266,6 +217,17 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                 empty: const EmptyTableState(
                                     message: 'No old entries yet'),
                                 isVerticalScrollBarVisible: true,
+                                // ⚠️ Proportional, not fixed. Pinning each
+                                // text column to its content width dumped
+                                // every spare pixel into the one flexible
+                                // column at the end, so the table finished
+                                // with a long empty gap. Sharing the slack
+                                // keeps the gaps even: the dates stay fixed
+                                // because they are exactly 10 characters and
+                                // padding them only wastes room, and the two
+                                // widest fields carry the rest. Same
+                                // treatment as Goods History, so the two
+                                // tables read alike.
                                 columns: const [
                                   DataColumn2(
                                       label: Text('Old SR Number'),
@@ -275,23 +237,22 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                       size: ColumnSize.M),
                                   DataColumn2(
                                       label: Text('Cusdec No'),
-                                      size: ColumnSize.S,
-                                      fixedWidth: 130),
+                                      size: ColumnSize.M),
                                   DataColumn2(
                                       label: Text('Cusdec Date'),
                                       size: ColumnSize.S,
-                                      fixedWidth: 120),
+                                      fixedWidth: 110),
                                   DataColumn2(
                                       label: Text('Entry Date'),
                                       size: ColumnSize.S,
-                                      fixedWidth: 120),
+                                      fixedWidth: 110),
                                   DataColumn2(
                                       label: Text('Consignee'),
-                                      size: ColumnSize.M),
+                                      size: ColumnSize.L),
                                   DataColumn2(
                                       label: Center(child: Text('Details')),
                                       size: ColumnSize.S,
-                                      fixedWidth: 60),
+                                      fixedWidth: 55),
                                 ],
                                 rows: pageRows
                                     .map((p) => DataRow(cells: [
@@ -336,13 +297,26 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                                 color: context
                                                     .colors.accentLightBlue,
                                                 size: 18),
-                                            onPressed: () => showDialog(
+                                            onPressed: () => showAppDialog(
                                               context: context,
+                                              // ⚠️ NOT useLegacySummary.
+                                              // That flag swaps the per-item
+                                              // cargo list for a single-item
+                                              // summary, so an old entry
+                                              // opened here showed one
+                                              // condensed panel while the
+                                              // same SR opened from Goods
+                                              // History showed every item
+                                              // with its storage, appeal,
+                                              // tender rounds and outcome.
+                                              // A migrated package is the
+                                              // same package; the record it
+                                              // carries does not change with
+                                              // the door you open it by.
                                               builder: (_) =>
                                                   PackageDetailsDialog(
                                                 package: p,
                                                 storageRate: storageRate,
-                                                useLegacySummary: true,
                                               ),
                                             ),
                                           ))),

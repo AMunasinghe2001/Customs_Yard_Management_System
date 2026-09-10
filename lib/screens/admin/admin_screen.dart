@@ -16,6 +16,7 @@ import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../core/app_log.dart';
+import '../../widgets/app_dialog.dart';
 
 Widget _tableActionButton({
   required BuildContext context,
@@ -706,7 +707,7 @@ class _WarehousesTab extends ConsumerWidget {
   }
 
   void _showAddWarehouseDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => const _AddWarehouseDialog(),
     );
@@ -875,7 +876,7 @@ class _WarehousesTab extends ConsumerWidget {
   /// Manage the zones of one warehouse — this is where capacity is set.
   void _showZonesDialog(
       BuildContext context, WidgetRef ref, WarehouseModel warehouse) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => _WarehouseZonesDialog(warehouse: warehouse),
     );
@@ -892,7 +893,7 @@ class _WarehousesTab extends ConsumerWidget {
     final capCtrl = TextEditingController(text: zone.capacity.toString());
     final descCtrl = TextEditingController(text: zone.description ?? '');
 
-    final saved = await showDialog<bool>(
+    final saved = await showAppDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Edit Zone'),
@@ -984,7 +985,7 @@ class _WarehousesTab extends ConsumerWidget {
     WidgetRef ref,
     WarehouseZoneModel zone,
   ) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
           context: context,
           builder: (c) => AlertDialog(
             title: Text('Delete zone ${zone.name}?'),
@@ -1040,7 +1041,7 @@ class _WarehousesTab extends ConsumerWidget {
     final capC = TextEditingController(text: warehouse.capacity.toString());
     bool loading = false;
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => StyledFormDialog(
@@ -1139,7 +1140,7 @@ class _WarehousesTab extends ConsumerWidget {
     WidgetRef ref,
     WarehouseModel warehouse,
   ) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Warehouse?'),
@@ -1507,7 +1508,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                       color: context.colors.dangerRed,
                                       tooltip: 'Delete Category',
                                       onPressed: () async {
-                                        final ok = await showDialog<bool>(
+                                        final ok = await showAppDialog<bool>(
                                             context: context,
                                             builder: (_) => AlertDialog(
                                                   title: const Text(
@@ -1574,7 +1575,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
     String? selectedWarehouseId;
     String? selectedZone;
 
-    showDialog(
+    showAppDialog(
         context: context,
         // Consumer so the dialog rebuilds when warehousesProvider resolves —
         // capturing the parent tab's `ref` here would freeze it on whatever
@@ -1723,7 +1724,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
     // the zone itself is named "3", so strip that prefix if it is there.
     String? selectedZone = category.targetZone?.trim();
 
-    showDialog(
+    showAppDialog(
         context: context,
         // Consumer so the dialog rebuilds when warehousesProvider resolves —
         // capturing the parent tab's `ref` here would freeze it on whatever
@@ -2221,7 +2222,7 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
   }
 
   Future<void> _delete(WarehouseZoneModel zone) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
           context: context,
           builder: (c) => AlertDialog(
             title: Text('Delete zone ${zone.name}?'),
@@ -2264,7 +2265,7 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
         TextEditingController(text: (existing?.capacity ?? 500).toString());
     final descCtrl = TextEditingController(text: existing?.description ?? '');
 
-    final saved = await showDialog<bool>(
+    final saved = await showAppDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         title: Text(existing == null ? 'Add zone' : 'Edit zone'),

@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/one_tap_date_picker.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Yard-side form that sends a Disposal Request to the Central Disposal
 /// Directorate. Unlike a tender, it has no tender number — just a request
@@ -289,7 +290,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                     .format(_requestDate),
                                 readOnly: true,
                                 onTap: () async {
-                                  final date = await showDialog<DateTime>(
+                                  final date = await showAppDialog<DateTime>(
                                     context: context,
                                     builder: (_) => OneTapDatePicker(
                                         initialDate: _requestDate,

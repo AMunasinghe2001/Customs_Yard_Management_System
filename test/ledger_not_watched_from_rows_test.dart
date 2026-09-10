@@ -106,7 +106,9 @@ void main() {
           .readAsStringSync();
       final fn = dash.substring(dash.indexOf('Future<void> _showDestroyedDetails('));
       expect(fn.substring(0, 1400), contains('} catch (_) {'));
-      expect(fn.substring(0, 1400), contains('await showDialog('));
+      // showAppDialog, not showDialog: every popup in the app now opens
+      // over the same blurred, dimmed backdrop.
+      expect(fn.substring(0, 1400), contains('await showAppDialog('));
     });
   });
 

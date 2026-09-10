@@ -37,6 +37,7 @@ import '../../widgets/perishable_tag.dart';
 import '../../widgets/source_chip.dart';
 import '../../widgets/storage_charge_note.dart';
 import '../../widgets/yard_chip.dart';
+import '../../widgets/app_dialog.dart';
 
 /// The quantity actually forfeited & sent for disposal for a request row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -156,7 +157,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     message: 'View profile',
                     child: InkWell(
                       borderRadius: BorderRadius.circular(999),
-                      onTap: () => showDialog(
+                      onTap: () => showAppDialog(
                         context: context,
                         builder: (_) => const DisposalProfileDialog(),
                       ),
@@ -821,7 +822,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                           proposal: proposals[f.id]),
                                   onDetails: pkg == null
                                       ? null
-                                      : () => showDialog(
+                                      : () => showAppDialog(
                                             context: context,
                                             builder: (_) =>
                                                 PackageDetailsDialog(
@@ -1118,6 +1119,45 @@ class _ElapsedSinceSaleState extends State<_ElapsedSinceSale> {
             style: TextStyle(
                 color: color, fontSize: 11.5, fontWeight: FontWeight.w700),
           ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Replaces the "since bidding started" clock once every item on the sale
+/// has an outcome.
+///
+/// ⚠️ Says only that nothing is PENDING — deliberately no counts. The card
+/// already carries a "0 / 4 sold" pill on the same row, and the table below
+/// marks every item Sold or Unsold, so repeating the tally here was the same
+/// fact printed three times. What the clock was tracking, and the only thing
+/// missing once it stops, is whether anyone still has to act.
+///
+/// A stopped clock should not simply vanish either: the row would lose its
+/// last line and the card would change shape between one sale and the next.
+class _SaleClosedChip extends StatelessWidget {
+  const _SaleClosedChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.colors.textMuted;
+    return Tooltip(
+      message: 'Every item on this sale is marked Sold or Unsold, so there '
+          'is nothing left to decide.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.check_circle_outline_rounded, size: 13, color: color),
+          const Gap(5),
+          Text('All items decided',
+              style: TextStyle(
+                  color: color, fontSize: 11.5, fontWeight: FontWeight.w700)),
         ]),
       ),
     );
@@ -1472,7 +1512,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                                       r.saleItemKey))
                                               .asData
                                               ?.value;
-                                          showDialog(
+                                          showAppDialog(
                                             context: context,
                                             builder: (_) =>
                                                 PackageDetailsDialog(
@@ -1624,7 +1664,7 @@ Future<void> _showDestroyedDetails(
     // should still open.
   }
   if (!context.mounted) return;
-  await showDialog(
+  await showAppDialog(
     context: context,
     builder: (_) => PackageDetailsDialog(
       package: r.package,
@@ -2012,7 +2052,7 @@ class _RecordCostsButton extends ConsumerWidget {
           SnackBar(content: Text('No cost record found for $srNumber')));
       return;
     }
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (_) => RecordExpenseDialog(sr: sr, forDestruction: true),
     );
@@ -2669,7 +2709,7 @@ class _RequestCard extends ConsumerWidget {
                               color: context.colors.accentLightBlue, size: 18),
                           onPressed: f?.packageDetails == null
                               ? null
-                              : () => showDialog(
+                              : () => showAppDialog(
                                     context: context,
                                     builder: (_) => PackageDetailsDialog(
                                       package: f!.packageDetails!,
@@ -2856,7 +2896,7 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                 // page 4 would grey the button out with work still to do.
                 onPressed: result.total == 0
                     ? null
-                    : () => showDialog(
+                    : () => showAppDialog(
                           context: context,
                           builder: (_) =>
                               const _TenderSaleFormDialog(reTender: true),
@@ -3024,7 +3064,7 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                           child: _AttemptsBadge(
                             count: info.tenderCount,
                             color: amber,
-                            onTap: () => showDialog(
+                            onTap: () => showAppDialog(
                               context: context,
                               builder: (_) =>
                                   _TenderSaleHistoryDialog(info: info),
@@ -3042,7 +3082,7 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                                   icon: Icon(Icons.info_outline_rounded,
                                       color: context.colors.accentLightBlue,
                                       size: 18),
-                                  onPressed: () => showDialog(
+                                  onPressed: () => showAppDialog(
                                     context: context,
                                     builder: (_) => PackageDetailsDialog(
                                       package: pkg,
@@ -3178,7 +3218,7 @@ class _TenderSalesTabState extends ConsumerState<_TenderSalesTab> {
               icon: const Icon(Icons.add_rounded, size: 18),
               label: const Text('New Tender Sale',
                   style: TextStyle(fontWeight: FontWeight.w600)),
-              onPressed: () => showDialog(
+              onPressed: () => showAppDialog(
                   context: context,
                   builder: (_) => const _TenderSaleFormDialog()),
             ),
@@ -3361,6 +3401,17 @@ class TenderSaleCard extends ConsumerStatefulWidget {
   /// popup's own default blue for the yard.
   final Color? popupAccent;
 
+  /// Treat the sale as finished once every item is Sold OR UNSOLD, rather
+  /// than only when every item is Sold.
+  ///
+  /// ⚠️ A third question, so a third flag — `readOnly` and
+  /// `showDecidedItems` already mean other things. The YARD watches a sale
+  /// to know whether anything still needs a decision, and "all unsold" is a
+  /// finished sale: the clock should stop. The directorates run a WORKLIST
+  /// where the sold count is the measure of progress, so they keep the
+  /// all-sold rule and are untouched by this.
+  final bool closeWhenAllDecided;
+
   const TenderSaleCard(
       {required this.sale,
       this.readOnly = false,
@@ -3368,6 +3419,7 @@ class TenderSaleCard extends ConsumerStatefulWidget {
       // Default true: the yard's page is the one that had this behaviour, and
       // every existing caller is that page.
       this.showDecidedItems = true,
+      this.closeWhenAllDecided = false,
       this.popupAccent});
 
   @override
@@ -3480,6 +3532,15 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     final sold = widget.sale.soldCount;
     final allSold = total > 0 && sold == total;
 
+    // Is there anything left to act on?
+    //
+    // ⚠️ On the yard's page that is "every item DECIDED", not "every item
+    // sold". A sale whose items all went Unsold is over, but `allSold` is
+    // false for it, so the clock and the perishable warning both kept
+    // insisting it needed attention. The directorate pages keep the old
+    // rule — for them the sold count is the progress measure.
+    final settled = widget.closeWhenAllDecided ? widget.sale.allDecided : allSold;
+
     // ⚠️ A PERISHABLE sale that has started is marked out, because it is
     // the one kind that cannot wait. These goods get a single round -- normal
     // goods run five over months -- and they spoil while a decision is
@@ -3489,7 +3550,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     // Only once bidding has STARTED: before that there is nothing to act on,
     // and highlighting every future special sale would make the mark mean
     // nothing.
-    final urgentPerishable = !allSold &&
+    final urgentPerishable = !settled &&
         widget.sale.isPerishableSale &&
         widget.sale.saleTimePassed;
     final amber = context.colors.warningAmber;
@@ -3586,12 +3647,21 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                       ),
                     ]),
                     // How long this sale has been waiting to be marked.
-                    if (!allSold &&
+                    if (!settled &&
                         widget.sale.sinceSaleStarted != null) ...[
                       const Gap(6),
                       _ElapsedSinceSale(
                           elapsed: widget.sale.sinceSaleStarted,
                           urgent: widget.sale.isPerishableSale),
+                    ]
+                    // Settled: replace the clock rather than leaving a hole,
+                    // so the row still says where the sale stands. Only where
+                    // the clock was running in the first place.
+                    else if (settled &&
+                        widget.closeWhenAllDecided &&
+                        widget.sale.sinceSaleStarted != null) ...[
+                      const Gap(6),
+                      const _SaleClosedChip(),
                     ],
                   ],
                 ),
@@ -3873,7 +3943,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                 icon: Icon(Icons.info_outline_rounded,
                                     color: context.colors.accentLightBlue,
                                     size: 18),
-                                onPressed: () => showDialog(
+                                onPressed: () => showAppDialog(
                                   context: context,
                                   builder: (_) => PackageDetailsDialog(
                                     package: pkg,
@@ -3972,7 +4042,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     final taxes = await ref.read(disposalServiceProvider).getTaxes();
     final activeTaxes = taxes.where((t) => t.isActive).toList();
     if (!context.mounted) return;
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) =>
           _MarkSoldDialog(item: item, ref: ref, activeTaxes: activeTaxes),
@@ -5099,7 +5169,7 @@ class _CommitteeCard extends StatelessWidget {
                                   .firstOrNull
                               : null;
                           final qty = f.entryQty ?? item?.quantity;
-                          showDialog(
+                          showAppDialog(
                             context: context,
                             builder: (_) => PackageDetailsDialog(
                               package: f.packageDetails!,
@@ -5686,7 +5756,7 @@ class _BidsCell extends ConsumerWidget {
     final count = bids.values.fold<int>(0, (s, l) => s + l.length);
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => showDialog(
+      onTap: () => showAppDialog(
         context: context,
         builder: (_) => EnterBidsDialog(info: info),
       ),
@@ -6895,7 +6965,7 @@ class DestructionCard extends ConsumerWidget {
                                 icon: Icon(Icons.info_outline_rounded,
                                     color: context.colors.accentLightBlue,
                                     size: 18),
-                                onPressed: () => showDialog(
+                                onPressed: () => showAppDialog(
                                   context: context,
                                   builder: (_) => PackageDetailsDialog(
                                     package: pkg,
@@ -6959,7 +7029,7 @@ class DestructionCard extends ConsumerWidget {
 
   void _markDestroyed(
       BuildContext context, WidgetRef ref, DestructionItemModel item) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => _MarkDestroyedDialog(item: item, ref: ref),
     );
@@ -7859,7 +7929,7 @@ class _OneTapDateField extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () async {
-        final picked = await showDialog<DateTime>(
+        final picked = await showAppDialog<DateTime>(
           context: context,
           // Tender / Disposal sale & destruction dates can be scheduled for the
           // future, so no lastDate cap here (same custom picker, look identical).
@@ -7898,7 +7968,7 @@ class _OneTapTimeField extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () async {
-        final picked = await showDialog<TimeOfDay>(
+        final picked = await showAppDialog<TimeOfDay>(
           context: context,
           builder: (_) =>
               OneTapTimePicker(initialTime: value ?? TimeOfDay.now()),

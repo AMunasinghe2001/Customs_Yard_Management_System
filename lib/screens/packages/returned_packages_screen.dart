@@ -12,7 +12,6 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
@@ -20,6 +19,8 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
 import '../../widgets/handover_cell.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
 final returnedPackageReasonFilterProvider =
@@ -347,66 +348,26 @@ class _ReturnedPackagesScreenState
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<dynamic>(
-                              context: context,
-                              builder: (context) =>
-                                  custom.DateRangePickerDialog(
-                                      initialRange: dateRange),
-                            );
-                            if (picked is DateTimeRange) {
-                              ref
-                                  .read(
-                                      returnedPackageDateRangeProvider.notifier)
-                                  .state = picked;
-                            } else if (picked == false) {
-                              ref
-                                  .read(
-                                      returnedPackageDateRangeProvider.notifier)
-                                  .state = null;
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: dateRange != null
-                                  ? context.colors.primaryGold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            dateRange != null
-                                ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                                : 'Date Range',
-                            style: TextStyle(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            onPressed: () => ref
+                        DateFilterButton(
+                          dateRange: dateRange,
+                          year: _yearFilter,
+                          years: srYears(ref
+                                  .watch(dispositionYearSourceProvider(
+                                      'RELEASED'))
+                                  .valueOrNull ??
+                              const <String>[]),
+                          onChanged: (range, year) {
+                            ref
                                 .read(returnedPackageDateRangeProvider.notifier)
-                                .state = null,
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
+                                .state = range;
+                            setState(() {
+                              _yearFilter = year;
+                              _page = 0;
+                            });
+                          },
+                        ),
                         const SizedBox(width: 8),
+                        
                         StyledDropdownButton<String>(
                           value: rFilter == 'all' ? null : rFilter,
                           allLabel: 'Post Status Activity',
@@ -422,21 +383,7 @@ class _ReturnedPackagesScreenState
                                   returnedPackageReasonFilterProvider.notifier)
                               .state = v ?? 'all',
                         ),
-                        const SizedBox(width: 8),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          // ⚠️ Its own query: the page holds twenty rows,
-                          // which would offer only the years visible now.
-                          years: srYears(ref
-                                  .watch(
-                                      dispositionYearSourceProvider('RELEASED'))
-                                  .valueOrNull ??
-                              const <String>[]),
-                          onChanged: (v) => setState(() {
-                            _yearFilter = v;
-                            _page = 0;
-                          }),
-                        ),
+
                       ],
                     ),
                   ],
@@ -634,7 +581,7 @@ class _ReturnedPackagesScreenState
                                                     .colors.accentLightBlue,
                                                 size: 18),
                                             onPressed: () {
-                                              showDialog(
+                                              showAppDialog(
                                                 context: context,
                                                 builder: (_) =>
                                                     PackageDetailsDialog(

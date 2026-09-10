@@ -13,9 +13,10 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/outcome_filter.dart';
 import '../../widgets/year_filter.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/package_details_dialog.dart';
 import '../executive/unsold_shared.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 /// The yard's own packages that could not be sold by any means.
 ///
@@ -204,79 +205,21 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<dynamic>(
-                              context: context,
-                              builder: (context) =>
-                                  custom.DateRangePickerDialog(
-                                      initialRange: _dateRange),
-                            );
-                            if (picked is DateTimeRange) {
-                              setState(() {
-                                _dateRange = picked;
-                                _page = 0;
-                              });
-                            } else if (picked == false) {
-                              setState(() {
-                                _dateRange = null;
-                                _page = 0;
-                              });
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: _dateRange != null
-                                  ? gold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            _dateRange != null
-                                ? '${DateFormat('MMM d').format(_dateRange!.start)} - ${DateFormat('MMM d').format(_dateRange!.end)}'
-                                : 'Date Range',
-                            style: TextStyle(
-                                color: _dateRange != null
-                                    ? gold
-                                    : context.colors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: _dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: _dateRange != null
-                                    ? gold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (_dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            onPressed: () => setState(() {
-                              _dateRange = null;
-                              _page = 0;
-                            }),
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          // ⚠️ Its own query: one page of twenty rows would
-                          // offer only the years visible right now.
+                        
+                        DateFilterButton(
+                          dateRange: _dateRange,
+                          year: _yearFilter,
                           years: srYears(
                               ref.watch(exhaustedUnsoldYearsProvider)
                                       .valueOrNull ??
                                   const <String>[]),
-                          onChanged: (v) => setState(() {
-                            _yearFilter = v;
+                          onChanged: (range, year) => setState(() {
+                            _dateRange = range;
+                            _yearFilter = year;
                             _page = 0;
                           }),
                         ),
+
                         // ⚠️ Hidden on an outcome page: every row there is
                         // already that outcome, so the filter could only ever
                         // return all of them or none.
@@ -397,7 +340,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                               proposal: proposals[f.id]),
                                       onDetails: pkg == null
                                           ? null
-                                          : () => showDialog(
+                                          : () => showAppDialog(
                                                 context: context,
                                                 builder: (_) =>
                                                     PackageDetailsDialog(

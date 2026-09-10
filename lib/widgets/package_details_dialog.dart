@@ -102,6 +102,7 @@ import '../../services/services.dart';
 import 'error_view.dart';
 import 'appeal_state_chip.dart';
 import 'storage_charge_note.dart';
+import '../widgets/app_dialog.dart';
 
 /// The valuation row shown in the Sale / Destruction sections.
 ///
@@ -1577,7 +1578,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           .calculatePackageCharge([specificItem], widget.storageRate);
     }
 
-    final result = await showDialog<bool>(
+    final result = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => material.AlertDialog(
@@ -1642,7 +1643,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                 size: 18, color: context.colors.primaryGold),
                           ),
                           onTap: () async {
-                            final picked = await showDialog<DateTime>(
+                            final picked = await showAppDialog<DateTime>(
                               context: ctx,
                               builder: (_) => OneTapDatePicker(
                                 initialDate: releaseDate,
@@ -1728,7 +1729,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             // Same custom picker as the SR form (consistent look).
                             final existing =
                                 DateTime.tryParse(dateCtrl.text.trim());
-                            final date = await showDialog<DateTime>(
+                            final date = await showAppDialog<DateTime>(
                               context: context,
                               builder: (_) => OneTapDatePicker(
                                 initialDate: existing ?? DateTime.now(),
@@ -1866,7 +1867,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           description: 'Custom disposition: $dispositionType',
         );
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => material.AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1905,7 +1906,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               Icon(Icons.calendar_month, color: m.color),
                         ),
                         onTap: () async {
-                          final picked = await showDialog<DateTime>(
+                          final picked = await showAppDialog<DateTime>(
                             context: ctx,
                             builder: (_) => OneTapDatePicker(
                               initialDate: dispositionDate,
@@ -2012,7 +2013,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           orElse: () => widget.package.items.first,
         );
 
-    showDialog(
+    showAppDialog(
       context: ctx,
       builder: (dialogCtx) => _PackageActionsDialog(
         packageId: entry.packageId,
@@ -2057,7 +2058,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     required bool isOfficer,
   }) {
     final qty = entry?.itemCount ?? item.effectiveQuantity;
-    showDialog(
+    showAppDialog(
       context: ctx,
       builder: (dialogCtx) => _FinalDispositionDialog(
         item: item,
@@ -3375,23 +3376,6 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     // all mean the goods are gone, and a
                                     // warehouse row that disagrees is a
                                     // bookkeeping leftover, not a location.
-                                    const gone = {
-                                      'sold',
-                                      'destroyed',
-                                      're-exported',
-                                      'returned',
-                                      'released',
-                                    };
-                                    final hasLeft = gone.contains(
-                                        (item.status ?? '').toLowerCase());
-                                    final currentWarehouses = hasLeft
-                                        ? const <String>[]
-                                        : relatedEntries
-                                            .where((e) => !e.isReturned)
-                                            .map((e) => e.warehouseName)
-                                            .toSet()
-                                            .toList();
-
                                     // ── Categorize returned entries by disposition ──
                                     // Releases carry no [STATUS] prefix in returnNotes;
                                     // dispositions are tagged e.g. [FORFEIT], [RE-EXPORT].
@@ -3449,10 +3433,36 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     final isItemDisposed =
                                         isItemReexport || isItemDestroy;
                                     final isItemConfiscated = isItemForfeited;
+                                    // ⚠️ The FINAL OUTCOMES, as distinct from
+                                    // the decisions above them: 'destroy' is
+                                    // the ruling, 'destroyed' is what
+                                    // happened. Both deserve the badge, and
+                                    // the outcome more than the decision --
+                                    // it is the end of the story.
+                                    //
+                                    // These sat in `_neutralStatuses`, so an
+                                    // item that had actually been SOLD or
+                                    // DESTROYED got no badge and no tint at
+                                    // all, while a released one did (through
+                                    // a separate quantity test). One outcome
+                                    // was visible and the rest were not.
+                                    final isItemSold = _itemStatus == 'sold';
+                                    final isItemDestroyedDone =
+                                        _itemStatus == 'destroyed';
+                                    final isItemReexportedDone =
+                                        _itemStatus == 're-exported';
+                                    final isItemReleasedDone =
+                                        _itemStatus == 'released' ||
+                                            _itemStatus == 'returned';
+                                    final isItemFinalOutcome = isItemSold ||
+                                        isItemDestroyedDone ||
+                                        isItemReexportedDone ||
+                                        isItemReleasedDone;
                                     final isItemTerminal = isItemForfeited ||
                                         isItemAbandoned ||
                                         isItemDetained ||
-                                        isItemDisposed;
+                                        isItemDisposed ||
+                                        isItemFinalOutcome;
                                     // A custom ("Other") status — anything that
                                     // is not a known disposition and not a
                                     // neutral working/left-yard state — should
@@ -3474,9 +3484,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     // held, no other disposition) shows a RELEASED
                                     // badge instead of falling back to a neutral
                                     // 'returned' status with no badge.
-                                    final isItemReleased = _releasedQty > 0 &&
-                                        heldQty == 0 &&
-                                        _dispoCounts.isEmpty;
+                                    // A fully-released item whose STATUS was
+                                    // never updated: the quantities say it
+                                    // left even though the column still reads
+                                    // 'returned' or blank.
+                                    final isItemReleased = isItemReleasedDone ||
+                                        (_releasedQty > 0 &&
+                                            heldQty == 0 &&
+                                            _dispoCounts.isEmpty);
                                     final showStatusBadge = isItemTerminal ||
                                         isItemOther ||
                                         isItemReleased;
@@ -3493,6 +3508,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         return const Color(0xFF00ACC1);
                                       if (isItemDestroy)
                                         return const Color(0xFFE64A19);
+                                      if (isItemSold)
+                                        return context.colors.successGreen;
+                                      if (isItemDestroyedDone)
+                                        return const Color(0xFFE64A19);
+                                      if (isItemReexportedDone)
+                                        return const Color(0xFF00ACC1);
                                       if (isItemReleased)
                                         return context.colors.successGreen;
                                       if (isItemOther)
@@ -3509,6 +3530,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                       if (isItemDetained) return 'DETAINED';
                                       if (isItemReexport) return 'RE-EXPORT';
                                       if (isItemDestroy) return 'DESTROYED';
+                                      if (isItemSold) return 'SOLD';
+                                      if (isItemDestroyedDone) {
+                                        return 'DESTROYED';
+                                      }
+                                      if (isItemReexportedDone) {
+                                        return 'RE-EXPORTED';
+                                      }
                                       if (isItemReleased) return 'RELEASED';
                                       if (isItemOther) {
                                         return (item.status ?? '')
@@ -3786,8 +3814,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       ),
                                                     ),
                                                     const Gap(12),
+                                                    // ⚠️ Named for what the
+                                                    // FORM calls it. The
+                                                    // officer picks a "Post
+                                                    // Status Activity"
+                                                    // (stored in
+                                                    // `hold_reason`) and
+                                                    // every list filters on
+                                                    // that name — calling it
+                                                    // "Reason" only here
+                                                    // made the popup look
+                                                    // like it was showing
+                                                    // some other field.
                                                     Text(
-                                                      'Reason',
+                                                      'Post Status Activity',
                                                       style: material.TextStyle(
                                                         color: context
                                                             .colors.textMuted,
@@ -3857,126 +3897,27 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                 ),
                                               ],
                                             ),
-                                          if (currentWarehouses.isNotEmpty)
-                                            _DetailItem(
-                                              icon: Icons.warehouse_rounded,
-                                              label: 'Current Warehouse',
-                                              value: currentWarehouses.first,
-                                            )
-                                          // ⚠️ Say WHERE IT WENT rather than
-                                          // nothing. A row that simply
-                                          // disappears reads as missing data;
-                                          // this says the goods left the
-                                          // warehouse and by which outcome,
-                                          // which is the answer the question
-                                          // was asking for.
-                                          else if (hasLeft)
-                                            _DetailItem(
-                                              icon: Icons
-                                                  .assignment_turned_in_rounded,
-                                              label: 'Warehouse',
-                                              value: 'Left the warehouse — '
-                                                  '${_leftLabel(item.status)}',
-                                            ),
-                                          // ⚠️ Shown for EVERY item that has
-                                          // warehouse history, not just
-                                          // detained or part-released ones.
-                                          // The old test (detained OR released
-                                          // OR disposed) meant an ordinary
-                                          // item sitting in a warehouse -- the
-                                          // commonest case of all -- got no
-                                          // breakdown at all, so the same
-                                          // popup answered "where are these
-                                          // goods" for one item and stayed
-                                          // silent for the item below it.
-                                          if (heldQty > 0 ||
-                                              _releasedQty > 0 ||
-                                              _dispoCounts.isNotEmpty) ...[
-                                            const Gap(16),
-                                            material.Container(
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: context.colors.cardDark,
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                border: Border.all(
-                                                  color: context
-                                                      .colors.borderColor,
-                                                ),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  material.Text(
-                                                    'Disposition Breakdown',
-                                                    style: material.TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: context
-                                                          .colors.textPrimary,
-                                                    ),
-                                                  ),
-                                                  const Gap(12),
-                                                  _DispositionRow(
-                                                    // ⚠️ "Currently Held" did
-                                                    // not say held WHERE, and
-                                                    // the number is a
-                                                    // warehouse count -- so it
-                                                    // now names the place. An
-                                                    // OA row reads "In Open
-                                                    // Area 01" and an SR row
-                                                    // "In Warehouse 01",
-                                                    // because the warehouse's
-                                                    // own name already carries
-                                                    // which kind it is.
-                                                    label: _heldLabel(
-                                                        currentWarehouses),
-                                                    count: heldQty,
-                                                    color: context
-                                                        .colors.primaryGold,
-                                                    officer: null,
-                                                  ),
-                                                  if (_releasedQty > 0) ...[
-                                                    const Gap(12),
-                                                    _DispositionRow(
-                                                      label: 'Released',
-                                                      count: _releasedQty,
-                                                      color: context
-                                                          .colors.successGreen,
-                                                      officer: _releasedOfficer ??
-                                                          _kNoEntrantRecorded,
-                                                    ),
-                                                  ],
-                                                  // Each disposition type parsed from
-                                                  // returnNotes (Forfeit, Re-export,
-                                                  // Abandoned, Destroy, Other custom)
-                                                  ..._dispoCounts.entries
-                                                      .map((entry) {
-                                                    return Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                              top: 12),
-                                                      child: _DispositionRow(
-                                                        label: _dispoLabel(
-                                                            entry.key,
-                                                            _dispoRawLabel[entry
-                                                                    .key] ??
-                                                                entry.key),
-                                                        count: entry.value,
-                                                        color: _dispoColor(
-                                                            entry.key),
-                                                        officer: _dispoOfficers[
-                                                                entry.key] ??
-                                                            _kNoEntrantRecorded,
-                                                      ),
-                                                    );
-                                                  }),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
+                                          // ⚠️ "Current Warehouse" and the
+                                          // "Disposition Breakdown" block
+                                          // used to sit here and have been
+                                          // REMOVED, not lost: both are now
+                                          // answered once, per admission, by
+                                          // _ItemStorageSection below.
+                                          //
+                                          // They said the same thing three
+                                          // times over. A released item read
+                                          // "Left the warehouse — released to
+                                          // the owner", then "Currently Held
+                                          // x0 / Released x40", then
+                                          // "Delivered out … Quantity 40" —
+                                          // and the breakdown's counts could
+                                          // drift from the entries they were
+                                          // summarising. The storage section
+                                          // lists each admission with its own
+                                          // warehouse, zone, quantity and
+                                          // state, which covers the split
+                                          // cases the breakdown existed for
+                                          // without restating them.
                                           // ⚠️ Every avenue this ITEM went
                                           // down, under the item itself.
                                           //
@@ -3992,6 +3933,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           // final outcome all belong to the
                                           // item, so they are rendered per
                                           // item.
+                                          // Where these goods have been and
+                                          // what that has cost. Before the
+                                          // lifecycle, because storage is
+                                          // what happens FIRST and is still
+                                          // happening while everything below
+                                          // is being decided.
+                                          if (widget.tenderHistoryFor == null)
+                                            _ItemStorageSection(
+                                              package: p,
+                                              item: item,
+                                            ),
                                           if (widget.tenderHistoryFor == null)
                                             _ItemLifecycleSection(
                                               packageId: p.id,
@@ -4295,7 +4247,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           onPressed: !canUpdatePackage
                               ? null
                               : () {
-                                  showDialog(
+                                  showAppDialog(
                                     context: context,
                                     builder: (_) => PackageUpdateDialog(
                                       package: p,
@@ -4466,45 +4418,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
   }
 }
 
-/// The statuses that mean an item is on its way to being destroyed.
-///
-/// Kept beside the destruction section it serves. It previously sat inside
-/// the disposal-expenses block, and went with it when that block was removed.
-/// How an item left, in the words the pages use for it.
-String _leftLabel(String? status) {
-  switch ((status ?? '').toLowerCase()) {
-    case 'sold':
-      return 'sold and released to the buyer';
-    case 'destroyed':
-      return 'destroyed';
-    case 're-exported':
-      return 're-exported';
-    case 'returned':
-    case 'released':
-      return 'released to the owner';
-    default:
-      return 'disposed';
-  }
-}
 
-/// Where the held portion actually IS, for the Disposition Breakdown.
-///
-/// ⚠️ "Currently Held" named a count but not a place, and the count IS a
-/// warehouse count. The warehouse's own name already says which kind of space
-/// it is -- "Open Area 01", "Warehouse 01" -- so naming it gives the officer
-/// "In Open Area 01" on an OA row and "In Warehouse 01" on an SR one without
-/// the popup having to know the difference.
-///
-/// Falls back to the bare wording when the goods are spread across more than
-/// one place (listing them all would not fit the row) or when no entry names
-/// one.
-String _heldLabel(List<String> currentWarehouses) {
-  if (currentWarehouses.length == 1 && currentWarehouses.first.trim().isNotEmpty) {
-    return 'In ${currentWarehouses.first.trim()}';
-  }
-  if (currentWarehouses.length > 1) return 'Currently Held (${currentWarehouses.length} locations)';
-  return 'Currently Held';
-}
 
 bool _statusIsDestruction(String? status) {
   final st = (status ?? '').toLowerCase();
@@ -4869,6 +4783,267 @@ class _StatusBadge extends StatelessWidget {
 /// Renders NOTHING for an item that never left the ordinary path -- no
 /// forfeiture, no appeal. A section reading "no tender history" on goods that
 /// were never meant to go to tender is noise.
+/// Where THESE goods have physically been, and what that has cost — one
+/// block per item, from the day they were admitted to the day they leave.
+///
+/// ⚠️ Per ITEM, not per SR. An SR's items are admitted separately, can sit in
+/// different warehouses and zones, are held under different reasons and leave
+/// on different days — so a single package-level "Current Warehouse" line
+/// answered the question for one item and quietly misled about every other.
+///
+/// Renders nothing for an item that has never been in a warehouse: an empty
+/// storage block on goods that were never admitted is noise.
+class _ItemStorageSection extends ConsumerWidget {
+  final PackageModel package;
+  final PackageItem item;
+
+  const _ItemStorageSection({required this.package, required this.item});
+
+  static String fmtDate(DateTime d) => DateFormat('dd MMM yyyy').format(d);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Entries belonging to THIS item. An entry with no package_item_id is a
+    // whole-package admission from before items were tracked separately, so
+    // it counts for every item rather than disappearing from all of them.
+    final entries = package.warehouseEntries
+        .where((e) => e.packageItemId == null || e.packageItemId == item.id)
+        .toList()
+      ..sort((a, b) => a.admittedAt.compareTo(b.admittedAt));
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    final rates = ref.watch(storageRateProvider).valueOrNull ??
+        const <DateTime, double>{};
+    final live = entries.where((e) => !e.isReturned).toList();
+    final money = NumberFormat('#,##0.00');
+
+    // Charges accrue per entry and stop when the goods leave, so the total is
+    // the sum over entries — live ones still climbing, closed ones fixed.
+    final charge = entries.fold<double>(
+        0, (a, e) => a + e.calculatePackageCharge(package.items, rates));
+    // ⚠️ And what the SPACE cost, which is a different question. Forfeited,
+    // confiscated, abandoned and destroyed goods are never billed — that is
+    // a billing rule, not a statement that they were free to keep. They
+    // occupied a zone for the same days as anything else, and every
+    // valuation, committee figure and sale decision is taken against that
+    // cost. Showing "No charge" and nothing else hid it entirely.
+    final spaceCost = entries.fold<double>(
+        0,
+        (a, e) => a +
+            spaceCostFor(
+              from: e.admittedAt,
+              units: e.itemCount,
+              rates: rates,
+              until: e.returnedAt,
+            ));
+    final billed = charge > 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: material.Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.colors.cardDark,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.colors.borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.inventory_2_outlined,
+                  size: 15, color: context.colors.accentLightBlue),
+              const Gap(8),
+              material.Text('Storage & Movement',
+                  style: material.TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: context.colors.textPrimary)),
+              const Spacer(),
+              if (billed || spaceCost > 0)
+                material.Text(
+                    'LKR ' + money.format(billed ? charge : spaceCost),
+                    style: material.TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        // Not gold when nobody pays it: the figure is real
+                        // but it is a cost to the yard, not a bill to anyone.
+                        color: billed
+                            ? context.colors.primaryGold
+                            : context.colors.textSecondary)),
+            ]),
+            const Gap(4),
+            material.Text(
+              !billed && spaceCost > 0
+                  ? 'Not billed — these goods were taken by the State. This is '
+                      'what the space they occupied has cost.'
+                  : live.isEmpty
+                      ? 'These goods have left the warehouse.'
+                      : 'Charges accrue until the goods are delivered out.',
+              style: material.TextStyle(
+                  fontSize: 10.5, color: context.colors.textMuted),
+            ),
+            const Gap(10),
+            for (final e in entries) ...[
+              _ItemStorageEntryRow(
+                entry: e,
+                charge: e.calculatePackageCharge(package.items, rates),
+                spaceCost: spaceCostFor(
+                  from: e.admittedAt,
+                  units: e.itemCount,
+                  rates: rates,
+                  until: e.returnedAt,
+                ),
+                // Shown above the card already. An admission usually
+                // inherits the item's activity, so repeating it on every
+                // entry is noise — it earns its place only when this
+                // admission was made under a DIFFERENT one.
+                itemActivity: (item.reasons ?? '').trim(),
+              ),
+              if (e != entries.last) const Gap(8),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One admission of one item into one warehouse.
+class _ItemStorageEntryRow extends StatelessWidget {
+  final WarehouseEntryModel entry;
+  final double charge;
+
+  /// What the space cost regardless of who is billed — see the section above.
+  final double spaceCost;
+
+  /// The item's own Post Status Activity, already shown above the card.
+  final String itemActivity;
+
+  const _ItemStorageEntryRow(
+      {required this.entry,
+      required this.charge,
+      this.spaceCost = 0,
+      this.itemActivity = ''});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final out = entry.isReturned;
+    // Still in the warehouse is the live case and reads as such; a closed
+    // entry is history, and is deliberately quieter.
+    final tone = out ? context.colors.textMuted : context.colors.successGreen;
+
+    // WHERE: the warehouse and the zone within it. A zone is how goods are
+    // actually found on the ground, so a warehouse alone is half an answer.
+    final zone = (entry.zone ?? '').trim();
+    final place = zone.isEmpty || zone.toLowerCase() == 'n/a'
+        ? entry.warehouseName
+        : entry.warehouseName + ' · Zone ' + zone;
+
+    return material.Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceDark.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.colors.borderColor.withOpacity(0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(out ? Icons.logout_rounded : Icons.warehouse_rounded,
+                size: 13, color: tone),
+            const Gap(6),
+            Expanded(
+              child: material.Text(place,
+                  style: material.TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: context.colors.textPrimary)),
+            ),
+            _MiniTag(
+                icon: out
+                    ? Icons.check_circle_outline_rounded
+                    : Icons.inventory_2_outlined,
+                label: out ? 'Delivered out' : 'In warehouse',
+                tint: tone),
+          ]),
+          const Gap(8),
+          Wrap(spacing: 14, runSpacing: 6, children: [
+            // Under WHICH status this admission was made. Skipped when it
+            // simply repeats the activity printed above the card.
+            if (entry.holdReason.trim().isNotEmpty &&
+                entry.holdReason.trim().toLowerCase() !=
+                    itemActivity.toLowerCase())
+              _StorageFact(
+                  label: 'Held under', value: entry.holdReason.trim()),
+            _StorageFact(label: 'Quantity', value: entry.itemCount.toString()),
+            _StorageFact(
+                label: 'Admitted',
+                value: _ItemStorageSection.fmtDate(entry.admittedAt)),
+            if (entry.admittedByName != null)
+              _StorageFact(label: 'Admitted by', value: entry.admittedByName!),
+            _StorageFact(
+                label: out ? 'Days stored' : 'Days so far',
+                value: entry.storageDays.toString()),
+            if (out && entry.returnedAt != null)
+              _StorageFact(
+                  label: 'Left on',
+                  value: _ItemStorageSection.fmtDate(entry.returnedAt!)),
+            if (out && entry.returnedByName != null)
+              _StorageFact(label: 'Released by', value: entry.returnedByName!),
+            // Two different questions, so two different labels. "No charge"
+            // alone answered neither: it said who pays without saying what
+            // the space cost.
+            _StorageFact(
+                label: charge > 0 ? 'Storage charge' : 'Space cost (not billed)',
+                value: charge > 0
+                    ? 'LKR ' + money.format(charge)
+                    : spaceCost > 0
+                        ? 'LKR ' + money.format(spaceCost)
+                        : 'No charge',
+                strong: charge > 0),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+/// A label over its value, for the storage grid.
+class _StorageFact extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool strong;
+
+  const _StorageFact(
+      {required this.label, required this.value, this.strong = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        material.Text(label,
+            style: material.TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w600,
+                color: context.colors.textMuted)),
+        const Gap(2),
+        material.Text(value,
+            style: material.TextStyle(
+                fontSize: 11.5,
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+                color: strong
+                    ? context.colors.primaryGold
+                    : context.colors.textSecondary)),
+      ],
+    );
+  }
+}
+
 class _ItemLifecycleSection extends ConsumerWidget {
   final String packageId;
   final PackageItem item;
@@ -6343,7 +6518,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
     // (same look/size) and dates read as YYYY-MM-DD — not the Material picker's
     // MM/DD/YYYY manual-entry box.
     final existing = DateTime.tryParse(controller.text.trim());
-    final DateTime? picked = await showDialog<DateTime>(
+    final DateTime? picked = await showAppDialog<DateTime>(
       context: context,
       builder: (_) => OneTapDatePicker(
         initialDate: existing ?? DateTime.now(),
@@ -7961,7 +8136,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                               } else {
                                                 // Show selection dialog with live processed slots
                                                 final slots =
-                                                    await showDialog<Set<int>>(
+                                                    await showAppDialog<Set<int>>(
                                                   context: context,
                                                   builder: (ctx) =>
                                                       _PackageSelectionDialog(
@@ -8119,7 +8294,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                             if (t.isEmpty) return;
 
                                             final slots =
-                                                await showDialog<Set<int>>(
+                                                await showAppDialog<Set<int>>(
                                               context: context,
                                               builder: (ctx) =>
                                                   _PackageSelectionDialog(
@@ -8420,7 +8595,7 @@ class _FinalActionConfirmDialogState extends State<_FinalActionConfirmDialog> {
               suffixIcon: Icon(Icons.calendar_month, color: widget.color),
             ),
             onTap: () async {
-              final picked = await showDialog<DateTime>(
+              final picked = await showAppDialog<DateTime>(
                 context: context,
                 builder: (_) => OneTapDatePicker(
                   initialDate: _date,
@@ -8633,7 +8808,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
   Future<void> _confirmFinalAction(_FinalActionDef a,
       {String? otherDetail}) async {
     final label = otherDetail != null ? 'Other: $otherDetail' : a.label;
-    final result = await showDialog<_FinalActionConfirmResult>(
+    final result = await showAppDialog<_FinalActionConfirmResult>(
       context: context,
       builder: (_) => _FinalActionConfirmDialog(
         label: label,
@@ -9018,25 +9193,6 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
 
 // ── Disposition meta resolvers (by normalized returnNotes key) ────────────────
 
-Color _dispoColor(String key) {
-  switch (key) {
-    case 'FORFEIT':
-    case 'FORFEITED':
-    case 'FORFIET':
-    case 'CONFISCATED':
-      return const Color(0xFFE53935);
-    case 'RE-EXPORT':
-    case 'REEXPORT':
-      return const Color(0xFF00ACC1);
-    case 'ABANDONED':
-      return const Color(0xFF9E9E9E);
-    case 'DESTROY':
-    case 'DESTROYED':
-      return const Color(0xFFE64A19);
-    default:
-      return const Color(0xFF7E57C2); // Other / custom
-  }
-}
 
 String _dispoLabel(String key, String raw) {
   switch (key) {
@@ -9066,69 +9222,6 @@ String _dispoLabel(String key, String raw) {
 
 // ── Disposition Row (shows status breakdown) ──────────────────────────────────
 
-class _DispositionRow extends StatelessWidget {
-  final String label;
-  final int count;
-  final Color color;
-  final String? officer;
-
-  const _DispositionRow({
-    required this.label,
-    required this.count,
-    required this.color,
-    required this.officer,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 4,
-          height: 40,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const Gap(12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: material.TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: context.colors.textPrimary,
-                ),
-              ),
-              if (officer != null) ...[
-                const Gap(2),
-                Text(
-                  officer!,
-                  style: material.TextStyle(
-                    fontSize: 11,
-                    color: context.colors.textMuted,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        Text(
-          'x$count',
-          style: material.TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _DispositionMeta {
   final IconData icon;

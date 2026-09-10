@@ -18,6 +18,7 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'executive_header.dart';
 import 'unsold_shared.dart';
+import '../../widgets/app_dialog.dart';
 
 /// True when the signed-in Top Management Directorate officer is the DG — the only post that
 /// rules on an unsold package's final outcome. The ADG and the DC both see the
@@ -250,7 +251,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
                                   ),
                                   onDetails: pkg == null
                                       ? null
-                                      : () => showDialog(
+                                      : () => showAppDialog(
                                             context: context,
                                             builder: (_) =>
                                                 PackageDetailsDialog(
@@ -326,7 +327,7 @@ class _DecisionCell extends ConsumerWidget {
           proposal: proposal, pendingLabel: UnsoldOutcomeChip.kAwaitingDg);
     }
 
-    void open() => showDialog(
+    void open() => showAppDialog(
           context: context,
           builder: (_) => _DecisionDialog(info: info, existing: proposal),
         );

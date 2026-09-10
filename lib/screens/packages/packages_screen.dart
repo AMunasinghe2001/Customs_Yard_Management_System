@@ -13,11 +13,12 @@ import '../../widgets/status_chip.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/year_filter.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
   const PackagesScreen({super.key});
@@ -290,96 +291,25 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Consumer(builder: (context, ref, _) {
-                          final dateRange = ref.watch(packageDateRangeProvider);
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  final picked = await showDialog<dynamic>(
-                                    context: context,
-                                    builder: (context) =>
-                                        custom.DateRangePickerDialog(
-                                            initialRange: dateRange),
-                                  );
-                                  if (picked is DateTimeRange) {
-                                    ref
-                                        .read(packageDateRangeProvider.notifier)
-                                        .state = picked;
-                                  } else if (picked == false) {
-                                    ref
-                                        .read(packageDateRangeProvider.notifier)
-                                        .state = null;
-                                  }
-                                },
-                                icon: Icon(Icons.date_range_rounded,
-                                    size: 16,
-                                    color: dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.textSecondary),
-                                label: Text(
-                                  dateRange != null
-                                      ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                                      : 'Date Range',
-                                  style: TextStyle(
-                                      color: dateRange != null
-                                          ? context.colors.primaryGold
-                                          : context.colors.textSecondary,
-                                      fontSize: 12,
-                                      fontWeight: dateRange != null
-                                          ? FontWeight.bold
-                                          : FontWeight.normal),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(
-                                      color: dateRange != null
-                                          ? context.colors.primaryGold
-                                          : context.colors.borderColor),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8)),
-                                ),
-                              ),
-                              if (dateRange != null) ...[
-                                const Gap(8),
-                                IconButton(
-                                  icon: Icon(Icons.clear_rounded,
-                                      size: 16,
-                                      color: context.colors.dangerRed),
-                                  onPressed: () => ref
-                                      .read(packageDateRangeProvider.notifier)
-                                      .state = null,
-                                  tooltip: 'Clear Date Filter',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                              ],
-                            ],
-                          );
-                        }),
-                        // ⚠️ The SAME YearFilterButton + srYears() every other
-                        // page uses. This one built its own list from a
-                        // hard-coded "this year back six years" loop, so it
-                        // offered years with nothing in them and never offered
-                        // NEXT year -- the one dropdown in the app that behaved
-                        // differently from all the rest.
-                        //
-                        // Goods History pages on the SERVER, so it cannot read
-                        // the years off its loaded rows (only one page is ever
-                        // loaded); packageYearSourceProvider fetches the SR
-                        // numbers alone for exactly this.
+                        // One control for both "when" questions. Goods
+                        // History pages on the SERVER, so the year list
+                        // cannot be read off the loaded rows (only one page
+                        // is ever loaded) — packageYearSourceProvider
+                        // fetches the SR numbers alone for exactly this.
                         Consumer(builder: (context, ref, _) {
                           final srNumbers =
                               ref.watch(packageYearSourceProvider).valueOrNull ??
                                   const <String>[];
-                          return YearFilterButton(
-                            value: ref.watch(packageYearFilterProvider),
+                          return DateFilterButton(
+                            dateRange: ref.watch(packageDateRangeProvider),
+                            year: ref.watch(packageYearFilterProvider),
                             years: srYears(srNumbers),
-                            onChanged: (val) => ref
-                                .read(packageYearFilterProvider.notifier)
-                                .state = val,
+                            onChanged: (range, year) {
+                              ref.read(packageDateRangeProvider.notifier).state =
+                                  range;
+                              ref.read(packageYearFilterProvider.notifier).state =
+                                  year;
+                            },
                           );
                         }),
                       ],
@@ -395,7 +325,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                 const Gap(16),
                 _SrResultCard(
                     package: _srResult!,
-                    onDetails: () => showDialog(
+                    onDetails: () => showAppDialog(
                           context: context,
                           builder: (_) => PackageDetailsDialog(
                               package: _srResult!,
@@ -440,6 +370,14 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           isVerticalScrollBarVisible: true,
                           isHorizontalScrollBarVisible: false,
                             columns: const [
+                            // ⚠️ No fixedWidth on the text columns. Pinning
+                            // them made every one of them exactly as wide as
+                            // its content and dumped ALL the leftover space
+                            // into the last flexible column, so the table
+                            // ended in one long empty gap. Proportional
+                            // sizes share the slack instead: each column
+                            // grows a little, and the widest content —
+                            // Consignee and Declarant — grows most.
                             DataColumn2(
                               label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(
@@ -458,9 +396,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               size: ColumnSize.S,
                               fixedWidth: 110),
                             DataColumn2(
-                              label: Text('Consignee'), size: ColumnSize.M),
+                              label: Text('Consignee'), size: ColumnSize.L),
                             DataColumn2(
-                              label: Text('Declarant'), size: ColumnSize.M),
+                              label: Text('Declarant'), size: ColumnSize.L),
                             DataColumn2(
                               label: Text('Declarant Phone'),
                               size: ColumnSize.M),
@@ -496,7 +434,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                       icon: Icon(Icons.info_outline_rounded,
                                           color: context.colors.accentLightBlue,
                                           size: 18),
-                                      onPressed: () => showDialog(
+                                      onPressed: () => showAppDialog(
                                         context: context,
                                         builder: (_) => PackageDetailsDialog(
                                             package: p,

@@ -14,7 +14,6 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/appeal_state_chip.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
@@ -22,6 +21,8 @@ import '../../widgets/status_chip.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/disposal_page_header.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 final detainedPackageSearchProvider = StateProvider<String>((ref) => '');
 final detainedPackageDateRangeProvider =
@@ -270,7 +271,7 @@ class _DetainedPackagesScreenState
                           elevation: actionable > 0 ? 2 : 0,
                         ),
                         onPressed: actionable > 0
-                            ? () => showDialog(
+                            ? () => showAppDialog(
                                   context: context,
                                   builder: (ctx) => DisposalRequestDialog(
                                     onSubmitted: () {
@@ -441,60 +442,25 @@ class _DetainedPackagesScreenState
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<DateTimeRange>(
-                              context: context,
-                              builder: (_) => custom.DateRangePickerDialog(
-                                  initialRange: dateRange),
-                            );
-                            if (picked != null) {
-                              ref
-                                  .read(
-                                      detainedPackageDateRangeProvider.notifier)
-                                  .state = picked;
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: dateRange != null
-                                  ? context.colors.primaryGold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            dateRange == null
-                                ? 'Date Range'
-                                : '${DateFormat('yyyy-MM-dd').format(dateRange.start)}'
-                                    ' → '
-                                    '${DateFormat('yyyy-MM-dd').format(dateRange.end)}',
-                            style: TextStyle(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.textSecondary,
-                                fontWeight: dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => ref
+                        DateFilterButton(
+                          dateRange: dateRange,
+                          year: _yearFilter,
+                          // ⚠️ Its own query: one page of twenty rows would
+                          // offer only the years currently visible.
+                          years: srYears(ref
+                                  .watch(heldGoodsYearsProvider('DETAINED'))
+                                  .valueOrNull ??
+                              const <String>[]),
+                          onChanged: (range, year) {
+                            ref
                                 .read(detainedPackageDateRangeProvider.notifier)
-                                .state = null,
-                          ),
+                                .state = range;
+                            setState(() {
+                              _yearFilter = year;
+                              _page = 0;
+                            });
+                          },
+                        ),
                         const SizedBox(width: 8),
                         StyledDropdownButton<String>(
                           value: activity == 'all' ? null : activity,
@@ -511,20 +477,7 @@ class _DetainedPackagesScreenState
                               .read(detainedPackageActivityProvider.notifier)
                               .state = v ?? 'all',
                         ),
-                        const SizedBox(width: 8),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          // ⚠️ Its own query: one page of twenty rows would
-                          // offer only the years currently visible.
-                          years: srYears(ref
-                                  .watch(heldGoodsYearsProvider('DETAINED'))
-                                  .valueOrNull ??
-                              const <String>[]),
-                          onChanged: (v) => setState(() {
-                            _yearFilter = v;
-                            _page = 0;
-                          }),
-                        ),
+
                       ],
                     ),
                   ],
@@ -651,7 +604,7 @@ class _DetainedPackagesScreenState
                                   icon: Icon(Icons.info_outline_rounded,
                                       color: context.colors.accentLightBlue,
                                       size: 18),
-                                  onPressed: () => showDialog(
+                                  onPressed: () => showAppDialog(
                                     context: context,
                                     builder: (_) => PackageDetailsDialog(
                                       package: row.package,

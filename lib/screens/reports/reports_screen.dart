@@ -9,6 +9,7 @@ import 'package:pdf/pdf.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../widgets/year_filter.dart';
 import '../../core/app_session.dart';
 import '../executive/unsold_shared.dart' show unsoldQty;
 import '../../core/yards.dart';
@@ -24,6 +25,7 @@ import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/app_dialog.dart';
 
 /// The statuses a report row can actually carry, in lifecycle order: the three
 /// registration dispositions (+ Other) followed by the terminal outcomes
@@ -253,24 +255,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (_dateFilterType == 'day') {
       final initial = _startDate ?? today;
       final clampedInitial = initial.isAfter(today) ? today : initial;
-      final picked = await showDatePicker(
-        context: context,
+      // ⚠️ The app's own calendar, not Material's. The stock picker brings
+      // its own header, type and OK/Cancel, and patching its ColorScheme
+      // never makes it match the rounded, blurred dialogs beside it. This
+      // is the same picker the date-range dialog uses.
+      final picked = await custom.showOneTapCalendar(
+        context,
         initialDate: clampedInitial,
         firstDate: DateTime(2020),
         lastDate: today,
-        builder: (context, child) {
-          return Theme(
-            data: Theme.of(context).copyWith(
-              colorScheme: ColorScheme.dark(
-                primary: context.colors.primaryGold,
-                onPrimary: Colors.black,
-                surface: context.colors.cardDark,
-                onSurface: context.colors.textPrimary,
-              ),
-            ),
-            child: child!,
-          );
-        },
+        label: 'Select Day',
       );
       if (picked != null) {
         setState(() {
@@ -301,7 +295,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final initial = (_startDate != null && _endDate != null)
           ? DateTimeRange(start: _startDate!, end: _endDate!)
           : null;
-      final picked = await showDialog<dynamic>(
+      final picked = await showAppDialog<dynamic>(
         context: context,
         builder: (_) => custom.DateRangePickerDialog(initialRange: initial),
       );
@@ -329,7 +323,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (selectedYear == currentYear && selectedMonth > currentMonth) {
       selectedMonth = currentMonth;
     }
-    final years = List.generate(10, (i) => currentYear - i);
+    // Same list as the year picker: the years the register actually holds,
+    // not ten years back from today.
+    final years = _reportYearOptions();
+    if (!years.contains(selectedYear) && years.isNotEmpty) {
+      selectedYear = years.first;
+    }
     final months = [
       'January',
       'February',
@@ -345,7 +344,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       'December'
     ];
 
-    return showDialog<({int year, int month})>(
+    return showAppDialog<({int year, int month})>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) {
@@ -353,9 +352,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           if (selectedMonth > maxMonth) selectedMonth = maxMonth;
 
           return AlertDialog(
+            // Same chrome as every other dialog in the app: 20px corners
+            // and the surface colour, so a date picker does not arrive
+            // looking like it came from somewhere else.
             shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            backgroundColor: context.colors.cardDark,
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: context.colors.surfaceDark,
             title: Text('Select Month & Year',
                 style: TextStyle(
                     color: context.colors.textPrimary,
@@ -431,20 +433,44 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
+  /// The years the SR register actually covers, newest first.
+  ///
+  /// Falls back to this year and the next while the SR numbers are still
+  /// loading — an empty picker would be worse than a short one.
+  List<int> _reportYearOptions() {
+    final srs = ref.watch(packageYearSourceProvider).valueOrNull ?? const [];
+    final years = srYears(srs).map(int.tryParse).whereType<int>().toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (years.isEmpty) {
+      final y = DateTime.now().year;
+      return [y + 1, y];
+    }
+    return years;
+  }
+
   Future<int?> _showYearPickerDialog(
       BuildContext context, int initialYear) async {
     int selectedYear = initialYear;
-    final currentYear = DateTime.now().year;
-    if (selectedYear > currentYear) selectedYear = currentYear;
-    final years = List.generate(10, (i) => currentYear - i);
+    // ⚠️ The years the REGISTER actually holds, not a fixed count back from
+    // today. `List.generate(10, ...)` offered 2019 and eight other years
+    // nothing had ever been filed under, so the picker was mostly dead
+    // options and paged to 2/2 to show them.
+    //
+    // srYears() reads the trailing "/YYYY" off every SR number and always
+    // adds this year and the next — so a register starting in 2024 offers
+    // 2024-2027 and nothing else, and the list rolls forward on its own.
+    final years = _reportYearOptions();
+    if (!years.contains(selectedYear)) {
+      selectedYear = years.isEmpty ? DateTime.now().year : years.first;
+    }
 
-    return showDialog<int>(
+    return showAppDialog<int>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          backgroundColor: context.colors.cardDark,
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: context.colors.surfaceDark,
           title: Text('Select Year',
               style: TextStyle(
                   color: context.colors.textPrimary,
@@ -561,32 +587,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               }),
             ),
 
-          // ── Date Filter Mode Selector ──
+          // ── Date filter: ONE control ──
+          //
+          // ⚠️ This was a dropdown that chose the MODE plus a chip beside it
+          // that opened the picker — two buttons for one decision, and the
+          // dropdown already opened the picker on selection, so the chip's
+          // only remaining job was to re-open it. Now the dropdown carries
+          // the chosen value as its own label and re-opens the picker when
+          // the same mode is chosen again.
           StyledDropdownButton<String>(
             value: _dateFilterType,
-            allLabel: 'Date Filter',
-            icon: Icons.calendar_month_rounded,
-            menuWidth: 200,
-            options: const [
-              StyledDropdownOption('range', 'Custom Date Range'),
-              StyledDropdownOption('day', 'Single Day'),
-              StyledDropdownOption('month', 'By Month'),
-              StyledDropdownOption('year', 'By Year'),
-            ],
-            onChanged: (v) {
-              if (v != null && v != _dateFilterType) {
-                setState(() {
-                  _dateFilterType = v;
-                  _startDate = null;
-                  _endDate = null;
-                });
-                _handleDatePick();
-              }
-            },
-          ),
-
-          // ── Date Picker Action Chip ──
-          _filterChip(
+            allLabel: hasDate ? dateLabel : 'Date Filter',
             icon: _dateFilterType == 'day'
                 ? Icons.today_rounded
                 : (_dateFilterType == 'month'
@@ -594,9 +605,26 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     : (_dateFilterType == 'year'
                         ? Icons.calendar_view_week_rounded
                         : Icons.date_range_rounded)),
-            label: dateLabel,
-            active: hasDate,
-            onTap: _handleDatePick,
+            menuWidth: 220,
+            options: const [
+              StyledDropdownOption('range', 'Custom Date Range'),
+              StyledDropdownOption('day', 'Single Day'),
+              StyledDropdownOption('month', 'By Month'),
+              StyledDropdownOption('year', 'By Year'),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              // ⚠️ No `v != _dateFilterType` guard. Picking the SAME mode
+              // again is how the reader changes the day they are looking
+              // at, and swallowing it left them with no way to do so once
+              // the chip was gone.
+              setState(() {
+                _dateFilterType = v;
+                _startDate = null;
+                _endDate = null;
+              });
+              _handleDatePick();
+            },
           ),
           if (hasDate)
             IconButton(
@@ -678,33 +706,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  /// Outlined chip button (matches the other pages' Date Range / filter chips).
-  Widget _filterChip({
-    required IconData icon,
-    required String label,
-    required bool active,
-    required VoidCallback onTap,
-  }) {
-    final color =
-        active ? context.colors.primaryGold : context.colors.textSecondary;
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 16, color: color),
-      label: Text(label,
-          style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: active ? FontWeight.bold : FontWeight.normal)),
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(
-            color: active
-                ? context.colors.primaryGold
-                : context.colors.borderColor),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
 
   /// A chip that opens a popup menu of (value,label) choices — matches the
   /// "All Reasons" / "All Years" style popups on the other pages.
@@ -802,7 +803,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           }
         }
 
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (_) => PackageDetailsDialog(
             package: pkg,
@@ -852,7 +853,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
     final effectiveCols = shouldAddDetails ? [...columns, 'Details'] : columns;
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (ctx) => Dialog(
         insetPadding: const EdgeInsets.all(28),
@@ -1379,7 +1380,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             '$base.pdf'),
         onExportExcel: () {
           if (!mounted) return;
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (c) => ExcelExportDialog(
               title: 'Export $title',
@@ -1453,7 +1454,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
     void exportExcel() {
       if (!mounted) return;
-      showDialog(
+      showAppDialog(
         context: context,
         builder: (c) => ExcelExportDialog(
           title: 'Export $key',
@@ -2409,7 +2410,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
       void exportExcel() {
         if (!mounted) return;
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (c) => ExcelExportDialog(
             title: 'Export $activity Report',
@@ -2973,7 +2974,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export ${status.toUpperCase()} Data',
@@ -3127,7 +3128,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
     final srList = all.map((p) => p.srNumber).toList()..sort();
 
-    final sr = await showDialog<String>(
+    final sr = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         String current = '';
@@ -3270,7 +3271,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
     final srList = all.map((p) => p.srNumber).toList()..sort();
 
-    final sr = await showDialog<String>(
+    final sr = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         String current = '';
@@ -3383,7 +3384,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           .toList();
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export History for ${pkg.srNumber}',
@@ -4098,7 +4099,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export $title',
@@ -4233,7 +4234,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               '${fileBase}_Report.pdf'),
           onExportExcel: () {
             if (!mounted) return;
-            showDialog(
+            showAppDialog(
               context: context,
               builder: (ctx) => ExcelExportDialog(
                 title: 'Export $key',
@@ -4253,7 +4254,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           '${fileBase}_Report.pdf',
         );
       } else if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export $key',
@@ -4295,13 +4296,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _showNoDataMessage();
       return;
     }
-    final selected = await showDialog<List<PackageModel>>(
+    final selected = await showAppDialog<List<PackageModel>>(
       context: context,
       builder: (_) => _QrLabelPickerDialog(packages: all),
     );
     if (selected == null || selected.isEmpty || !mounted) return;
     // Reuse the existing print/save dialog for the chosen packages.
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => PrintBarcodeDialog(packages: selected),
     );
@@ -4311,7 +4312,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     Future<Uint8List> Function(PdfPageFormat) buildPdf,
     String fileName,
   ) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: true,
       builder: (context) => ReportPreviewDialog(
@@ -4569,7 +4570,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _showNoDataMessage();
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Warehouse Stock',
@@ -4630,7 +4631,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _showNoDataMessage();
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Released Data',
@@ -4716,7 +4717,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ),
           onExportExcel: () {
             if (!mounted) return;
-            showDialog(
+            showAppDialog(
               context: context,
               builder: (ctx) => ExcelExportDialog(
                 title: 'Export Old Entries',
@@ -4748,7 +4749,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Old Entries',
@@ -4806,7 +4807,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Summary Data',
@@ -4939,7 +4940,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             return;
           }
 
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export $statusName$whSuffix Inventory Audit',
@@ -4998,7 +4999,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Post Status Activities',
@@ -5051,7 +5052,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Item Categories',
@@ -5108,7 +5109,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _showNoDataMessage();
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Warehouses List',
@@ -5176,7 +5177,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             .getAllPackages(yard: _yardArg);
         final rates = await ref.read(storageRateProvider.future);
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Storage Charges',
@@ -5243,7 +5244,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             .getAllPackages(yard: _yardArg);
         final rates = await ref.read(storageRateProvider.future);
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Released Revenue',
@@ -5347,7 +5348,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final fileName = '${reportTitle.replaceAll(' ', '_')}.xlsx';
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Summary Data',
@@ -5375,7 +5376,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final fileName = 'Staff_Audit_Report.xlsx';
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Staff Audit',

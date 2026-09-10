@@ -2917,6 +2917,20 @@ class TenderSaleModel {
   int get soldCount => dedupedItems.where((i) => i.sold).length;
   int get totalCount => dedupedItems.length;
 
+  /// Items whose outcome is settled — Sold OR Unsold.
+  ///
+  /// ⚠️ Not the same question as [soldCount]. A sale where every item went
+  /// UNSOLD is finished: nobody has anything left to decide on it. Counting
+  /// only the sold ones said such a sale was still outstanding, so the yard's
+  /// "since bidding started" clock kept climbing on a sale that had been
+  /// closed for days.
+  int get decidedCount =>
+      dedupedItems.where((i) => i.sold || i.unsold).length;
+
+  /// Every item has an outcome, so nothing on this sale is awaiting a
+  /// decision. An empty sale is NOT decided — there is nothing to decide.
+  bool get allDecided => totalCount > 0 && decidedCount == totalCount;
+
   factory TenderSaleModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['tender_sale_items'] as List? ?? const [];
     return TenderSaleModel(

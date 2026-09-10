@@ -7,7 +7,6 @@ import '../../core/theme.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/appeal_state_chip.dart';
 import '../../widgets/package_details_dialog.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../core/providers.dart';
 import '../../core/post_status_activities.dart';
@@ -21,7 +20,8 @@ import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/supabase_client.dart';
 import '../../widgets/tooltip_text.dart';
-import '../../widgets/year_filter.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 /// Item statuses whose goods have permanently left the yard — these must not
 /// appear in (or be counted by) the Warehouses view. Forfeit / Abandoned /
@@ -368,84 +368,36 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     ? FontWeight.w700
                                     : FontWeight.w400),
                           )),
+                      // One control for both "when" questions.
+                      //
+                      // ⚠️ The year list is BOTH years the filter can match,
+                      // from the whole facility: this filter matches the SR
+                      // year OR the admission year, so listing only the SR
+                      // ones hid a year an officer could genuinely pick.
                       Consumer(builder: (context, ref, _) {
-                        final dateRange =
-                            ref.watch(warehouseDateRangeProvider(warehouse.id));
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final picked = await showDialog<dynamic>(
-                                  context: context,
-                                  builder: (context) =>
-                                      custom.DateRangePickerDialog(
-                                          initialRange: dateRange),
-                                );
-                                if (picked is DateTimeRange) {
-                                  ref
-                                      .read(warehouseDateRangeProvider(
-                                              warehouse.id)
-                                          .notifier)
-                                      .state = picked;
-                                  setState(() => _page = 0);
-                                } else if (picked == false) {
-                                  ref
-                                      .read(warehouseDateRangeProvider(
-                                              warehouse.id)
-                                          .notifier)
-                                      .state = null;
-                                  setState(() => _page = 0);
-                                }
-                              },
-                              icon: Icon(Icons.date_range_rounded,
-                                  size: 16,
-                                  color: dateRange != null
-                                      ? context.colors.primaryGold
-                                      : context.colors.textSecondary),
-                              label: Text(
-                                dateRange != null
-                                    ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                                    : 'Date Range',
-                                style: TextStyle(
-                                    color: dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: dateRange != null
-                                        ? FontWeight.bold
-                                        : FontWeight.normal),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                    color: dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.borderColor),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                            if (dateRange != null) ...[
-                              const Gap(8),
-                              IconButton(
-                                icon: Icon(Icons.clear_rounded,
-                                    size: 16, color: context.colors.dangerRed),
-                                onPressed: () {
-                                  ref
-                                      .read(warehouseDateRangeProvider(
-                                              warehouse.id)
-                                          .notifier)
-                                      .state = null;
-                                  setState(() => _page = 0);
-                                },
-                                tooltip: 'Clear Date Filter',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ],
+                        final years = ref
+                                .watch(warehouseFilterOptionsProvider(
+                                    warehouse.id))
+                                .valueOrNull
+                                ?.years ??
+                            const <String>[];
+                        return DateFilterButton(
+                          dateRange: ref
+                              .watch(warehouseDateRangeProvider(warehouse.id)),
+                          year: ref
+                              .watch(warehouseYearFilterProvider(warehouse.id)),
+                          years: years,
+                          onChanged: (range, year) {
+                            ref
+                                .read(warehouseDateRangeProvider(warehouse.id)
+                                    .notifier)
+                                .state = range;
+                            ref
+                                .read(warehouseYearFilterProvider(warehouse.id)
+                                    .notifier)
+                                .state = year;
+                            setState(() => _page = 0);
+                          },
                         );
                       }),
                       Consumer(builder: (context, ref, _) {
@@ -468,33 +420,6 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     warehouseReasonFilterProvider(warehouse.id)
                                         .notifier)
                                 .state = v ?? 'all';
-                            setState(() => _page = 0);
-                          },
-                        );
-                      }),
-                      Consumer(builder: (context, ref, _) {
-                        final yFilter = ref
-                            .watch(warehouseYearFilterProvider(warehouse.id));
-                        // ⚠️ Both years the filter can match, from the whole
-                        // facility. This listed only the SR numbers' years,
-                        // while the filter matches the SR year OR the
-                        // admission year — so a year an officer could
-                        // genuinely filter by was missing from the dropdown
-                        // that offers it.
-                        final years = ref
-                                .watch(warehouseFilterOptionsProvider(
-                                    warehouse.id))
-                                .valueOrNull
-                                ?.years ??
-                            const <String>[];
-                        return YearFilterButton(
-                          value: yFilter,
-                          years: years,
-                          onChanged: (v) {
-                            ref
-                                .read(warehouseYearFilterProvider(warehouse.id)
-                                    .notifier)
-                                .state = v;
                             setState(() => _page = 0);
                           },
                         );
@@ -744,7 +669,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                   final pkgFull = await ref.read(
                                       packageDataProvider(e.packageId).future);
                                   if (pkgFull != null && context.mounted) {
-                                    showDialog(
+                                    showAppDialog(
                                       context: context,
                                       // View only. Goods are actioned on their
                                       // own status page (Detained / Abandoned /
@@ -793,7 +718,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
     final storageRateHistory = ref.read(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => Consumer(builder: (context, ref, _) {
         final pkg = ref.watch(packageDataProvider(entry.packageId)).valueOrNull;

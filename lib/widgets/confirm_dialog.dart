@@ -3,6 +3,7 @@ import 'package:gap/gap.dart';
 
 import '../core/theme.dart';
 import 'styled_form_dialog.dart';
+import '../widgets/app_dialog.dart';
 
 /// "Are you sure?" — in the same chrome as every other dialog in the app.
 ///
@@ -59,7 +60,7 @@ class ConfirmDialog extends StatelessWidget {
     required String confirmLabel,
     required Color accent,
   }) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (_) => ConfirmDialog(
         label: label,

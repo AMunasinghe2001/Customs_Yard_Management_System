@@ -14,6 +14,17 @@ import '../models/models.dart';
 /// misprice every entry that spans a rate change. What it does NOT do is
 /// zero the figure for forfeited goods: that rule belongs to billing, and
 /// this is about space.
+/// Public alias — the per-item Storage & Movement block in the package popup
+/// needs the same figure, and a second copy of this walk would drift from
+/// this one the first time a rate rule changed.
+double spaceCostFor({
+  required DateTime from,
+  required int units,
+  required Map<DateTime, double> rates,
+  DateTime? until,
+}) =>
+    _spaceCost(from: from, units: units, rates: rates, until: until);
+
 double _spaceCost({
   required DateTime from,
   required int units,

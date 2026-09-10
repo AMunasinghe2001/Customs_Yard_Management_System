@@ -17,6 +17,7 @@ import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/tooltip_text.dart';
 import 'executive_header.dart';
+import '../../widgets/app_dialog.dart';
 
 /// The page's filters. Both the headline cards and the per-goods table read
 /// them, so narrowing to a yard or date range narrows EVERY figure on the page.
@@ -896,7 +897,7 @@ Future<void> _handleDatePick(
       ref.read(_finPageProvider.notifier).state = 0;
     }
   } else if (filterType == 'range') {
-    final picked = await showDialog<dynamic>(
+    final picked = await showAppDialog<dynamic>(
       context: context,
       builder: (ctx) =>
           custom.DateRangePickerDialog(initialRange: currentRange),
@@ -945,7 +946,7 @@ Future<({int year, int month})?> _showMonthPickerDialog(
     'December'
   ];
 
-  return showDialog<({int year, int month})>(
+  return showAppDialog<({int year, int month})>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (context, setDlgState) {
@@ -1038,7 +1039,7 @@ Future<int?> _showYearPickerDialog(
   if (selectedYear > currentYear) selectedYear = currentYear;
   final years = List.generate(10, (i) => currentYear - i);
 
-  return showDialog<int>(
+  return showAppDialog<int>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (context, setDlgState) => AlertDialog(

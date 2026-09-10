@@ -93,29 +93,41 @@ void main() {
     });
   });
 
-  group('the Disposition Breakdown answers where the goods are', () {
+  group('the storage section answers where the goods are', () {
+    // ⚠️ These four checks used to guard the "Disposition Breakdown". That
+    // block has been REMOVED because it restated what the status badge and
+    // this section already say — but the questions it was built to answer
+    // are still questions, so they are re-pinned here against
+    // _ItemStorageSection, which now answers them.
+
     test('it shows for any item with warehouse history', () {
-      // ⚠️ The old test was detained OR released OR disposed, so an ordinary
-      // item sitting in a warehouse -- the commonest case -- got nothing, and
-      // the same popup answered the question for one item and stayed silent
-      // for the item below it.
-      expect(flat, contains('if (heldQty > 0 || _releasedQty > 0 || _dispoCounts.isNotEmpty)'));
+      // Not just detained / released / disposed items: an ordinary item
+      // sitting in a warehouse is the commonest case of all, and it used to
+      // get nothing while the item below it got an answer.
+      expect(flat,
+          contains('.where((e) => e.packageItemId == null || e.packageItemId == item.id)'));
+      expect(flat, contains('if (entries.isEmpty) return const SizedBox.shrink();'));
     });
 
-    test('the held row names the place, not just the count', () {
-      expect(dialog, contains('label: _heldLabel('));
-      expect(dialog, contains("return 'In \${currentWarehouses.first.trim()}';"));
+    test('it names the place, not just a count', () {
+      expect(dialog, contains('entry.warehouseName'));
+      // And the zone within it — how the goods are actually found.
+      expect(dialog, contains("' · Zone '"));
     });
 
     test('the warehouse name carries which kind of space it is', () {
-      // "Open Area 01" -> In Open Area 01; "Warehouse 01" -> In Warehouse 01.
-      // No hard-coded OA/SR branch: the name already says it.
+      // "Open Area 01" / "Warehouse 01" — the stored name already says it,
+      // so there is no hard-coded OA/SR branch.
       expect(dialog, isNot(contains("'In Open Area'")));
       expect(dialog, isNot(contains("'In Warehouse'")));
     });
 
-    test('several locations fall back rather than overflowing the row', () {
-      expect(dialog, contains("return 'Currently Held (\${currentWarehouses.length} locations)';"));
+    test('several locations get a row each, so nothing overflows', () {
+      // The old block squeezed every location into one line and had to fall
+      // back to "(N locations)" past two. Each admission now has its own
+      // row, with its own quantity, dates and charge.
+      expect(dialog, contains('for (final e in entries) ...['));
+      expect(dialog, isNot(contains('locations)')));
     });
   });
 }

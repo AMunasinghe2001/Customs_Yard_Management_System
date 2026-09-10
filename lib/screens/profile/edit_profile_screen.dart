@@ -17,6 +17,7 @@ import '../../services/services.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
 import '../../core/security_policy.dart';
+import '../../widgets/app_dialog.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -217,7 +218,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _obscureNew = true;
     _obscureConfirm = true;
 
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(

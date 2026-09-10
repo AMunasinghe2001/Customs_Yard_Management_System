@@ -161,7 +161,15 @@ void main() {
       // future special sale would make the mark mean nothing.
       expect(f, contains('widget.sale.saleTimePassed'));
       // Not once every item is marked, either.
-      expect(f, contains('!allSold && widget.sale.isPerishableSale'));
+      //
+      // ⚠️ `settled`, not `allSold`. This assertion's own intent is "every
+      // item MARKED", and all-sold is a narrower thing: a sale whose items
+      // all went Unsold is equally finished. `settled` is all-decided on the
+      // yard's page and stays all-sold for the directorates, which measure
+      // progress by the sold count.
+      expect(f, contains('!settled && widget.sale.isPerishableSale'));
+      expect(f, contains(
+          'final settled = widget.closeWhenAllDecided ? widget.sale.allDecided : allSold;'));
     });
 
     test('it carries the leaf the rest of the app uses for perishables', () {

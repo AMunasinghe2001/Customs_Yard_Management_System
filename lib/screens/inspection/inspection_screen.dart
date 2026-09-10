@@ -25,6 +25,7 @@ import '../../widgets/warehouse_selection_dialog.dart';
 import '../../widgets/print_barcode_dialog.dart';
 import '../../core/supabase_client.dart';
 import '../../core/app_log.dart';
+import '../../widgets/app_dialog.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
   const InspectionScreen({super.key});
@@ -238,7 +239,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (lastDate != null && initial.isAfter(lastDate)) {
       initial = lastDate;
     }
-    final DateTime? picked = await showDialog<DateTime>(
+    final DateTime? picked = await showAppDialog<DateTime>(
       context: context,
       builder: (_) =>
           OneTapDatePicker(initialDate: initial, lastDate: lastDate),
@@ -1398,7 +1399,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     final blocked = await _findCapacityProblems();
     if (blocked.isNotEmpty) {
       if (!mounted) return;
-      final proceed = await showDialog<bool>(
+      final proceed = await showAppDialog<bool>(
             context: context,
             builder: (_) => _CapacityBlockedDialog(problems: blocked),
           ) ??
@@ -1567,7 +1568,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                     Column(
                       children: [
                         ElevatedButton.icon(
-                          onPressed: () => showDialog(
+                          onPressed: () => showAppDialog(
                             context: context,
                             builder: (_) => PrintBarcodeDialog(
                               packages: [_savedPackage!],
@@ -2104,7 +2105,7 @@ class _QrCodePage extends StatelessWidget {
                 const Gap(24),
                 if (package != null)
                   ElevatedButton.icon(
-                    onPressed: () => showDialog(
+                    onPressed: () => showAppDialog(
                       context: context,
                       builder: (_) => PrintBarcodeDialog(
                         packages: [package!],

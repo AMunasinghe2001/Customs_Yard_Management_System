@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import 'styled_form_dialog.dart';
+import '../widgets/app_dialog.dart';
 
 /// What the yard collects before it hands goods over.
 ///
@@ -59,7 +60,7 @@ Future<HandoverResult?> showHandoverForm(
   /// is required. Re-exported goods do not incur warehouse charges.
   bool skipCharge = false,
 }) {
-  return showDialog<HandoverResult>(
+  return showAppDialog<HandoverResult>(
     context: context,
     builder: (_) => _HandoverFormDialog(
       title: title,

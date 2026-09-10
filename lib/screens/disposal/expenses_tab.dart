@@ -19,6 +19,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import 'disposal_shared.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Page index for this tab's client-side pager.
 final _expensePageProvider = StateProvider<int>((ref) => 0);
@@ -322,7 +323,7 @@ Future<void> _handleExpenseDatePick(
       ref.read(_expensePageProvider.notifier).state = 0;
     }
   } else if (filterType == 'range') {
-    final picked = await showDialog<dynamic>(
+    final picked = await showAppDialog<dynamic>(
       context: context,
       builder: (ctx) =>
           custom.DateRangePickerDialog(initialRange: currentRange),
@@ -371,7 +372,7 @@ Future<({int year, int month})?> _showExpenseMonthPickerDialog(
     'December'
   ];
 
-  return showDialog<({int year, int month})>(
+  return showAppDialog<({int year, int month})>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (context, setDlgState) {
@@ -464,7 +465,7 @@ Future<int?> _showExpenseYearPickerDialog(
   if (selectedYear > currentYear) selectedYear = currentYear;
   final years = List.generate(10, (i) => currentYear - i);
 
-  return showDialog<int>(
+  return showAppDialog<int>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (context, setDlgState) => AlertDialog(
@@ -775,7 +776,7 @@ class _ExpensesTable extends ConsumerWidget {
                     tooltip: 'Record costs for this SR',
                     icon: Icon(Icons.edit_note_rounded,
                         size: 20, color: context.colors.successGreen),
-                    onPressed: () => showDialog(
+                    onPressed: () => showAppDialog(
                       context: context,
                       builder: (_) => RecordExpenseDialog(sr: r),
                     ),
@@ -792,7 +793,7 @@ class _ExpensesTable extends ConsumerWidget {
                           .getPackageBySrNumber(r.srNumber.trim());
                       if (!context.mounted) return;
                       if (pkg != null) {
-                        showDialog(
+                        showAppDialog(
                           context: context,
                           builder: (_) => PackageDetailsDialog(
                             package: pkg,
@@ -805,7 +806,7 @@ class _ExpensesTable extends ConsumerWidget {
                           ),
                         );
                       } else {
-                        showDialog(
+                        showAppDialog(
                           context: context,
                           builder: (_) => _SrGoodsDialog(sr: r),
                         );

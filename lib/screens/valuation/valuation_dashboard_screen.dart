@@ -25,6 +25,7 @@ import '../../widgets/perishable_tag.dart';
 import '../../widgets/source_chip.dart';
 import '../../widgets/yard_chip.dart';
 import '../executive/unsold_shared.dart';
+import '../../widgets/app_dialog.dart';
 
 /// The quantity actually forfeited & sent for disposal for a valuation row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -142,7 +143,7 @@ class _ValuationDashboardScreenState
                   message: 'View profile',
                   child: InkWell(
                     borderRadius: BorderRadius.circular(999),
-                    onTap: () => showDialog(
+                    onTap: () => showAppDialog(
                       context: context,
                       builder: (_) => DisposalProfileDialog(accent: gold),
                     ),
@@ -736,7 +737,7 @@ class _ValuationRequestCard extends ConsumerWidget {
                                 const EdgeInsets.symmetric(horizontal: 10),
                             visualDensity: VisualDensity.compact,
                           ),
-                          onPressed: () => showDialog(
+                          onPressed: () => showAppDialog(
                             context: context,
                             builder: (_) => _ItemValuationDialog(
                               item: it,
@@ -756,7 +757,7 @@ class _ValuationRequestCard extends ConsumerWidget {
                               color: context.colors.accentLightBlue, size: 18),
                           onPressed: f?.packageDetails == null
                               ? null
-                              : () => showDialog(
+                              : () => showAppDialog(
                                     context: context,
                                     builder: (_) => PackageDetailsDialog(
                                       package: f!.packageDetails!,
@@ -1559,7 +1560,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                                     size: 18),
                                 onPressed: f.packageDetails == null
                                     ? null
-                                    : () => showDialog(
+                                    : () => showAppDialog(
                                           context: context,
                                           builder: (_) => PackageDetailsDialog(
                                             package: f.packageDetails!,
@@ -2189,7 +2190,7 @@ class _ValAttemptsBadge extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => showDialog(
+          onTap: () => showAppDialog(
             context: context,
             builder: (_) => _ValTenderHistoryDialog(info: info),
           ),
@@ -2420,7 +2421,7 @@ class _ValRevalCell extends ConsumerWidget {
     final amber = context.colors.warningAmber;
     final green = context.colors.successGreen;
 
-    void open() => showDialog(
+    void open() => showAppDialog(
           context: context,
           builder: (_) => _ValBidsAndRevalDialog(info: info),
         );
