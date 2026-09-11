@@ -27,6 +27,14 @@ enum HandoverEntryKind {
     done: 'The owner has collected the goods',
     prompt: 'Confirm the owner has collected the goods',
     waiting: 'Awaiting the yard to confirm collection',
+  ),
+  // An "Other" disposition — handed to the Police, auctioned per an appeal
+  // ruling, taken for Government use. The ruling and the goods leaving are
+  // two events, and this cell is the second one.
+  other(
+    done: 'The goods have left the yard',
+    prompt: 'Confirm the goods have left the yard',
+    waiting: 'Awaiting the yard to confirm hand-over',
   );
 
   const HandoverEntryKind(
@@ -41,16 +49,19 @@ enum HandoverEntryKind {
   String get formTitle => switch (this) {
         HandoverEntryKind.reexport => 'Ship Re-exported Goods',
         HandoverEntryKind.released => 'Release Goods to Owner',
+        HandoverEntryKind.other => 'Hand Over Goods',
       };
 
   String get formAction => switch (this) {
         HandoverEntryKind.reexport => 'Confirm Shipped',
         HandoverEntryKind.released => 'Confirm Collected',
+        HandoverEntryKind.other => 'Confirm Handed Over',
       };
 
   IconData get formIcon => switch (this) {
         HandoverEntryKind.reexport => Icons.flight_takeoff_rounded,
         HandoverEntryKind.released => Icons.keyboard_return_rounded,
+        HandoverEntryKind.other => Icons.outbox_rounded,
       };
 
   String get chargeCaption => switch (this) {
@@ -58,6 +69,10 @@ enum HandoverEntryKind {
           'Storage from the SR entry date to the re-export',
         HandoverEntryKind.released =>
           'Storage from the SR entry date to the release',
+        // ⚠️ No charge line for an "Other" disposition: these goods left
+        // under a ruling (to the Police, to auction, to Government use),
+        // and there is no owner being invoiced on collection.
+        HandoverEntryKind.other => 'Storage to the date of the disposition',
       };
 }
 
@@ -139,6 +154,8 @@ class HandoverCellState extends ConsumerState<HandoverCell> {
             receiptNo: result?.receiptNo,
             charge: result?.charge,
             handedAt: result?.handedOverAt),
+        HandoverEntryKind.other => svc.toggleOtherDelivery(id, true,
+            handedAt: DateTime.now()),
       };
       // ⚠️ Hold the answer locally as well as refreshing. The table
       // rebuilds from `disposition_rows`, and until that round-trip lands

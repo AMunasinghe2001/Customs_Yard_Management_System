@@ -126,4 +126,48 @@ void main() {
       expect(report, contains('if (yard.isEmpty) return null;'));
     });
   });
+
+  group('the yard can actually READ its past staff', () {
+    final mig =
+        File('migrations/014_past_yard_staff_visible.sql').readAsStringSync();
+
+    test('RLS admitted only the current yard, so the row was invisible', () {
+      // The service dates come from audit_logs, which is already readable
+      // per yard — but the NAME beside them lives in profiles, and that
+      // row left GL1's result set the moment the officer transferred.
+      expect(mig, contains('profile_served_in_my_yard'));
+      expect(mig, contains('drop policy if exists yard_profiles_select'));
+    });
+
+    test('it opens only rows this yard has a history with', () {
+      // Not "profiles across yards": the function matches the caller's OWN
+      // yard against its OWN log.
+      expect(mig, contains("l.yard = public.auth_user_yard()"));
+      expect(mig, contains("l.entity_type = 'profile'"));
+    });
+
+    test('the lookup cannot recurse into profiles policies', () {
+      // It is consulted BY a profiles policy — the 42P17 trap migrations
+      // 006 and 007 removed.
+      expect(mig, contains('security definer'));
+    });
+  });
+
+  test('the yard page is not called the Admin Panel', () {
+    // The ICT portal is THE Admin Panel — it provisions accounts for every
+    // yard. This page configures one yard.
+    final shell = File('lib/widgets/app_shell.dart').readAsStringSync();
+    expect(shell, contains("'Yard Administration'"));
+    expect(admin, contains("Text('Yard Administration',"));
+    expect(admin, isNot(contains("Text('Admin Panel',")));
+  });
+
+  test('every report page carries the font that has an em dash', () {
+    // Thirteen documents were bare, so those reports fell back to
+    // Helvetica and printed a hollow box wherever the text said "—".
+    final report = File('lib/services/report_service.dart').readAsStringSync();
+    expect(report, isNot(contains('pw.Document();')));
+    expect('pw.Document('.allMatches(report).length,
+        equals('ThemeData.withFont('.allMatches(report).length));
+  });
 }

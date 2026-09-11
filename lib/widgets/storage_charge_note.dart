@@ -88,6 +88,82 @@ final storageChargeVisibleProvider =
   return pkg.warehouseEntries.isNotEmpty;
 });
 
+/// Whether these goods reached a Top Management ruling after failing every
+/// tender — the Unsold route.
+///
+/// Keyed through the forfeited record, because an unsold proposal is filed
+/// against that and not against the package.
+bool _isUnsoldDisposal(WidgetRef ref, PackageModel pkg) {
+  final proposals = ref.watch(unsoldProposalsProvider).valueOrNull;
+  if (proposals == null || proposals.isEmpty) return false;
+  final byItem = ref.watch(forfeitedByItemProvider(pkg.id)).valueOrNull;
+  if (byItem == null) return false;
+  return byItem.values.any((f) => proposals.containsKey(f.id));
+}
+
+/// Stands in for the figure on goods nobody is billed for.
+///
+/// ⚠️ A sentence, not a blank. Removing the panel entirely would read as
+/// "storage was never recorded", and the next person would go looking for
+/// the number somewhere else.
+class _NotChargedNote extends StatelessWidget {
+  const _NotChargedNote({required this.compact, required this.priceOnly});
+
+  final bool compact;
+  final bool priceOnly;
+
+  static const _line = 'No warehouse charge — unsold goods are not billed';
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = context.colors.textMuted;
+    if (priceOnly) {
+      return Text('Not charged',
+          style: TextStyle(color: muted, fontSize: 12));
+    }
+    if (compact) {
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.block_rounded, size: 13, color: muted),
+        const Gap(5),
+        Flexible(
+          child: Text(_line,
+              style: TextStyle(
+                  color: muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
+        ),
+      ]);
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: muted.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: muted.withOpacity(0.25)),
+      ),
+      child: Row(children: [
+        Icon(Icons.block_rounded, size: 16, color: muted),
+        const Gap(10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('No warehouse charge',
+                  style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+              const Gap(2),
+              Text(
+                  'Storage is not billed on unsold goods — every sale route '
+                  'was exhausted and Top Management has ruled on them.',
+                  style: TextStyle(color: muted, fontSize: 11)),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
 class StorageChargeNote extends ConsumerWidget {
   const StorageChargeNote({
     super.key,
@@ -123,6 +199,20 @@ class StorageChargeNote extends ConsumerWidget {
     final rates = ref.watch(storageRateProvider).valueOrNull;
     final pkg = pkgAsync.valueOrNull;
     if (pkg == null || rates == null) return const SizedBox.shrink();
+
+    // ⚠️ Goods that exhausted every sale route are NOT charged for storage,
+    // and no figure belongs on them at all — not even as "cost of space".
+    //
+    // These are the packages Top Management ruled on after four failed
+    // tenders: taken into Government Use, sent to auction, converted, or
+    // removed from the premises. Nobody will ever be invoiced, and nobody
+    // is weighing a reserve price against the days any more, so a number
+    // here reads as a bill that is owed. The same goods appear again under
+    // each Final Outcome page, so the rule has to live with the figure
+    // rather than with any one page.
+    if (_isUnsoldDisposal(ref, pkg)) {
+      return _NotChargedNote(compact: compact, priceOnly: priceOnly);
+    }
 
     // ⚠️ A closed entry still COUNTS -- it just stops at the day it
     // closed. Skipping them entirely meant every sold, released and

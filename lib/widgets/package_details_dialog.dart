@@ -4836,6 +4836,17 @@ class _ItemStorageSection extends ConsumerWidget {
               rates: rates,
               until: e.returnedAt,
             ));
+    // ⚠️ Unsold goods carry NO figure at all — see storage_charge_note.dart.
+    // Top Management has ruled on them after every sale route failed, so
+    // nobody is billed and nobody is pricing them against the days any
+    // more. The same package reappears under each Final Outcome page, so
+    // the rule travels with the figure rather than with a page.
+    final proposals = ref.watch(unsoldProposalsProvider).valueOrNull;
+    final byItem = ref.watch(forfeitedByItemProvider(package.id)).valueOrNull;
+    final unsoldDisposal = proposals != null &&
+        proposals.isNotEmpty &&
+        byItem != null &&
+        byItem.values.any((f) => proposals.containsKey(f.id));
     final billed = charge > 0;
 
     return Padding(
@@ -4860,7 +4871,7 @@ class _ItemStorageSection extends ConsumerWidget {
                       fontWeight: FontWeight.w700,
                       color: context.colors.textPrimary)),
               const Spacer(),
-              if (billed || spaceCost > 0)
+              if (!unsoldDisposal && (billed || spaceCost > 0))
                 material.Text(
                     'LKR ' + money.format(billed ? charge : spaceCost),
                     style: material.TextStyle(
@@ -4874,12 +4885,16 @@ class _ItemStorageSection extends ConsumerWidget {
             ]),
             const Gap(4),
             material.Text(
-              !billed && spaceCost > 0
-                  ? 'Not billed — these goods were taken by the State. This is '
-                      'what the space they occupied has cost.'
-                  : live.isEmpty
-                      ? 'These goods have left the warehouse.'
-                      : 'Charges accrue until the goods are delivered out.',
+              unsoldDisposal
+                  ? 'No warehouse charge — storage is not billed on unsold '
+                      'goods.'
+                  : !billed && spaceCost > 0
+                      ? 'Not billed — these goods were taken by the State. '
+                          'This is what the space they occupied has cost.'
+                      : live.isEmpty
+                          ? 'These goods have left the warehouse.'
+                          : 'Charges accrue until the goods are delivered '
+                              'out.',
               style: material.TextStyle(
                   fontSize: 10.5, color: context.colors.textMuted),
             ),
@@ -4888,6 +4903,7 @@ class _ItemStorageSection extends ConsumerWidget {
               _ItemStorageEntryRow(
                 entry: e,
                 charge: e.calculatePackageCharge(package.items, rates),
+                hideCharge: unsoldDisposal,
                 spaceCost: spaceCostFor(
                   from: e.admittedAt,
                   units: e.itemCount,
@@ -4920,11 +4936,15 @@ class _ItemStorageEntryRow extends StatelessWidget {
   /// The item's own Post Status Activity, already shown above the card.
   final String itemActivity;
 
+  /// Unsold goods carry no money figure at all.
+  final bool hideCharge;
+
   const _ItemStorageEntryRow(
       {required this.entry,
       required this.charge,
       this.spaceCost = 0,
-      this.itemActivity = ''});
+      this.itemActivity = '',
+      this.hideCharge = false});
 
   @override
   Widget build(BuildContext context) {
@@ -4996,14 +5016,19 @@ class _ItemStorageEntryRow extends StatelessWidget {
             // Two different questions, so two different labels. "No charge"
             // alone answered neither: it said who pays without saying what
             // the space cost.
-            _StorageFact(
-                label: charge > 0 ? 'Storage charge' : 'Space cost (not billed)',
-                value: charge > 0
-                    ? 'LKR ' + money.format(charge)
-                    : spaceCost > 0
-                        ? 'LKR ' + money.format(spaceCost)
-                        : 'No charge',
-                strong: charge > 0),
+            if (hideCharge)
+              const _StorageFact(
+                  label: 'Storage charge', value: 'Not charged')
+            else
+              _StorageFact(
+                  label:
+                      charge > 0 ? 'Storage charge' : 'Space cost (not billed)',
+                  value: charge > 0
+                      ? 'LKR ' + money.format(charge)
+                      : spaceCost > 0
+                          ? 'LKR ' + money.format(spaceCost)
+                          : 'No charge',
+                  strong: charge > 0),
           ]),
         ],
       ),

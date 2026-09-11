@@ -77,7 +77,8 @@ class AdminScreen extends ConsumerWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Admin Panel',
+                        // Matches the nav entry — see app_shell.dart.
+                        Text('Yard Administration',
                             style: Theme.of(context).textTheme.headlineLarge),
                         // ⚠️ NOT "manage officers". Officer accounts are
                         // provisioned, posted and disabled by the ICT

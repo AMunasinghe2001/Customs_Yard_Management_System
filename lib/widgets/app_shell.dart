@@ -116,7 +116,15 @@ List<NavSection> navSectionsFor({required bool isAdmin}) => [
         ..._navReporting,
         if (isAdmin)
           const NavItem(
-              'Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
+              // ⚠️ "Yard Administration", not "Admin Panel". The ICT
+              // portal is THE Admin Panel — it provisions accounts and
+              // configures the system for every yard. This page configures
+              // ONE yard's storage and reads its records, and giving the
+              // two the same name made a yard page look like the
+              // system-wide one.
+              'Yard Administration',
+              Icons.admin_panel_settings_rounded,
+              '/admin/panel'),
       ]),
     ];
 

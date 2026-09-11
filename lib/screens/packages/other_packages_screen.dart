@@ -22,6 +22,7 @@ import '../../widgets/disposal_page_header.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
+import '../../widgets/handover_cell.dart';
 
 final otherPackageSearchProvider = StateProvider<String>((ref) => '');
 final otherPackageDateRangeProvider =
@@ -687,6 +688,18 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                 label: Center(child: Text('Appeal')),
                                 size: ColumnSize.S,
                                 fixedWidth: 130),
+                            // ⚠️ A completed disposition is a RULING, not a
+                            // departure. "Auctioned per appeal ruling" or
+                            // "Handed over to the Police" says what was
+                            // decided; the goods can still be standing in
+                            // the warehouse the next morning. Without this
+                            // column the table could not tell the two
+                            // apart — the same gap re-exports and releases
+                            // each already have a column for.
+                            DataColumn2(
+                                label: Center(child: Text('Delivery')),
+                                size: ColumnSize.S,
+                                fixedWidth: 150),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -736,6 +749,23 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                                         row.package.createdAt,
                                                 outcome: appealOutcomes[
                                                     row.item.id]))),
+                                    // Only a completed disposition has
+                                    // anything to hand over; goods still
+                                    // under appeal have not been ruled on.
+                                    DataCell(Center(
+                                        child: row.completed
+                                            ? HandoverCell(
+                                                entry: row.entry,
+                                                delivered: row.entry
+                                                        ?.otherDelivered ??
+                                                    false,
+                                                kind: HandoverEntryKind.other,
+                                                package: row.package,
+                                                rates: storageRateHistory)
+                                            : Text('—',
+                                                style: TextStyle(
+                                                    color: context
+                                                        .colors.textMuted)))),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,

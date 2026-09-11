@@ -182,6 +182,10 @@ YARD_INDEX_COMPLETENESS = os.path.join(
     ROOT, 'migrations', '011_yard_index_completeness.sql')
 RLS_HELPERS_EVALUATED_ONCE = os.path.join(
     ROOT, 'migrations', '012_rls_helpers_evaluated_once.sql')
+OTHER_GOODS_HANDOVER = os.path.join(
+    ROOT, 'migrations', '013_other_goods_handover.sql')
+PAST_YARD_STAFF_VISIBLE = os.path.join(
+    ROOT, 'migrations', '014_past_yard_staff_visible.sql')
 def emit(label: str, body: str) -> None:
     parts.append(
         '\n-- ' + '=' * 74 + '\n'
@@ -264,6 +268,18 @@ if os.path.exists(YARD_INDEX_COMPLETENESS):
 
 # Truly last: it rewrites whatever policies exist above, so every policy any
 # earlier migration created must already be in place.
+# Adds a column and an RPC, so it must run BEFORE 012 rewrites the policies
+# that guard them. Emitted after, but 012 touches only policy expressions.
+if os.path.exists(OTHER_GOODS_HANDOVER):
+    emit('migrations/013_other_goods_handover.sql (folded in)',
+         io.open(OTHER_GOODS_HANDOVER, encoding='utf-8').read())
+
+# Widens the profiles read policy, so it must land BEFORE 012 hoists the
+# helper calls inside it.
+if os.path.exists(PAST_YARD_STAFF_VISIBLE):
+    emit('migrations/014_past_yard_staff_visible.sql (folded in)',
+         io.open(PAST_YARD_STAFF_VISIBLE, encoding='utf-8').read())
+
 if os.path.exists(RLS_HELPERS_EVALUATED_ONCE):
     emit('migrations/012_rls_helpers_evaluated_once.sql (folded in)',
          io.open(RLS_HELPERS_EVALUATED_ONCE, encoding='utf-8').read())

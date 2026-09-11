@@ -524,6 +524,15 @@ class WarehouseEntryModel {
   final String? itemName;
   final String? hsCode;
 
+  /// Have goods disposed under an "Other" status actually left the yard?
+  ///
+  /// ⚠️ A separate flag from the re-export and release ones, because the
+  /// three are separate events on three kinds of disposition — writing one
+  /// against another would file the goods under the wrong outcome. False
+  /// until the yard confirms the hand-over; the disposition itself is only
+  /// the ruling.
+  final bool otherDelivered;
+
   const WarehouseEntryModel({
     required this.id,
     required this.packageId,
@@ -545,6 +554,7 @@ class WarehouseEntryModel {
     this.returnedByBadge,
     this.returnNotes,
     this.dailyRate,
+    this.otherDelivered = false,
     this.accumulatedCharge,
     this.srNumber,
     this.caseNumber,
@@ -597,6 +607,7 @@ class WarehouseEntryModel {
           as Map<String, dynamic>?)?['badge_number'] as String?,
       returnNotes: json['return_notes'] as String?,
       dailyRate: parseDbNum(json['daily_rate']) ?? 0,
+      otherDelivered: json['other_delivered'] as bool? ?? false,
       accumulatedCharge:
           parseDbNum(json['accumulated_storage_charge']) ?? 0,
       srNumber: package?['sr_number'] as String?,

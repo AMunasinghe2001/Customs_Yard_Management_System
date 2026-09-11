@@ -8752,6 +8752,32 @@ class DisposalService {
   /// ⚠️ The receipt lands in the SAME statement as the flag. Two writes
   /// leave a window where the goods are marked gone with no record of the
   /// money, and a failure between them leaves it that way for good.
+  /// Record that goods disposed under an "Other" status have actually left.
+  ///
+  /// ⚠️ Its own RPC, not the re-export one. That function rejects any entry
+  /// not tagged re-export and writes `re_export_delivered` — which would
+  /// file these goods as re-exported, which they are not. Like the
+  /// re-export and release flags it does NOT close the warehouse entry:
+  /// recording the disposition already did.
+  Future<void> toggleOtherDelivery(
+    String entryId,
+    bool delivered, {
+    String? receiptNo,
+    double? charge,
+    DateTime? handedAt,
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'yard_toggle_other_delivery',
+          params: {
+            'p_entry_id': entryId,
+            'p_delivered': delivered,
+            'p_receipt_no': receiptNo,
+            'p_charge': charge,
+            'p_handed_at': handedAt?.toIso8601String(),
+          },
+        ));
+  }
+
   Future<void> toggleReexportDelivery(
     String entryId,
     bool delivered, {

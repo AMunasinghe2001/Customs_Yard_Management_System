@@ -498,14 +498,25 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                               columnSpacing: 12,
                               horizontalMargin: 16,
                               fixedTopRows: 1,
-                              // ⚠️ A minWidth, so the table SCROLLS rather
-                              // than asserting. data_table_2 throws when
-                              // the fixed-width columns outgrow the
-                              // parent -- adding Valuation pushed the
-                              // fixed total past a narrow window, and
-                              // the failure is a red screen, not a
-                              // squeeze. Every other table here sets one.
-                              minWidth: 1180,
+                              // ⚠️ A minWidth is still required —
+                              // data_table_2 ASSERTS when its fixed-width
+                              // columns outgrow the parent, and the
+                              // failure is a red screen, not a squeeze —
+                              // but 1180 was far above what this table
+                              // actually needs, so it scrolled sideways on
+                              // a window it would have fitted.
+                              //
+                              // The fixed columns come to 614 on the
+                              // yard's view (Qty 70 + Entry Date 120 +
+                              // Valuation 150 + Final Outcome 214 +
+                              // Details 60) and 744 with Central
+                              // Disposal's extra Yard column. 820 clears
+                              // the larger of the two and leaves the three
+                              // proportional columns — SR Number, Goods
+                              // Name, Consignee — room to be readable,
+                              // while letting the table fit a narrow
+                              // window instead of scrolling.
+                              minWidth: 820,
                               isHorizontalScrollBarVisible: false,
                               empty: const EmptyTableState(
                                 icon: Icons.eco_rounded,
@@ -546,7 +557,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                 const DataColumn2(
                                     label: Center(child: Text('Valuation')),
                                     size: ColumnSize.S,
-                                    fixedWidth: 150),
+                                    fixedWidth: 140),
                                 // ⚠️ No "Waiting" column. A countdown here read
                                 // as an appeal window running down -- and a
                                 // perishable has NO appeal window; that is the
