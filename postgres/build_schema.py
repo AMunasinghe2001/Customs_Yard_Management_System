@@ -186,6 +186,13 @@ OTHER_GOODS_HANDOVER = os.path.join(
     ROOT, 'migrations', '013_other_goods_handover.sql')
 PAST_YARD_STAFF_VISIBLE = os.path.join(
     ROOT, 'migrations', '014_past_yard_staff_visible.sql')
+WAREHOUSE_ROWS_APPEAL_STATE = os.path.join(
+    ROOT, 'migrations', '015_warehouse_rows_appeal_state.sql')
+# ⚠️ postgres/47 is applied by hand on an existing server, so it was never
+# folded in here — and 015 reads the view it defines. Without it 02_schema.sql,
+# the ONE file that stands a new server up, fails on a fresh database.
+ITEM_APPEAL_OUTCOMES = os.path.join(
+    ROOT, 'postgres', '47_item_appeal_outcomes_view.sql')
 def emit(label: str, body: str) -> None:
     parts.append(
         '\n-- ' + '=' * 74 + '\n'
@@ -279,6 +286,16 @@ if os.path.exists(OTHER_GOODS_HANDOVER):
 if os.path.exists(PAST_YARD_STAFF_VISIBLE):
     emit('migrations/014_past_yard_staff_visible.sql (folded in)',
          io.open(PAST_YARD_STAFF_VISIBLE, encoding='utf-8').read())
+
+# Recreates warehouse_rows, so it must come AFTER postgres/48 defines it and
+# after 003 sets security_invoker on the reporting views.
+if os.path.exists(ITEM_APPEAL_OUTCOMES):
+    emit('postgres/47_item_appeal_outcomes_view.sql (folded in)',
+         io.open(ITEM_APPEAL_OUTCOMES, encoding='utf-8').read())
+
+if os.path.exists(WAREHOUSE_ROWS_APPEAL_STATE):
+    emit('migrations/015_warehouse_rows_appeal_state.sql (folded in)',
+         io.open(WAREHOUSE_ROWS_APPEAL_STATE, encoding='utf-8').read())
 
 if os.path.exists(RLS_HELPERS_EVALUATED_ONCE):
     emit('migrations/012_rls_helpers_evaluated_once.sql (folded in)',

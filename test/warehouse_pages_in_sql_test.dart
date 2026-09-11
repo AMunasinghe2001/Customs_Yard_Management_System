@@ -48,14 +48,19 @@ void main() {
       expect(body, contains(".inFilter('id', ids)"));
     });
 
-    test('all six filters are SQL predicates', () {
+    test('all seven filters are SQL predicates', () {
       final fn = code(services.substring(
           services.indexOf('getWarehouseRowsPaged({')));
       final body = fn.substring(0, 3200);
       // ⚠️ The 'confiscated' chip reads the PACKAGE status, not the item's:
       // that chip has always asked a different question from the others.
       expect(body, contains("eq('is_package_confiscated', true)"));
-      expect(body, contains("eq('item_status', status)"));
+      // ⚠️ ilike, not eq. The SR form has written this column both ways —
+      // "Other" and "other" — and an exact match returned half the goods.
+      expect(body, contains("ilike('item_status', status)"));
+      // The appeal filter is SQL too: the pager takes its total from the
+      // server, so narrowing the page after it arrives would mis-count.
+      expect(body, contains("eq('appeal_state', appeal)"));
       expect(body, contains("eq('hold_reason', reason)"));
       expect(body, contains('sr_number.ilike'));
       expect(body, contains("gte('admitted_at'"));

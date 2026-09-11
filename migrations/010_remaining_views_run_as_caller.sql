@@ -11,8 +11,23 @@
 -- Safe to re-run.
 -- ============================================================================
 
-alter view public.daily_stats set (security_invoker = true);
-alter view public.password_rotation_status set (security_invoker = true);
+-- ⚠️ Guarded. `password_rotation_status` is defined in postgres/52, which
+-- is applied separately and is NOT folded into 02_schema.sql — so on a fresh
+-- database this migration runs before the view exists. Failing there would
+-- break the one file used to stand a new server up.
+do $$
+declare
+  v text;
+begin
+  foreach v in array array['daily_stats', 'password_rotation_status'] loop
+    if exists (select 1 from pg_class c
+                 join pg_namespace n on n.oid = c.relnamespace
+                where n.nspname = 'public' and c.relname = v
+                  and c.relkind = 'v') then
+      execute format('alter view public.%I set (security_invoker = true)', v);
+    end if;
+  end loop;
+end $$;
 
 -- Verification: NO view in public may bypass the caller's policies.
 do $$

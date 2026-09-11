@@ -1969,6 +1969,9 @@ class WarehouseService {
     /// The item-status chips: 'all', 'confiscated', or a status like
     /// 'Forfeit' / 'Detain'.
     String status = 'all',
+    /// Appeal state: 'all', 'enabled', 'hold' or 'decided'. Resolved once in
+    /// `warehouse_rows` so the screen and this query cannot disagree.
+    String appeal = 'all',
 
     /// The hold reason, or 'all'.
     String reason = 'all',
@@ -1993,8 +1996,32 @@ class WarehouseService {
         // always read the package-level status, and the two are different
         // questions.
         q = q.eq('is_package_confiscated', true);
+      } else if (status.toLowerCase() == 'other') {
+        // ⚠️ "Other" is EVERYTHING ELSE, not a literal status value.
+        //
+        // The three named chips cover Detain, Forfeit and Abandoned; every
+        // remaining disposition an SR can carry — "supposed to be
+        // destroyed" is 22 rows in this yard alone, and ICT can add more —
+        // belongs here. Matching the word "Other" literally returned an
+        // empty table while those rows sat in the unfiltered list, so a
+        // whole category was unreachable from the page holding it.
+        // ⚠️ Three negated matches, not `not.in`. The compat layer binds a
+        // filter's value as ONE parameter, so an IN list would arrive as a
+        // single string and never match.
+        for (final named in const ['Detain', 'Forfeit', 'Abandoned']) {
+          q = q.not('item_status', 'ilike', named);
+        }
       } else if (status != 'all' && status.isNotEmpty) {
-        q = q.eq('item_status', status);
+        // ⚠️ Case-insensitive. The SR form has written these both ways
+        // over time, and an exact match silently returned half the goods.
+        q = q.ilike('item_status', status);
+      }
+
+      // ⚠️ In SQL, not in Dart. The pager takes its total from the server,
+      // so narrowing the page after it arrives would leave the pager
+      // counting rows it had just removed.
+      if (appeal != 'all' && appeal.isNotEmpty) {
+        q = q.eq('appeal_state', appeal);
       }
 
       if (reason != 'all' && reason.isNotEmpty) {

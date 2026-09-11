@@ -22,6 +22,7 @@ import '../../core/supabase_client.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
+import '../../widgets/storage_charge_note.dart';
 
 /// Item statuses whose goods have permanently left the yard — these must not
 /// appear in (or be counted by) the Warehouses view. Forfeit / Abandoned /
@@ -240,6 +241,8 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
         ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
             const <String, ItemAppealOutcome>{};
     final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
+    final appealFilter =
+        ref.watch(warehouseAppealFilterProvider(warehouse.id));
     final reasonFilter =
         ref.watch(warehouseReasonFilterProvider(warehouse.id));
     final search =
@@ -267,6 +270,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
       dateStart: dateRange?.start,
       dateEnd: dateRange?.end,
       year: yearFilter,
+      appeal: appealFilter,
     );
     final pageAsync = ref.watch(warehousePageProvider(query));
     // ⚠️ ONE query for the page's packages, not one per row.
@@ -282,6 +286,11 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
     final packagesById =
         ref.watch(warehousePackagesProvider(query)).valueOrNull ??
             const <String, PackageModel>{};
+    // Goods that reached a Top Management ruling after every sale route
+    // failed. Keyed by forfeited-package id, which is what an unsold
+    // proposal is filed against.
+    final unsoldByFp = ref.watch(unsoldProposalsProvider).valueOrNull ??
+        const <String, UnsoldProposalModel>{};
 
     return pageAsync.when(
       loading: () => Center(
@@ -340,13 +349,34 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                     runSpacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      // ⚠️ "Other" belongs beside the three: it is a
+                      // registration disposition like the rest, and goods
+                      // carrying it sit in these warehouses exactly as
+                      // detained and forfeited ones do. Leaving it out
+                      // made a whole category unreachable from the page
+                      // that holds it.
                       ...[
                         'all',
                         'Detain',
                         'Forfeit',
-                        'Abandoned'
+                        'Abandoned',
+                        'Other',
                       ].map((s) => FilterChip(
-                            label: Text(s == 'all' ? 'ALL' : s.toUpperCase()),
+                            // ⚠️ "OTHER" is a catch-all, and the label has
+                            // to say so. Named the same way as the three
+                            // chips beside it, a reader takes it for a
+                            // status called "Other" and then cannot
+                            // explain why the rows all read "supposed to
+                            // be destroyed".
+                            label: Text(s == 'all'
+                                ? 'ALL'
+                                : s == 'Other'
+                                    ? 'OTHER STATUSES'
+                                    : s.toUpperCase()),
+                            tooltip: s == 'Other'
+                                ? 'Everything that is not Detain, Forfeit '
+                                    'or Abandoned'
+                                : null,
                             selected: filter == s,
                             onSelected: (_) {
                               ref
@@ -368,6 +398,40 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     ? FontWeight.w700
                                     : FontWeight.w400),
                           )),
+                      // ⚠️ Appeal state is not a package STATUS, so it
+                      // cannot join the chips above — a detained item can
+                      // be inside its window, on hold or decided, and the
+                      // two questions narrow independently. A dropdown
+                      // keeps them visibly separate.
+                      //
+                      // ⚠️ "Appeal enabled" was WRONG for the `enabled`
+                      // state and said the opposite of what it means. An
+                      // appeal can only be lodged INSIDE the first 30 days;
+                      // the green "Enabled" chip marks goods whose window
+                      // has CLOSED — nobody can appeal them any more, and
+                      // what is enabled is the yard's own action: a final
+                      // disposition, or sending them for sale.
+                      StyledDropdownButton<String>(
+                        value: appealFilter == 'all' ? null : appealFilter,
+                        allLabel: 'Appeal',
+                        icon: Icons.gavel_rounded,
+                        menuWidth: 260,
+                        options: const [
+                          StyledDropdownOption(
+                              'appealing', 'In appeal window'),
+                          StyledDropdownOption('hold', 'On appeal hold'),
+                          StyledDropdownOption('decided', 'Decision received'),
+                          StyledDropdownOption(
+                              'enabled', 'Window closed — actionable'),
+                        ],
+                        onChanged: (v) {
+                          ref
+                              .read(warehouseAppealFilterProvider(warehouse.id)
+                                  .notifier)
+                              .state = v ?? 'all';
+                          setState(() => _page = 0);
+                        },
+                      ),
                       // One control for both "when" questions.
                       //
                       // ⚠️ The year list is BOTH years the filter can match,
@@ -469,7 +533,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               size: ColumnSize.S,
                               fixedWidth: 100),
                           DataColumn2(
-                              label: Center(child: Text('Charge')),
+                              label: Center(child: Text('Warehouse Charge')),
                               size: ColumnSize.M),
                           DataColumn2(
                               label: Center(child: Text('Status')),
@@ -512,10 +576,36 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               WarehouseEntryModel.isNoChargeStatus(
                                   status.toLowerCase());
 
-                          final charge = pkg == null
+                          // ⚠️ calculatePackageCharge returns ZERO for
+                          // forfeited, confiscated, abandoned and destroyed
+                          // goods — that is a BILLING rule, not a statement
+                          // that the space was free. Showing "—" for all of
+                          // them hid the cost of 100-odd rows in this very
+                          // table. The figure is what the days cost; only
+                          // goods that reached an Unsold ruling carry none.
+                          final billed = pkg == null
                               ? 0.0
                               : e.calculatePackageCharge(
                                   pkg.items, storageRateHistory);
+                          final spaceCost = spaceCostFor(
+                            from: e.admittedAt,
+                            units: e.itemCount,
+                            rates: storageRateHistory,
+                            until: e.returnedAt,
+                          );
+                          // Top Management has ruled on these after every
+                          // sale route failed: nobody is billed and nobody
+                          // is pricing them against the days any more.
+                          final unsoldRuling = unsoldByFp.isNotEmpty &&
+                              (ref
+                                      .watch(forfeitedByItemProvider(
+                                          e.packageId))
+                                      .valueOrNull
+                                      ?.values
+                                      .any((f) =>
+                                          unsoldByFp.containsKey(f.id)) ??
+                                  false);
+                          final charge = billed > 0 ? billed : spaceCost;
                           final isFree = charge <= 0;
 
                           return DataRow(
@@ -618,15 +708,21 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                           : null))),
                               DataCell(Center(
                                   child: Text(
-                                pkg == null
-                                    ? '—'
-                                    : (isFree
+                                unsoldRuling
+                                    ? 'Not charged'
+                                    : pkg == null || isFree
                                         ? '—'
-                                        : 'LKR ${NumberFormat('#,##0.00').format(charge)}'),
+                                        : 'LKR ${NumberFormat('#,##0.00').format(charge)}',
+                                textAlign: TextAlign.center,
                                 style: TextStyle(
-                                    color: isFree
+                                    color: unsoldRuling || isFree
                                         ? context.colors.textMuted
-                                        : context.colors.primaryGold,
+                                        // Gold is the money colour; a cost
+                                        // nobody is billed for does not
+                                        // borrow it.
+                                        : billed > 0
+                                            ? context.colors.primaryGold
+                                            : context.colors.textSecondary,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13),
                               ))),

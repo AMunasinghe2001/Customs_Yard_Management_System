@@ -11,12 +11,36 @@
 -- Safe to re-run.
 -- ============================================================================
 
-create index if not exists tenders_yard_idx
-  on public.tenders (yard);
-create index if not exists tender_disposals_yard_idx
-  on public.tender_disposals (yard);
-create index if not exists officer_signup_otps_yard_idx
-  on public.officer_signup_otps (yard);
+-- ⚠️ CREATES the missing ones rather than naming three by hand.
+--
+-- Listing the three that happened to be missing on THIS database made the
+-- migration a snapshot of one server. On a fresh database — the one case
+-- that matters, because 02_schema.sql is what stands a new server up —
+-- twelve more were missing and the verification below failed the whole
+-- file. Deriving the list means the rule holds wherever it runs.
+do $$
+declare
+  t text;
+begin
+  for t in
+    select c.table_name
+      from information_schema.columns c
+      join information_schema.tables tb
+        on tb.table_schema = c.table_schema and tb.table_name = c.table_name
+     where c.table_schema = 'public'
+       and c.column_name = 'yard'
+       and tb.table_type = 'BASE TABLE'
+       and not exists (
+         select 1 from pg_indexes i
+          where i.schemaname = 'public'
+            and i.tablename = c.table_name
+            and i.indexdef like '%(yard%'
+       )
+  loop
+    execute format('create index if not exists %I on public.%I (yard)',
+                   t || '_yard_idx', t);
+  end loop;
+end $$;
 
 -- Verification: no BASE TABLE with a `yard` column may be left unindexed on
 -- it. Catches the next table that adds the column and forgets the index.

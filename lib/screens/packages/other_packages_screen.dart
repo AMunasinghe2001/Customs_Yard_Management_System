@@ -762,10 +762,7 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                                 kind: HandoverEntryKind.other,
                                                 package: row.package,
                                                 rates: storageRateHistory)
-                                            : Text('—',
-                                                style: TextStyle(
-                                                    color: context
-                                                        .colors.textMuted)))),
+                                            : const _NotYetDeliverableChip())),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
@@ -934,6 +931,40 @@ class _OtherDispositionChip extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
               color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+/// Stands in the Delivery column for goods that cannot be handed over yet.
+///
+/// ⚠️ A bare em dash said nothing. The column asks "have these left the
+/// yard?", and for goods still under appeal the answer is not "unknown" —
+/// it is that nothing has been decided, so there is nothing to hand over.
+/// Saying so is the difference between a missing value and an answer.
+class _NotYetDeliverableChip extends StatelessWidget {
+  const _NotYetDeliverableChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.colors.textMuted;
+    return Tooltip(
+      message: 'No disposition has been decided yet, so there is nothing to '
+          'hand over.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.hourglass_empty_rounded, size: 12, color: color),
+          const Gap(5),
+          Text('Not yet decided',
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+        ]),
+      ),
     );
   }
 }

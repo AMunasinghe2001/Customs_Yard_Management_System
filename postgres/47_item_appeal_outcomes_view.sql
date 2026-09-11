@@ -27,7 +27,12 @@
 
 drop view if exists public.item_appeal_outcomes cascade;
 
-create view public.item_appeal_outcomes as
+-- ⚠️ security_invoker on the view ITSELF. Migration 003 adds it to the
+-- reporting views, but this file is now folded into 02_schema.sql AFTER that
+-- migration, so recreating the view here would drop the flag and the view
+-- would run as its owner — bypassing every per-yard policy underneath it.
+create view public.item_appeal_outcomes
+with (security_invoker = true) as
 with item_count as (
   select package_id, count(*) as n
     from public.package_items
@@ -139,7 +144,11 @@ begin
       on o.item_id = fp.item_id
       or fp.item_appeal_decisions ? o.item_id::text
    where o.decision is not null or o.on_hold;
-  if n_sources < 2 then
+  -- ⚠️ Skipped on an EMPTY database. This asserts a property of the DATA,
+  -- not of the view, and 02_schema.sql now folds this file in to stand a new
+  -- server up — where there are no rulings yet and never can be. Failing
+  -- there would block the deployment over a shape the data has not reached.
+  if n_sources > 0 and n_sources < 2 then
     raise exception 'outcomes come from only % source(s) -- the view is '
                     'narrowed to one kind of goods', n_sources;
   end if;

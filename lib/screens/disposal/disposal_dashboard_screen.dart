@@ -3555,18 +3555,34 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
         widget.sale.saleTimePassed;
     final amber = context.colors.warningAmber;
 
+    // ⚠️ A settled sale RECEDES. Every item is decided, so the card is a
+    // record rather than a job — and on a page of otherwise identical
+    // cards the ones still needing a decision should be the ones that
+    // catch the eye. A grey wash says "finished" without hiding anything.
+    //
+    // The wash is deliberately faint: the card must still read as a card
+    // and its text stay legible in both themes.
+    final muted = context.colors.textMuted;
+    // ⚠️ Strong enough to actually read as grey. At 0.07 the wash was
+    // invisible against the card beside it, so a finished sale looked
+    // identical to one still waiting on a decision — which is the whole
+    // point of the wash. `settled` already means every item is marked
+    // Sold OR Unsold, so nothing here recedes while work remains.
+    final settledWash =
+        Color.alphaBlend(muted.withOpacity(0.16), context.colors.cardDark);
+
     return Container(
       decoration: BoxDecoration(
-        color: urgentPerishable
-            // A wash, not a fill: the card still has to read as a card, and
-            // the text on it has to stay legible in both themes.
-            ? Color.alphaBlend(
-                amber.withOpacity(0.07), context.colors.cardDark)
-            : context.colors.cardDark,
+        color: settled
+            ? settledWash
+            : urgentPerishable
+                ? Color.alphaBlend(
+                    amber.withOpacity(0.07), context.colors.cardDark)
+                : context.colors.cardDark,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: allSold
-              ? green.withOpacity(0.4)
+          color: settled
+              ? (allSold ? green.withOpacity(0.30) : muted.withOpacity(0.5))
               : urgentPerishable
                   ? amber.withOpacity(0.55)
                   : context.colors.borderColor,
@@ -3704,7 +3720,21 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
               // do not need to be.
               height: dataTable2Height(rows.length),
               decoration: BoxDecoration(
-                border: Border.all(color: context.colors.borderColor),
+                // ⚠️ The table paints its OWN ground. With none it let
+                // the card's wash through, so a perishable sale's whole
+                // grid — header and every data row — came out amber. The
+                // wash marks the CARD as urgent; the data inside it has to
+                // stay plain to be read.
+                // ⚠️ The table does NOT take the card's grey. The card is
+                // the grey surround; the table is the panel cut out of it,
+                // so it stays on the ordinary card colour and the wash
+                // frames it. Painting both the same made the whole card one
+                // flat block with no edge to the data.
+                color: context.colors.cardDark,
+                border: Border.all(
+                    color: settled
+                        ? context.colors.textMuted.withOpacity(0.45)
+                        : context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: ClipRRect(
@@ -3714,7 +3744,17 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                   horizontalMargin: 12,
                   fixedTopRows: 1,
                   minWidth: 1280,
-                  headingRowColor: _headingColor(context),
+                  // ⚠️ On a settled sale the header goes LIGHTER than the
+                  // data, not darker. The card around it is already grey,
+                  // so a dark header merges into that surround and the
+                  // table loses its top edge; a light one separates the
+                  // column names from the rows underneath and keeps the
+                  // grid legible inside the wash.
+                  headingRowColor: settled
+                      ? WidgetStateProperty.all(Color.alphaBlend(
+                          Colors.white.withOpacity(0.05),
+                          context.colors.surfaceDark))
+                      : _headingColor(context),
                   empty: const EmptyTableState(
                       message: 'No packages in this sale'),
                   columns: [

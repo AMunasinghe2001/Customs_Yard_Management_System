@@ -206,11 +206,17 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
         const Gap(12),
         // ── Status filter chips ──────────────────────────────────
         Row(children: [
+          // ⚠️ "Serving" / "Past", not "Active" / "Inactive". This filter
+          // asks about service IN THIS YARD, and the group it collects
+          // holds two different people: someone whose account was
+          // disabled, and someone transferred elsewhere whose account is
+          // perfectly live. "Inactive" is wrong for the second and reads
+          // as an account state rather than a posting.
           _statusChip('All', null),
           const Gap(8),
-          _statusChip('Active', true),
+          _statusChip('Serving', true),
           const Gap(8),
-          _statusChip('Inactive', false),
+          _statusChip('Past Staff', false),
         ]),
         const Gap(12),
         Expanded(

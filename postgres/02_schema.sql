@@ -7821,8 +7821,23 @@ end $$;
 -- Safe to re-run.
 -- ============================================================================
 
-alter view public.daily_stats set (security_invoker = true);
-alter view public.password_rotation_status set (security_invoker = true);
+-- ⚠️ Guarded. `password_rotation_status` is defined in postgres/52, which
+-- is applied separately and is NOT folded into 02_schema.sql — so on a fresh
+-- database this migration runs before the view exists. Failing there would
+-- break the one file used to stand a new server up.
+do $$
+declare
+  v text;
+begin
+  foreach v in array array['daily_stats', 'password_rotation_status'] loop
+    if exists (select 1 from pg_class c
+                 join pg_namespace n on n.oid = c.relnamespace
+                where n.nspname = 'public' and c.relname = v
+                  and c.relkind = 'v') then
+      execute format('alter view public.%I set (security_invoker = true)', v);
+    end if;
+  end loop;
+end $$;
 
 -- Verification: NO view in public may bypass the caller's policies.
 do $$
@@ -7859,12 +7874,36 @@ end $$;
 -- Safe to re-run.
 -- ============================================================================
 
-create index if not exists tenders_yard_idx
-  on public.tenders (yard);
-create index if not exists tender_disposals_yard_idx
-  on public.tender_disposals (yard);
-create index if not exists officer_signup_otps_yard_idx
-  on public.officer_signup_otps (yard);
+-- ⚠️ CREATES the missing ones rather than naming three by hand.
+--
+-- Listing the three that happened to be missing on THIS database made the
+-- migration a snapshot of one server. On a fresh database — the one case
+-- that matters, because 02_schema.sql is what stands a new server up —
+-- twelve more were missing and the verification below failed the whole
+-- file. Deriving the list means the rule holds wherever it runs.
+do $$
+declare
+  t text;
+begin
+  for t in
+    select c.table_name
+      from information_schema.columns c
+      join information_schema.tables tb
+        on tb.table_schema = c.table_schema and tb.table_name = c.table_name
+     where c.table_schema = 'public'
+       and c.column_name = 'yard'
+       and tb.table_type = 'BASE TABLE'
+       and not exists (
+         select 1 from pg_indexes i
+          where i.schemaname = 'public'
+            and i.tablename = c.table_name
+            and i.indexdef like '%(yard%'
+       )
+  loop
+    execute format('create index if not exists %I on public.%I (yard)',
+                   t || '_yard_idx', t);
+  end loop;
+end $$;
 
 -- Verification: no BASE TABLE with a `yard` column may be left unindexed on
 -- it. Catches the next table that adds the column and forgets the index.
@@ -8071,6 +8110,329 @@ begin
        and pg_get_expr(p.polqual, p.polrelid) not like '%profile_served_in_my_yard%'
   ) then
     raise exception 'yard_profiles_select does not admit past staff';
+  end if;
+end $$;
+
+
+-- ==========================================================================
+--  postgres/47_item_appeal_outcomes_view.sql (folded in)
+-- ==========================================================================
+
+-- What the Appeal Directorate has ruled about each goods ITEM, whatever the
+-- goods are.
+--
+-- ⚠️ Four screens read this — Warehouses, Detained, Abandoned and Other — to
+-- decide whether goods may move: a DECISION releases them early, a HOLD keeps
+-- them frozen past the deadline. It was
+-- `forfeited_packages.select('*')`: every column of every forfeited row,
+-- 171ms, to build a map of two values per item.
+--
+-- ⚠️ And it could not resolve the rule it was applying. `appealDecisionForItem`
+-- needs the package's ITEM COUNT to know whether a package-level decision may
+-- stand in for a missing per-item one — and `select('*')` embeds no package,
+-- so `packageDetails` was always null and the multi-item guard could never
+-- fire. A decision on one item therefore reported every sibling decided,
+-- which is the exact bleed the model documents and defends against.
+--
+-- This is `appeal_rows`'s resolution without its membership: that view is the
+-- Appeal PORTAL's feed and is `source = 'forfeit'` only, while a ruling can
+-- exist against detained, abandoned and other goods too — 65 of them on the
+-- live data, which would simply have vanished from these four screens.
+--
+--   decision  the per-item entry in item_appeal_decisions, else the
+--             package-level column, and NEVER the package-level column for an
+--             item of a multi-item package that has no entry of its own
+--   on_hold   per item when held_item_ids names any, else the package-level
+--             appeal_hold
+
+drop view if exists public.item_appeal_outcomes cascade;
+
+-- ⚠️ security_invoker on the view ITSELF. Migration 003 adds it to the
+-- reporting views, but this file is now folded into 02_schema.sql AFTER that
+-- migration, so recreating the view here would drop the flag and the view
+-- would run as its owner — bypassing every per-yard policy underneath it.
+create view public.item_appeal_outcomes
+with (security_invoker = true) as
+with item_count as (
+  select package_id, count(*) as n
+    from public.package_items
+   group by package_id
+),
+-- Every (forfeited row, item) a ruling could be about.
+candidate as (
+  -- A per-item row speaks for its own item.
+  select fp.id as fp_id, fp.package_id, fp.item_id
+    from public.forfeited_packages fp
+   where fp.item_id is not null
+
+  union
+
+  -- A package-level row: its per-item map names the items it ruled on...
+  select fp.id, fp.package_id, k::uuid
+    from public.forfeited_packages fp
+   cross join lateral jsonb_object_keys(
+     case jsonb_typeof(fp.item_appeal_decisions)
+       when 'object' then fp.item_appeal_decisions
+       else '{}'::jsonb
+     end) as k
+   where fp.item_id is null
+
+  union
+
+  -- ...and its held list names the items it froze.
+  select fp.id, fp.package_id, h
+    from public.forfeited_packages fp
+   cross join lateral unnest(coalesce(fp.held_item_ids, '{}')) as h
+   where fp.item_id is null
+),
+resolved as (
+  select
+    c.item_id,
+    -- ⚠️ The multi-item guard, which the Dart could never apply here.
+    case
+      when nullif(trim(coalesce(
+             fp.item_appeal_decisions -> c.item_id::text ->> 'decision',
+             '')), '') is not null
+        then nullif(trim(
+               fp.item_appeal_decisions -> c.item_id::text ->> 'decision'), '')
+      when coalesce(ic.n, 0) > 1
+        then null
+      else nullif(trim(coalesce(fp.appeal_decision, '')), '')
+    end as decision,
+    case
+      when coalesce(array_length(fp.held_item_ids, 1), 0) > 0
+        then c.item_id = any(fp.held_item_ids)
+      else coalesce(fp.appeal_hold, false)
+    end as on_hold,
+    fp.appeal_decided_at
+  from candidate c
+  join public.forfeited_packages fp on fp.id = c.fp_id
+  left join item_count ic on ic.package_id = c.package_id
+)
+-- ⚠️ One row per ITEM. Several forfeited rows can name the same item, and the
+-- one carrying a ruling must win: a decision outranks a hold, and both outrank
+-- silence. Dropping the wrong copy would tell a yard the goods are free to
+-- move when the directorate has frozen them.
+select distinct on (r.item_id)
+  r.item_id,
+  r.decision,
+  r.on_hold,
+  -- ⚠️ The yard the goods are in, so a caller can narrow without an
+  -- embed. This is a VIEW, so it carries no foreign key for PostgREST to
+  -- join through -- a caller trying `package_items!inner(...)` gets a
+  -- resolve error, which is how this column came to be added.
+  --
+  -- Both the column and the SR number's own segment, because a row filed by
+  -- one directorate can sit in another's yard.
+  p.yard,
+  p.sr_number
+from resolved r
+join public.package_items pi_y on pi_y.id = r.item_id
+join public.packages p on p.id = pi_y.package_id
+order by
+  r.item_id,
+  ((case when r.decision is not null then 2 else 0 end)
+   + (case when r.on_hold then 1 else 0 end)) desc,
+  r.appeal_decided_at desc nulls last;
+
+comment on view public.item_appeal_outcomes is
+  'One row per goods item the Appeal Directorate has ruled on or frozen, '
+  'whatever the source. A package-level decision never bleeds onto an item '
+  'of a multi-item package that has no entry of its own.';
+
+
+-- ── Does it say what the four screens were being told? ───────────────────
+do $verify$
+declare
+  n_rows     int;
+  n_decided  int;
+  n_held     int;
+  n_sources  int;
+  bad        int;
+begin
+  select count(*),
+         count(*) filter (where decision is not null),
+         count(*) filter (where on_hold)
+    into n_rows, n_decided, n_held
+    from public.item_appeal_outcomes;
+
+  -- ⚠️ Rulings exist against every source, not just forfeits. Reading this
+  -- from the Appeal portal's own feed would have dropped 65 of them.
+  select count(distinct coalesce(fp.source, '')) into n_sources
+    from public.forfeited_packages fp
+    join public.item_appeal_outcomes o
+      on o.item_id = fp.item_id
+      or fp.item_appeal_decisions ? o.item_id::text
+   where o.decision is not null or o.on_hold;
+  -- ⚠️ Skipped on an EMPTY database. This asserts a property of the DATA,
+  -- not of the view, and 02_schema.sql now folds this file in to stand a new
+  -- server up — where there are no rulings yet and never can be. Failing
+  -- there would block the deployment over a shape the data has not reached.
+  if n_sources > 0 and n_sources < 2 then
+    raise exception 'outcomes come from only % source(s) -- the view is '
+                    'narrowed to one kind of goods', n_sources;
+  end if;
+
+  -- One row per item, or a screen reads whichever copy it happened to get.
+  select count(*) into bad from (
+    select item_id from public.item_appeal_outcomes
+     group by item_id having count(*) > 1) d;
+  if bad <> 0 then
+    raise exception '% item(s) appear twice', bad;
+  end if;
+
+  -- The bleed rule, stated the other way round.
+  select count(*) into bad
+    from public.item_appeal_outcomes o
+    join public.package_items pi on pi.id = o.item_id
+   where o.decision is not null
+     and (select count(*) from public.package_items pi2
+           where pi2.package_id = pi.package_id) > 1
+     and not exists (
+       select 1 from public.forfeited_packages fp
+        where fp.package_id = pi.package_id
+          and nullif(trim(coalesce(
+                fp.item_appeal_decisions -> o.item_id::text ->> 'decision',
+                '')), '') is not null);
+  if bad <> 0 then
+    raise exception '% item(s) inherit a package-level decision across '
+                    'siblings', bad;
+  end if;
+
+  -- Nothing is recorded that names no ruling at all.
+  select count(*) into bad
+    from public.item_appeal_outcomes
+   where decision is null and not on_hold;
+  if bad <> 0 then
+    raise notice '% item(s) carry neither a decision nor a hold', bad;
+  end if;
+
+  raise notice 'item_appeal_outcomes: % item(s) — % decided, % on hold',
+    n_rows, n_decided, n_held;
+end
+$verify$;
+
+
+-- ==========================================================================
+--  migrations/015_warehouse_rows_appeal_state.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- The Warehouses table can now be narrowed by appeal state, and that filter
+-- has to run in SQL like every other one on the page.
+--
+-- ⚠️ Filtering it in Dart would break the pager. The page reads ONE page of
+-- rows and takes its total from the server, so narrowing the twenty rows on
+-- screen would leave the pager counting rows it had just removed — the exact
+-- trap the comment above `pageRows` warns about.
+--
+-- Appeal state is NOT a package status: a DETAINED item can be appealing, on
+-- hold, or decided, so the two questions narrow independently and the view
+-- has to carry both.
+--
+-- ⚠️ The inner query is postgres/48 verbatim. Retyping it by hand is how the
+-- two drift; this wraps it and adds three columns.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+drop view if exists public.warehouse_rows cascade;
+
+create view public.warehouse_rows
+with (security_invoker = true) as
+select
+  r.*,
+  -- Null for an entry with no item (a whole-package admission): there is no
+  -- appeal to be in any state, and false would read as "enabled".
+  ao.decision as appeal_decision,
+  ao.on_hold  as appeal_on_hold,
+  -- The three states the filter offers, resolved once here so the screen and
+  -- the query cannot disagree about what "decided" means.
+  -- ⚠️ FOUR states, and 'enabled' is the last of them.
+  --
+  -- An appeal can only be lodged inside the first 30 days. So:
+  --   appealing — still inside that window; nobody may act yet
+  --   hold      — the Directorate froze it past the deadline
+  --   decided   — a ruling exists; the window no longer applies
+  --   enabled   — the window CLOSED with no appeal, so the YARD may now
+  --               act: a final disposition, or send the goods for sale
+  --
+  -- ⚠️ The window was missing here, so goods still inside their 30 days
+  -- fell through to 'enabled' — and the filter returned rows whose own
+  -- chip read "Appealing". Same rule as `isWithinAppealWindow`: the clock
+  -- runs from the ENTRY DATE and lasts 30 days.
+  case
+    when r.package_item_id is null then null
+    when coalesce(ao.on_hold, false) then 'hold'
+    when coalesce(trim(ao.decision), '') <> '' then 'decided'
+    when now() < (date_trunc('day', r.admitted_at at time zone 'Asia/Colombo')
+                  + interval '30 days') at time zone 'Asia/Colombo'
+      then 'appealing'
+    else 'enabled'
+  end as appeal_state
+from (
+select
+  we.id as entry_id,
+  we.warehouse_id,
+  we.package_id,
+  we.package_item_id,
+  p.sr_number,
+  p.consignee_name,
+  we.hold_reason,
+  we.item_count,
+  we.admitted_at,
+
+  -- The goods on this row.
+  pi.item_name,
+
+  -- ⚠️ Normalised. 'Forfiet' is a typo that reached the data; folding it here
+  -- keeps the filter's one choice from matching only half its rows.
+  case
+    when lower(trim(coalesce(pi.status, ''))) = 'forfiet' then 'Forfeit'
+    else pi.status
+  end as item_status,
+
+  -- The package-level status the 'confiscated' filter reads.
+  p.status as package_status,
+  lower(coalesce(p.status, '')) = 'confiscated' as is_package_confiscated,
+
+  -- Both of the year filter's answers, so it can match either.
+  extract(year from we.admitted_at at time zone 'Asia/Colombo')::text
+    as admitted_year,
+  substring(p.sr_number, '(20[0-9]{2})') as sr_year,
+
+  -- A warehouse facility is shared, but an entry belongs to exactly one
+  -- yard. Exposing this lets every yard-bound query narrow in SQL.
+  p.yard
+
+from public.warehouse_entries we
+join public.packages p on p.id = we.package_id
+left join public.package_items pi on pi.id = we.package_item_id
+where
+  not coalesce(we.is_returned, false)
+  -- Goods with a final disposition have left the yard.
+  and lower(trim(coalesce(pi.status, ''))) not in
+      ('released', 'returned', 'sold', 're-export', 're-exported',
+       'destroy', 'destroyed', 'other')
+) r
+left join public.item_appeal_outcomes ao on ao.item_id = r.package_item_id;
+
+comment on view public.warehouse_rows is
+  'Live warehouse entries — not returned, and not goods that have left the '
+  'yard under a final disposition — with the item status, hold reason, both '
+  'year values and the appeal state the Warehouses page filters on.';
+
+-- Verification: only the three documented states may be produced.
+do $$
+declare
+  bad text;
+begin
+  select string_agg(distinct appeal_state, ', ') into bad
+    from public.warehouse_rows
+   where appeal_state is not null
+     and appeal_state not in ('appealing', 'enabled', 'hold', 'decided');
+  if bad is not null then
+    raise exception 'unexpected appeal_state: %', bad;
   end if;
 end $$;
 

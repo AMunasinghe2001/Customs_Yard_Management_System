@@ -889,6 +889,15 @@ final warehouseDateRangeProvider =
     StateProvider.family<DateTimeRange?, String>((ref, warehouseId) => null);
 final warehouseYearFilterProvider =
     StateProvider.family<String?, String>((ref, warehouseId) => null);
+/// The Appeal filter on a warehouse table: 'all', 'enabled', 'hold' or
+/// 'decided'.
+///
+/// ⚠️ Per warehouse, like the other filters on that page — each tab keeps
+/// its own narrowing, so switching warehouses does not silently carry a
+/// filter across.
+final warehouseAppealFilterProvider =
+    StateProvider.family<String, String>((ref, warehouseId) => 'all');
+
 final warehouseReasonFilterProvider =
     StateProvider.family<String, String>((ref, warehouseId) => 'all');
 
@@ -992,6 +1001,10 @@ class WarehouseQuery {
   final DateTime? dateEnd;
   final String? year;
 
+  /// Appeal state: 'all', 'enabled', 'hold' or 'decided' — resolved once
+  /// in `warehouse_rows`, so the screen and the query cannot disagree.
+  final String appeal;
+
   const WarehouseQuery({
     required this.warehouseId,
     this.page = 0,
@@ -1001,6 +1014,7 @@ class WarehouseQuery {
     this.dateStart,
     this.dateEnd,
     this.year,
+    this.appeal = 'all',
   });
 
   @override
@@ -1013,11 +1027,12 @@ class WarehouseQuery {
       other.search == search &&
       other.dateStart == dateStart &&
       other.dateEnd == dateEnd &&
-      other.year == year;
+      other.year == year &&
+      other.appeal == appeal;
 
   @override
-  int get hashCode => Object.hash(
-      warehouseId, page, status, reason, search, dateStart, dateEnd, year);
+  int get hashCode => Object.hash(warehouseId, page, status, reason,
+      search, dateStart, dateEnd, year, appeal);
 }
 
 /// One page of a warehouse's live contents: the entry ids, and how many the
@@ -1034,6 +1049,7 @@ final warehousePageProvider =
         limit: kDispositionPageSize,
         status: q.status,
         reason: q.reason,
+        appeal: q.appeal,
         search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
         dateStart: q.dateStart,
         dateEnd: q.dateEnd,

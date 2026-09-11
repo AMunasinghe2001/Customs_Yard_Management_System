@@ -110,8 +110,11 @@ void main() {
     // yard; warehouse_contents joined four tables unscoped.
     final views =
         File('migrations/010_remaining_views_run_as_caller.sql').readAsStringSync();
-    expect(views, contains('alter view public.daily_stats'));
-    expect(views, contains('alter view public.password_rotation_status'));
+    // ⚠️ Applied through a guarded loop now: password_rotation_status lives
+    // in postgres/52 and does not exist on the fresh database that
+    // 02_schema.sql stands a new server up with.
+    expect(views, contains("'daily_stats', 'password_rotation_status'"));
+    expect(views, contains("c.relkind = 'v'"));
     expect(views, contains('security_invoker = true'));
     // And it fails loudly if any view is left behind.
     expect(views, contains('still run as their owner'));
