@@ -1121,11 +1121,42 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
 final myYardProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   final all = await ref.watch(allProfilesProvider.future);
   final myYard = ref.watch(currentProfileProvider)?.yard;
+  // ⚠️ Everyone who has EVER served here, not only those posted here today.
+  //
+  // `profiles.yard` holds one value — where a person is NOW — so an officer
+  // transferred GL1 → GL2 vanished from GL1's staff list the moment they
+  // moved, taking the record of their service with them. The yard could not
+  // see who had worked there, which is the question this table answers.
+  //
+  // The audit log keeps every activation, deactivation and transfer against
+  // the yard it happened in, so it knows who passed through.
+  final served = await ref.watch(myYardServedIdsProvider.future);
   return all.where((p) {
     if (!p.isYardStaff) return false; // officers + admins only
     if (myYard == null) return true;
-    return p.yard == myYard;
+    return p.yard == myYard || served.contains(p.id);
   }).toList();
+});
+
+/// Profile ids with any recorded history in the signed-in yard.
+///
+/// Kept separate from [myYardServicePeriodsProvider] so the staff list does
+/// not have to wait on, or re-derive, the full date computation.
+final myYardServedIdsProvider = FutureProvider<Set<String>>((ref) async {
+  final periods = await ref.watch(myYardServicePeriodsProvider.future);
+  return periods.keys.toSet();
+});
+
+/// When each member started and stopped serving in the signed-in yard.
+///
+/// Keyed by profile id. Empty entries are normal: an account provisioned
+/// before the audit log recorded these events has no row to read.
+final myYardServicePeriodsProvider = FutureProvider<
+    Map<String, ({DateTime? activatedAt, DateTime? deactivatedAt})>>((ref) async {
+  ref.watch(profilesChangeTriggerProvider);
+  final yard = ref.watch(currentProfileProvider)?.yard;
+  if (yard == null || yard.isEmpty) return const {};
+  return ref.read(adminServiceProvider).getYardServicePeriods(yard);
 });
 
 /// Officers/admins in the admin's own yard who are online RIGHT NOW.

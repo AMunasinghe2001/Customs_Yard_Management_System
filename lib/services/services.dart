@@ -3534,6 +3534,70 @@ class AdminService {
       'password': password,
     };
   }
+
+  /// When each member of [yard] was activated and deactivated IN THAT YARD.
+  ///
+  /// ⚠️ Read from `audit_logs`, not from `profiles`. A profile carries only
+  /// `is_active` — a single boolean saying where someone stands TODAY — and
+  /// `created_at`, which is when the account was made, not when it started
+  /// serving here. Neither can answer "what period did this member work in
+  /// this yard", which is the question the Admin Panel is being asked.
+  ///
+  /// The log already records every event with the yard it happened in:
+  ///
+  ///   Activated user account     → started serving
+  ///   Deactivated user account   → stopped
+  ///   Transferred officer from X to Y → left X / joined Y
+  ///
+  /// ⚠️ Scoped to ONE yard on purpose. An officer transferred GL1 → GL2 → GL1
+  /// has served two separate stints here, and GL2's spell in between is not
+  /// this yard's business. Filtering by `audit_logs.yard` keeps each yard's
+  /// panel to its own history.
+  ///
+  /// Returns, per profile id: the first activation seen in this yard and the
+  /// last deactivation, or null where the log has no such event (an account
+  /// provisioned before the log recorded them).
+  Future<Map<String, ({DateTime? activatedAt, DateTime? deactivatedAt})>>
+      getYardServicePeriods(String yard) async {
+    if (yard.trim().isEmpty) return const {};
+
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('audit_logs')
+        .select('entity_id, action, created_at')
+        .eq('entity_type', 'profile')
+        .eq('yard', yard)
+        .order('created_at', ascending: true));
+
+    final out = <String, ({DateTime? activatedAt, DateTime? deactivatedAt})>{};
+    for (final r in (rows as List)) {
+      final row = r as Map<String, dynamic>;
+      final id = row['entity_id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      final at = parseDbDate(row['created_at']);
+      if (at == null) continue;
+      final action = (row['action'] ?? '').toString().toLowerCase();
+
+      // A transfer INTO this yard starts a stint here; one OUT ends it. The
+      // log writes the row against the yard the action was taken in, so the
+      // direction has to come from the wording.
+      final joined = action.startsWith('activated user account') ||
+          (action.startsWith('transferred officer from') &&
+              action.endsWith('to ${yard.toLowerCase()}'));
+      final left = action.startsWith('deactivated user account') ||
+          (action.startsWith('transferred officer from ${yard.toLowerCase()}'));
+      if (!joined && !left) continue;
+
+      final cur = out[id];
+      out[id] = (
+        // FIRST activation: when this member started here.
+        activatedAt: joined ? (cur?.activatedAt ?? at) : cur?.activatedAt,
+        // LAST departure: rows arrive oldest-first, so this keeps overwriting
+        // until the most recent one wins.
+        deactivatedAt: left ? at : cur?.deactivatedAt,
+      );
+    }
+    return out;
+  }
 }
 
 // ── ICT Service (Information & Communication Technology Division) ──

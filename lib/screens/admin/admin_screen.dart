@@ -79,7 +79,14 @@ class AdminScreen extends ConsumerWidget {
                       children: [
                         Text('Admin Panel',
                             style: Theme.of(context).textTheme.headlineLarge),
-                        Text('Manage officers and system configuration',
+                        // ⚠️ NOT "manage officers". Officer accounts are
+                        // provisioned, posted and disabled by the ICT
+                        // Directorate; a yard cannot create or edit one.
+                        // What this panel actually does is configure the
+                        // yard's own storage and read its records.
+                        Text(
+                            'Yard staff record, warehouses, items and activity '
+                            'logs',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
@@ -120,7 +127,10 @@ class AdminScreen extends ConsumerWidget {
                           tabs: const [
                             Tab(
                                 icon: Icon(Icons.people_rounded, size: 20),
-                                text: 'Officers'),
+                                // Matches the heading below it: this tab is
+                                // a RECORD of the yard's staff, not a place
+                                // officers are created.
+                                text: 'Yard Staff'),
                             Tab(
                                 icon: Icon(Icons.warehouse_rounded, size: 20),
                                 text: 'Warehouses'),
@@ -172,6 +182,12 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
 
   @override
   Widget build(BuildContext context) {
+    // When each member started and stopped serving HERE. Read from the audit
+    // log, which records the yard each event happened in — a profile row
+    // only knows where someone stands today.
+    final periods = ref.watch(myYardServicePeriodsProvider).valueOrNull ??
+        const <String, ({DateTime? activatedAt, DateTime? deactivatedAt})>{};
+    final myYard = ref.watch(currentProfileProvider)?.yard;
     // Admins manage only their own yard's staff. [myYardProfilesProvider]
     // filters to the current admin's yard and drops the head-office Appeal /
     // Disposal directorate accounts.
@@ -180,7 +196,7 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
       padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Officers & Admins',
+          Text('Yard Staff',
               style: TextStyle(
                   color: context.colors.textPrimary,
                   fontSize: 24,
@@ -213,19 +229,32 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                 ...(_statusFilter == null
                     ? list
                     : list.where((p) {
-                        final isActive = p.isActive && !p.isExpired;
+                        // ⚠️ Serving HERE, not "account enabled". Someone
+                        // transferred to another yard still has a live
+                        // account — they are simply no longer this yard's
+                        // staff, and filtering them under Active would say
+                        // the opposite.
+                        final isActive =
+                            p.yard == myYard && p.isActive && !p.isExpired;
                         return _statusFilter! ? isActive : !isActive;
                       }))
               ];
-              // Fewest days-until-disable first (most urgent on top); accounts
-              // that never auto-expire (directorate) sink to the bottom.
+              // ⚠️ Serving members first, then the ones who have left, most
+              // recent departure at the top of that group. The old sort was
+              // by days-until-auto-expiry, which is ICT's clock and read
+              // "Never" for every row in a yard — so it ordered nothing.
               filtered.sort((a, b) {
-                final da = a.daysUntilExpiry;
-                final db = b.daysUntilExpiry;
-                if (da == null && db == null) return 0;
-                if (da == null) return 1;
-                if (db == null) return -1;
-                return da.compareTo(db);
+                final aHere = a.yard == myYard && a.isActive && !a.isExpired;
+                final bHere = b.yard == myYard && b.isActive && !b.isExpired;
+                if (aHere != bHere) return aHere ? -1 : 1;
+                if (!aHere) {
+                  final da = periods[a.id]?.deactivatedAt;
+                  final db = periods[b.id]?.deactivatedAt;
+                  if (da != null && db != null) return db.compareTo(da);
+                  if (da != null) return -1;
+                  if (db != null) return 1;
+                }
+                return a.fullName.compareTo(b.fullName);
               });
               final pageItems = pageSlice(filtered, _page, kClientPageSize);
               return Column(children: [
@@ -251,6 +280,9 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                       headingRowColor:
                           WidgetStateProperty.all(context.colors.surfaceDark),
                       columns: [
+                        // ⚠️ Proportional, so the slack is shared. Pinning
+                        // the short columns pushed every spare pixel into
+                        // one gap at the end of the row.
                         DataColumn2(
                             label: Text('Name',
                                 style: TextStyle(
@@ -264,23 +296,31 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.M),
+                            size: ColumnSize.S),
+                        // ⚠️ The POST, not the permission level. `role`
+                        // has only two yard values — admin and officer — so
+                        // a DC and an SDDC both read "ADMIN", which is not
+                        // the job either of them holds. `job_role` is what
+                        // ICT actually assigned.
                         DataColumn2(
-                            label: Text('Role',
+                            label: Text('Job Role',
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.S,
-                            fixedWidth: 100),
+                            size: ColumnSize.S),
+                        // ⚠️ "Disables In" is gone. It counted down to an
+                        // automatic expiry, which is ICT's business, not the
+                        // yard's — and it read "Never" on every row here.
+                        // What a yard needs to know is WHEN each member
+                        // served in THIS yard.
                         DataColumn2(
-                            label: Text('Disables In',
+                            label: Text('Served in This Yard',
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.S,
-                            fixedWidth: 120),
+                            size: ColumnSize.L),
                         DataColumn2(
                             label: Text('Status',
                                 style: TextStyle(
@@ -288,7 +328,7 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
                             size: ColumnSize.S,
-                            fixedWidth: 130),
+                            fixedWidth: 140),
                       ],
                       rows: pageItems
                           .map((p) => DataRow(cells: [
@@ -301,9 +341,13 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 13))),
-                                DataCell(_RoleChip(role: p.role)),
-                                DataCell(ExpiresInCell(profile: p)),
-                                DataCell(AccountStatusChip(profile: p)),
+                                DataCell(_JobRoleChip(profile: p)),
+                                DataCell(_ServedInYardCell(
+                                    period: periods[p.id],
+                                    profile: p,
+                                    myYard: myYard)),
+                                DataCell(_YardStatusChip(
+                                    profile: p, myYard: myYard)),
                               ]))
                           .toList(),
                     ),
@@ -363,31 +407,135 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
 }
 
 
-class _RoleChip extends StatelessWidget {
-  final String role;
-  const _RoleChip({required this.role});
+/// The post ICT assigned — DC, SDDC or Officer — not the permission level.
+///
+/// ⚠️ `profiles.role` has only two yard values, 'admin' and 'officer', so a
+/// DC and an SDDC both render as "ADMIN" from it. They are two different
+/// posts that happen to share one permission level, and the yard's own staff
+/// list is the last place that distinction should be lost.
+class _JobRoleChip extends StatelessWidget {
+  final ProfileModel profile;
+
+  const _JobRoleChip({required this.profile});
+
   @override
   Widget build(BuildContext context) {
-    final isAdmin = role == 'admin';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isAdmin
-            ? context.colors.primaryGold.withOpacity(0.15)
-            : context.colors.accentBlue.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-            color: isAdmin
-                ? context.colors.primaryGold.withOpacity(0.4)
-                : context.colors.accentBlue.withOpacity(0.4)),
-      ),
-      child: Text(role.toUpperCase(),
+    // Admin-level posts keep the gold the role chip used, so the panel still
+    // reads at a glance; an officer stays neutral.
+    final isAdminPost = profile.isAdmin;
+    final color =
+        isAdminPost ? context.colors.primaryGold : context.colors.accentLightBlue;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: TooltipText(
+          profile.postShortTitle.toUpperCase(),
           style: TextStyle(
-              color: isAdmin
-                  ? context.colors.primaryGold
-                  : context.colors.accentLightBlue,
-              fontSize: 11,
-              fontWeight: FontWeight.w700)),
+              color: color, fontWeight: FontWeight.w800, fontSize: 11),
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether this person is this yard's staff TODAY.
+///
+/// ⚠️ Not the same as [AccountStatusChip], which reports whether the ACCOUNT
+/// is enabled. An officer transferred GL1 → GL2 has a perfectly live
+/// account, and GL1's own staff table calling them "ACTIVE" would say they
+/// still work here. Their standing in another yard is not this table's
+/// business; what it must say is that they have moved on.
+class _YardStatusChip extends StatelessWidget {
+  final ProfileModel profile;
+  final String? myYard;
+
+  const _YardStatusChip({required this.profile, required this.myYard});
+
+  @override
+  Widget build(BuildContext context) {
+    final elsewhere = myYard != null && profile.yard != myYard;
+    if (elsewhere) {
+      final color = context.colors.textMuted;
+      return Tooltip(
+        message: 'Transferred to ${profile.yard ?? 'another yard'}. '
+            'The account is still active there.',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: color.withOpacity(0.4)),
+          ),
+          child: Text('TRANSFERRED',
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+        ),
+      );
+    }
+    return AccountStatusChip(profile: profile);
+  }
+}
+
+/// The span this member has served in THIS yard.
+///
+/// ⚠️ Answers "what period did they work here", which is why the panel keeps
+/// people who have left. Someone still serving reads "Since 3 Feb 2026"; one
+/// who has gone reads the closed span, so a yard can see at a glance who was
+/// here when.
+///
+/// The dates come from the audit log, and an account provisioned before the
+/// log recorded these events has none — that reads as an em dash rather than
+/// a guess, because `created_at` is when the ACCOUNT was made, which is not
+/// the same as when the person started here.
+class _ServedInYardCell extends StatelessWidget {
+  final ({DateTime? activatedAt, DateTime? deactivatedAt})? period;
+  final ProfileModel profile;
+  final String? myYard;
+
+  const _ServedInYardCell(
+      {required this.period, required this.profile, required this.myYard});
+
+  static final _fmt = DateFormat('d MMM yyyy');
+
+  @override
+  Widget build(BuildContext context) {
+    final from = period?.activatedAt;
+    final to = period?.deactivatedAt;
+    // ⚠️ Still here means posted to THIS yard. A transferred officer's
+    // account is still enabled — somewhere else.
+    final stillHere =
+        profile.yard == myYard && profile.isActive && !profile.isExpired;
+
+    String label;
+    if (from == null && to == null) {
+      label = stillHere ? '—' : 'Transferred out';
+    } else if (stillHere) {
+      label = from != null ? 'Since ${_fmt.format(from)}' : 'Currently serving';
+    } else if (from != null && to != null) {
+      label = '${_fmt.format(from)} – ${_fmt.format(to)}';
+    } else if (to != null) {
+      label = 'Until ${_fmt.format(to)}';
+    } else {
+      // Joined here, no departure logged, but posted elsewhere now — the
+      // transfer itself is the end of the stint.
+      label = 'From ${_fmt.format(from!)} · transferred out';
+    }
+
+    return TooltipText(
+      label,
+      style: TextStyle(
+        color: stillHere
+            ? context.colors.textSecondary
+            : context.colors.textMuted,
+        fontSize: 12.5,
+        fontWeight: stillHere ? FontWeight.w600 : FontWeight.w500,
+      ),
     );
   }
 }

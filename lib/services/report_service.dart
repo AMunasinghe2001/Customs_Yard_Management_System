@@ -8,6 +8,7 @@ import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import 'package:intl/intl.dart';
+import '../core/app_session.dart';
 
 class ReportService {
   static final ReportService _instance = ReportService._internal();
@@ -1757,7 +1758,28 @@ class ReportService {
     return Uint8List.fromList(excel.encode()!);
   }
 
+  /// The yard this report was run from, written the way an SR number writes
+  /// it — "CED/GL2".
+  ///
+  /// ⚠️ Every report is already scoped to the signed-in yard by RLS, but a
+  /// printed page carried no trace of that: "CURRENT YARD STOCK" over 224
+  /// rows, with nothing saying WHICH yard's 224. Two yards' printouts were
+  /// indistinguishable once they left the screen.
+  ///
+  /// Includes the directorate because a yard code alone is ambiguous — NNR
+  /// belongs to both CED and PSD — and because that is the form officers
+  /// read off every SR number. Falls back to the bare yard when the
+  /// directorate is unknown, and to nothing at all when there is no yard
+  /// (the cross-yard directorate portals).
+  static String? _yardLabel() {
+    final yard = AppSession.currentYard.trim();
+    if (yard.isEmpty) return null;
+    final dir = (AppSession.currentDirectorate ?? '').trim();
+    return dir.isEmpty ? yard : '$dir/$yard';
+  }
+
   pw.Widget _buildHeader(String title, String date, String subTitle) {
+    final yard = _yardLabel();
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -1770,7 +1792,10 @@ class ReportService {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(
-                    title,
+                    // ⚠️ The yard goes in the TITLE, not only in the small
+                    // print: a page separated from its stack has to say
+                    // whose stock it lists.
+                    yard == null ? title : '$title  —  $yard',
                     style: pw.TextStyle(
                       fontSize: 20,
                       fontWeight: pw.FontWeight.bold,
@@ -1788,7 +1813,10 @@ class ReportService {
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    'Sri Lanka Customs - SR Management System',
+                    yard == null
+                        ? 'Sri Lanka Customs - SR Management System'
+                        : 'Sri Lanka Customs - SR Management System  |  '
+                            'Yard: $yard',
                     style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
                   ),
                 ],
