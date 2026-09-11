@@ -85,7 +85,8 @@ void main() {
       // unchanged: ONE closure narrows both the rows and the count, or the
       // pager's total disagrees with the rows under it.
       expect(m, contains('narrow(supabase.from(view)).count()'));
-      expect(m, contains("perishable ? 'unsold_perishables' : 'exhausted_unsold'"));
+      expect(m, contains("? 'unsold_perishables'"));
+      expect(m, contains("'exhausted_unsold'"));
     });
 
     test("the database's order is kept, not re-sorted in Dart", () {

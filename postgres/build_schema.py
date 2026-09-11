@@ -188,6 +188,10 @@ PAST_YARD_STAFF_VISIBLE = os.path.join(
     ROOT, 'migrations', '014_past_yard_staff_visible.sql')
 WAREHOUSE_ROWS_APPEAL_STATE = os.path.join(
     ROOT, 'migrations', '015_warehouse_rows_appeal_state.sql')
+PERISHABLE_FLAG_ON_OUTCOME_VIEWS = os.path.join(
+    ROOT, 'migrations', '016_perishable_flag_on_outcome_views.sql')
+UNSOLD_INCLUDES_PERISHABLES = os.path.join(
+    ROOT, 'migrations', '017_unsold_includes_perishables.sql')
 # ⚠️ postgres/47 is applied by hand on an existing server, so it was never
 # folded in here — and 015 reads the view it defines. Without it 02_schema.sql,
 # the ONE file that stands a new server up, fails on a fresh database.
@@ -296,6 +300,18 @@ if os.path.exists(ITEM_APPEAL_OUTCOMES):
 if os.path.exists(WAREHOUSE_ROWS_APPEAL_STATE):
     emit('migrations/015_warehouse_rows_appeal_state.sql (folded in)',
          io.open(WAREHOUSE_ROWS_APPEAL_STATE, encoding='utf-8').read())
+
+# Wraps disposition_rows and exhausted_unsold, so every migration that
+# recreates either of them must already have run.
+if os.path.exists(PERISHABLE_FLAG_ON_OUTCOME_VIEWS):
+    emit('migrations/016_perishable_flag_on_outcome_views.sql (folded in)',
+         io.open(PERISHABLE_FLAG_ON_OUTCOME_VIEWS, encoding='utf-8').read())
+
+# Unions the two views above, so it must follow 016 (which adds the
+# is_perishable column this reads) and both hand-applied source views.
+if os.path.exists(UNSOLD_INCLUDES_PERISHABLES):
+    emit('migrations/017_unsold_includes_perishables.sql (folded in)',
+         io.open(UNSOLD_INCLUDES_PERISHABLES, encoding='utf-8').read())
 
 if os.path.exists(RLS_HELPERS_EVALUATED_ONCE):
     emit('migrations/012_rls_helpers_evaluated_once.sql (folded in)',

@@ -51,8 +51,14 @@ void main() {
       // views encode that. Everything after it is identical, so they share the
       // method rather than drifting apart in two copies.
       expect(services, contains('bool perishable = false,'));
-      expect(services,
-          contains("final view = perishable ? 'unsold_perishables' : 'exhausted_unsold';"));
+      // ⚠️ Still decided by the VIEW. There are three now — the two decision
+      // routes and the yard's combined one (migration 017) — but Top
+      // Management's two tabs keep one route each, which is the whole point
+      // of the tab: one decides after a committee valuation, the other after
+      // a single spoiled sale.
+      expect(services, contains('final view = perishable'));
+      expect(services, contains("? 'unsold_perishables'"));
+      expect(services, contains("includeAllRoutes ? 'unsold_all_routes' : 'exhausted_unsold'"));
       expect(services.contains("from('exhausted_unsold').select('forfeited_package_id')"),
           isFalse,
           reason: 'the view name is hard-coded again');

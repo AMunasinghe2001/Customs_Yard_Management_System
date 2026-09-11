@@ -419,18 +419,43 @@ class _ForfeitedPackagesScreenState
                                 pkg.appealDecisionLabelForItem(row.itemId);
 
                             return DataRow(
-                              color: WidgetStateProperty.resolveWith<Color?>(
-                                  (states) {
-                                if (isExpired)
-                                  return context.colors.dangerRed
-                                      .withOpacity(0.04);
-                                return null;
-                              }),
+                              // ⚠️ An EDGE, not a wash.
+                              //
+                              // This said "the appeal window has closed" in
+                              // dangerRed at 4%. Perishable rows on the
+                              // disposal tables say "different kind of
+                              // goods" in warningAmber at 6% — and a red
+                              // and an orange both diluted to a few percent
+                              // over white are the same pale rose to the
+                              // eye. Two unrelated meanings became one
+                              // colour a reader had to guess at, so goods
+                              // whose appeal had run out looked perishable.
+                              //
+                              // The bar keeps the signal on the row without
+                              // competing: nothing else on these pages
+                              // marks a row from its left edge.
                               cells: [
-                                DataCell(TooltipText(pkg.srNumber,
-                                    style: TextStyle(
-                                        color: context.colors.accentLightBlue,
-                                        fontWeight: FontWeight.bold))),
+                                DataCell(Row(children: [
+                                  Container(
+                                    width: 3,
+                                    height: 26,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      color: isExpired
+                                          ? context.colors.dangerRed
+                                              .withOpacity(0.75)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: TooltipText(pkg.srNumber,
+                                        style: TextStyle(
+                                            color: context
+                                                .colors.accentLightBlue,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ])),
                                 DataCell(TooltipText(row.itemName,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(

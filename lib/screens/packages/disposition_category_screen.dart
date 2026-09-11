@@ -22,6 +22,7 @@ import '../../widgets/handover_form_dialog.dart';
 import '../executive/unsold_shared.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
+import '../../widgets/perishable_row.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
 /// Re-exported / Other). Reads warehouse entries tagged "[FINAL:<TAG>]".
@@ -57,6 +58,10 @@ class _DispositionCategoryScreenState
   // true = delivered, false = pending.
   bool? _deliveryFilter;
 
+  /// Perishable-only narrowing. Null is "all goods" — false would hide
+  /// every perishable row rather than showing them all.
+  bool? _perishableOnly;
+
   // ⚠️ Released joins the delivery pages. A release is RULED and the
   // goods are COLLECTED later; the page showed only the first, so all 33
   // rows looked finished while the yard could still be storing them.
@@ -79,6 +84,7 @@ class _DispositionCategoryScreenState
         dateEnd: _dateRange?.end,
         year: _yearFilter,
         delivered: _hasDelivery ? _deliveryFilter : null,
+        perishableOnly: _perishableOnly,
       );
 
   @override
@@ -133,6 +139,7 @@ class _DispositionCategoryScreenState
         // whole Tender History off them — see _CategoryRow.proposal.
         proposal: r.isTopManagement ? _proposalFor(r) : null,
         forfeited: r.isTopManagement ? _forfeitedFor(r) : null,
+        isPerishable: r.isPerishable,
         fromTopManagement: r.isTopManagement,
         delivered: r.delivered,
         deliveredAt: r.deliveredAt,
@@ -286,6 +293,33 @@ class _DispositionCategoryScreenState
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         
+                        // ⚠️ Perishables reach these tables alongside
+                        // everything else, and a reader scanning the page
+                        // cannot tell them apart — yet they follow a
+                        // different route entirely: ONE special tender
+                        // sale, no re-valuation, no committee.
+                        // ⚠️ Only where this page HAS perishables. On
+                        // Destroyed there are none today, and a chip that
+                        // can only empty the table is worse than none:
+                        // left on, the page reads "0 Destroyed", which
+                        // looks like nothing was ever destroyed rather
+                        // than like a filter matched nothing.
+                        if (ref
+                                .watch(dispositionHasPerishablesProvider((
+                                  finalTag: widget.finalTag,
+                                  yard: ref
+                                      .watch(currentProfileProvider)
+                                      ?.yard,
+                                )))
+                                .valueOrNull ==
+                            true)
+                          PerishableFilterChip(
+                            selected: _perishableOnly == true,
+                            onChanged: (v) => setState(() {
+                              _perishableOnly = v ? true : null;
+                              _page = 0;
+                            }),
+                          ),
                         DateFilterButton(
                           dateRange: _dateRange,
                           year: _yearFilter,
@@ -457,7 +491,18 @@ class _DispositionCategoryScreenState
                                 fixedWidth: 55),
                           ],
                           rows: pageRows
-                              .map((row) => DataRow(cells: [
+                              .map((row) => DataRow(
+                                      // A faint wash, far lighter than the
+                                      // tender cards' amber: there the
+                                      // colour means "act now, these are
+                                      // spoiling"; here it only marks a
+                                      // different kind of goods, and a
+                                      // full-strength row would read as a
+                                      // warning nobody can act on.
+                                      color: WidgetStateProperty.all(
+                                          perishableRowColor(
+                                              context, row.isPerishable)),
+                                      cells: [
                                     DataCell(TooltipText(row.package.srNumber,
                                         style: TextStyle(
                                             color: context
@@ -827,6 +872,12 @@ class _OriginPill extends StatelessWidget {
   }
 }
 
+/// "Perishable only" — a toggle, not a dropdown.
+///
+/// ⚠️ Two states, not three. "All goods" and "perishable only" are the
+/// whole question; a third "non-perishable" choice would be a filter nobody
+/// asks for and would make the control read as a mode switch.
+
 class _CategoryRow {
   final PackageModel package;
   final WarehouseEntryModel? entry;
@@ -855,6 +906,9 @@ class _CategoryRow {
   /// The forfeited row behind a Top Management decision, for the popup's
   /// Tender History.
   final ForfeitedPackageModel? forfeited;
+
+  /// Whether these goods are perishable — resolved in the view, not here.
+  final bool isPerishable;
 
   /// Which route recorded this, straight from the view.
   ///
@@ -887,6 +941,7 @@ class _CategoryRow {
     this.fromTopManagement = false,
     this.delivered,
     this.deliveredAt,
+    this.isPerishable = false,
   });
 
   bool get isDestroyed {

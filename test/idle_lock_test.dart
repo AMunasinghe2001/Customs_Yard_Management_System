@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cus_yard_management/core/idle_lock.dart';
+import 'package:cus_yard_management/core/session_reset.dart';
 import 'package:cus_yard_management/screens/lock/idle_lock_screen.dart';
 
 /// Pumps [child] inside the same activity detector the real app wraps its
@@ -20,6 +21,13 @@ Widget _harness(ProviderContainer container, {Widget? child}) {
 }
 
 void main() {
+  // ⚠️ The lock flag is a process-global ValueNotifier, deliberately: it has
+  // to outlive the ProviderScope, because locking signs the user out and a
+  // sign-out rebuilds that scope. The cost is that it also outlives a TEST,
+  // so a test that locks would leave the next one starting out locked.
+  setUp(() => idleLockedFlag.value = false);
+  tearDown(() => idleLockedFlag.value = false);
+
   group('IdleLockController', () {
     testWidgets('locks once the idle timeout has elapsed', (tester) async {
       final container = ProviderContainer();
@@ -196,4 +204,124 @@ void main() {
       expect(tester.hasRunningAnimations, isTrue);
     });
   });
-}
+
+  group('the lock survives its own sign-out', () {
+    // ⚠️ These two are one bug seen twice: locking signs the user out, and
+    // signing out rebuilds the ProviderScope to drop the previous session's
+    // cached rows. Anything the lock keeps INSIDE that container is thrown
+    // away one frame after the lock goes up.
+    testWidgets('the lock screen stays up when the scope is rebuilt',
+        (tester) async {
+      sessionEpoch.value = 0;
+      await tester.pumpWidget(
+        ValueListenableBuilder<int>(
+          valueListenable: sessionEpoch,
+          builder: (_, epoch, __) => ProviderScope(
+            key: ValueKey('session-$epoch'),
+            child: MaterialApp(
+              home: Consumer(builder: (context, ref, _) {
+                return Text(ref.watch(idleLockedProvider) ? 'LOCKED' : 'OPEN',
+                    textDirection: TextDirection.ltr);
+              }),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('OPEN'), findsOneWidget);
+
+      ProviderScope.containerOf(tester.element(find.byType(Consumer)),
+              listen: false)
+          .read(idleLockedProvider.notifier)
+          .set(true);
+      await tester.pump();
+      expect(find.text('LOCKED'), findsOneWidget);
+
+      // What signing out does one frame later.
+      sessionEpoch.value++;
+      await tester.pump();
+
+      expect(find.text('LOCKED'), findsOneWidget,
+          reason: 'a StateProvider here is reset by the rebuild, so the '
+              'lock screen vanished and the app looked like it had '
+              'stopped locking');
+    });
+
+    test('the flag is the single source of truth across containers', () {
+      // Two containers, as before and after a sign-out.
+      final a = ProviderContainer();
+      addTearDown(a.dispose);
+      a.read(idleLockedProvider.notifier).set(true);
+
+      final b = ProviderContainer();
+      addTearDown(b.dispose);
+      expect(b.read(idleLockedProvider), isTrue,
+          reason: 'the new container must see the lock that is still up');
+    });
+
+    test('a controller in a fresh container still refuses to re-arm', () {
+      // poke() must not restart the countdown while the lock is up, and it
+      // reads the flag through the provider — so this has to hold in the
+      // container that exists AFTER the sign-out too.
+      idleLockedFlag.value = true;
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      final controller = c.read(idleLockControllerProvider);
+      controller.arm();
+      expect(c.read(idleLockedProvider), isTrue);
+    });
+  });
+
+  // ⚠️ The whole sequence, end to end, with the scope rebuild in it —
+  // verified to FAIL against the old in-container StateProvider, so it
+  // actually holds the fix rather than describing it.
+  testWidgets('lock -> sign-out rebuilds the scope -> lock STAYS up',
+      (tester) async {
+    sessionEpoch.value = 0;
+    await tester.pumpWidget(
+      ValueListenableBuilder<int>(
+        valueListenable: sessionEpoch,
+        builder: (_, epoch, __) => ProviderScope(
+          key: ValueKey('session-$epoch'),
+          child: MaterialApp(
+            home: Consumer(builder: (context, ref, _) {
+              final locked = ref.watch(idleLockedProvider);
+              return IdleActivityDetector(
+                child: Stack(children: [
+                  const Scaffold(body: Center(child: Text('desk'))),
+                  if (locked)
+                    const Positioned.fill(
+                        child: ColoredBox(
+                            color: Color(0xFF000000),
+                            child: Center(
+                                child: Text('LOCK SCREEN',
+                                    textDirection: TextDirection.ltr)))),
+                ]),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(IdleActivityDetector)),
+        listen: false);
+    container.read(idleLockControllerProvider).arm();
+
+    // Nothing happens before the timeout.
+    await tester.pump(kIdleLockTimeout - const Duration(seconds: 1));
+    expect(find.text('LOCK SCREEN'), findsNothing);
+
+    // The timer fires.
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('LOCK SCREEN'), findsOneWidget);
+
+    // Sign-out bumps the epoch a frame later — the real collision.
+    clearCachedSessionData();
+    await tester.pump();
+    sessionEpoch.value++;
+    await tester.pump();
+
+    expect(find.text('LOCK SCREEN'), findsOneWidget,
+        reason: 'the lock must outlive the sign-out that it caused');
+  });}

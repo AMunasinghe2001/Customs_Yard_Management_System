@@ -104,6 +104,12 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            // The Perishable chip asks whether this page has any; Destroyed
+            // has none, so the chip stays hidden. Overridden because it is
+            // a real query, and an un-stubbed one leaves a pending reconnect
+            // timer when the widget tree is torn down.
+            dispositionHasPerishablesProvider
+                .overrideWith((ref, key) => Future.value(false)),
             // ⚠️ The page pages on the SERVER now, so it no longer reads
             // livePackagesProvider -- it asks the disposition_rows view for
             // one page and then fetches the packages behind it. These two

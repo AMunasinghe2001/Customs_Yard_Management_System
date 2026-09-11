@@ -29,9 +29,12 @@ void main() {
     test('the card takes a grey wash, strong enough to see', () {
       expect(dash, contains('final settledWash ='));
       expect(dash, contains('? settledWash'));
-      // At 0.07 it was invisible beside an unsettled card, so a finished
-      // sale looked identical to one still waiting on a decision.
-      expect(dash, contains('muted.withOpacity(0.16)'));
+      // ⚠️ Between two failures. At 0.07 it was invisible beside an
+      // unsettled card, so a finished sale looked identical to one still
+      // waiting on a decision; at 0.30 the card read as disabled and its
+      // contents went murky. The wash says "this is a record now", which
+      // is a quieter statement than "this is switched off".
+      expect(dash, contains('muted.withOpacity(0.09)'));
     });
 
     test('it greys only once EVERY item is Sold or Unsold', () {
@@ -46,14 +49,23 @@ void main() {
       // through, so a perishable sale's whole grid came out amber — and
       // painting both grey made one flat block with no edge to the data.
       expect(dash, contains('color: context.colors.cardDark,'));
-      expect(dash, contains('context.colors.textMuted.withOpacity(0.45)'));
+      // ⚠️ The grey lives in the surround and this EDGE, never in the
+      // table's fill. At 0.45 the border read as a second dark band around
+      // an already-grey card, so the table looked heavier than the card
+      // holding it — the opposite of framing.
+      expect(dash, contains('context.colors.textMuted.withOpacity(0.28)'));
     });
 
     test('the header goes lighter than the rows, not darker', () {
       // The surround is already grey, so a dark header merges into it and
       // the table loses its top edge.
       expect(dash, contains('headingRowColor: settled'));
-      expect(dash, contains('Colors.white.withOpacity(0.05)'));
+      expect(dash, contains('Colors.white.withOpacity(0.07)'));
+      // Three tones, lightest first: header, then the data a shade
+      // stronger, then the grey surround. The data must not end up the
+      // faintest band on the card — it is what the reader is here for.
+      expect(dash, contains('dataRowColor: settled'));
+      expect(dash, contains('Colors.white.withOpacity(0.02)'));
     });
   });
 }

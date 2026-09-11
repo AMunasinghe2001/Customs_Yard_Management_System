@@ -1388,6 +1388,30 @@ class PackageService {
     ];
   }
 
+  /// Whether THIS page has any perishable goods on it at all.
+  ///
+  /// ⚠️ Asked so the Perishable chip is only offered where it can do
+  /// something. A filter that can only ever return an empty table is worse
+  /// than no filter: leave it switched on and the page reads "0 Destroyed",
+  /// which looks like the yard has destroyed nothing rather than like a
+  /// filter matched nothing.
+  ///
+  /// ⚠️ NOT hardcoded per page. Today only Sold carries perishables, but a
+  /// perishable can certainly be destroyed — one is ruled `destroy` right
+  /// now and simply has not been carried out — so the question has to be
+  /// asked of the DATA, or the chip would vanish exactly when it became
+  /// useful. A `count` with `head`, so it costs no rows.
+  Future<bool> dispositionHasPerishables(String finalTag,
+      {String? yard}) async {
+    var q = supabase
+        .from('disposition_rows')
+        .eq('final_tag', finalTag)
+        .eq('is_perishable', true);
+    if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+    final n = await AuthService._withNetworkRetry(() => q.count());
+    return (n as int) > 0;
+  }
+
   /// One page of a disposition table (Sold / Destroyed / Re-exported / Other),
   /// straight out of the `disposition_rows` view.
   ///
@@ -1418,6 +1442,10 @@ class PackageService {
     /// Destroyed Goods' Pending / Destroyed filter. ⚠️ Only that page has a
     /// middle state; null means "All", which is a third answer.
     bool? isDestroyed,
+
+    /// Perishable-only narrowing. Null is "all goods", which is not the
+    /// same as false — false would hide every perishable row.
+    bool? perishableOnly,
   }) async {
     // ⚠️ ONE closure, applied to the rows query and the count query alike. Two
     // separately-written filters drift, and the symptom is a pager whose total
@@ -1425,6 +1453,11 @@ class PackageService {
     PgQuery narrow(PgQuery q) {
       q = q.eq('final_tag', finalTag);
       if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+      // ⚠️ In SQL, like every other filter here: these pages are
+      // server-paged and take their total from the server, so narrowing
+      // after the page arrives would leave the pager counting rows it had
+      // just removed.
+      if (perishableOnly == true) q = q.eq('is_perishable', true);
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
         // The receipt number is searched too -- on Released Goods it is
@@ -8049,6 +8082,22 @@ class DisposalService {
         .toList();
   }
 
+  /// Whether the Unsold page — or one of its Final Outcome pages — has any
+  /// perishables on it.
+  ///
+  /// ⚠️ Scoped by [proposal], because each Final Outcome page is its own
+  /// population: Converted has a perishable, Auction has none. Offering the
+  /// chip on Auction would only ever empty the table.
+  Future<bool> unsoldHasPerishables({String? yard, String? proposal}) async {
+    var q = supabase.from('unsold_all_routes').eq('is_perishable', true);
+    if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+    if (proposal != null && proposal.isNotEmpty) {
+      q = q.eq('proposal', proposal);
+    }
+    final n = await AuthService._withNetworkRetry(() => q.count());
+    return (n as int) > 0;
+  }
+
   /// One page of Unsold Goods, decided in SQL.
   ///
   /// ⚠️ [getExhaustedUnsoldPackages] answers the same question by loading
@@ -8098,6 +8147,18 @@ class DisposalService {
     /// Dart-side filter would narrow the CURRENT page and leave the pager
     /// counting rows the table no longer shows.
     bool? delivered,
+
+    /// List goods from BOTH unsold routes -- the committee route and the
+    /// perishable one -- as the yard's own pages need.
+    ///
+    /// ⚠️ Off by default so Top Management's two decision tabs keep reading
+    /// one route each; there the distinction is the point of the tab.
+    bool includeAllRoutes = false,
+
+    /// Show only perishables. Null/false is "all goods" -- false must not
+    /// mean "hide every perishable", which is what the page's chip toggling
+    /// off would otherwise do.
+    bool? perishableOnly,
   }) async {
     // ⚠️ ONE closure for the rows and the count, or the pager's total and the
     // rows under it disagree.
@@ -8142,10 +8203,27 @@ class DisposalService {
       // eq(false) alone would hide every undecided package from Pending.
       if (delivered == true) q = q.eq('delivered', true);
       if (delivered == false) q = q.or('delivered.is.null,delivered.eq.false');
+      // ⚠️ In SQL, like every other filter here, because this page is
+      // server-paged: narrowing in Dart would cut rows out of the page the
+      // pager had already counted.
+      if (perishableOnly == true) q = q.eq('is_perishable', true);
       return q;
     }
 
-    final view = perishable ? 'unsold_perishables' : 'exhausted_unsold';
+    // ⚠️ Three views, because these are three different questions.
+    //
+    //   unsold_perishables → Top Management's Perishables decision tab
+    //   exhausted_unsold   → Top Management's Unsold decision tab
+    //   unsold_all_routes  → "what is unsold in this yard", which is BOTH
+    //
+    // A perishable reaches Top Management after one failed Special Tender
+    // Sale and a normal package after four failures and a committee, so the
+    // two decision tabs must stay apart. The yard is not deciding anything
+    // here -- it is looking at its own goods -- and splitting them there
+    // only hid the perishables entirely (see migration 017).
+    final view = perishable
+        ? 'unsold_perishables'
+        : (includeAllRoutes ? 'unsold_all_routes' : 'exhausted_unsold');
     final rows = await AuthService._withNetworkRetry(() =>
         narrow(supabase.from(view).select('forfeited_package_id'))
             .order('forfeited_at', ascending: false)

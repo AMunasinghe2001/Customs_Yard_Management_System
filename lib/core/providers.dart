@@ -462,6 +462,10 @@ class DispositionQuery {
   /// state. Null is "All".
   final bool? isDestroyed;
 
+  /// Perishable-only narrowing. Null is "all goods" — false would hide
+  /// every perishable row instead of showing them all.
+  final bool? perishableOnly;
+
   const DispositionQuery({
     required this.finalTag,
     this.page = 0,
@@ -473,6 +477,7 @@ class DispositionQuery {
     this.delivered,
     this.holdReason,
     this.isDestroyed,
+    this.perishableOnly,
   });
 
   @override
@@ -487,12 +492,13 @@ class DispositionQuery {
       other.year == year &&
       other.delivered == delivered &&
       other.holdReason == holdReason &&
-      other.isDestroyed == isDestroyed;
+      other.isDestroyed == isDestroyed &&
+      other.perishableOnly == perishableOnly;
 
   @override
   int get hashCode => Object.hash(
       finalTag, page, search, yard, dateStart, dateEnd, year, delivered,
-      holdReason, isDestroyed);
+      holdReason, isDestroyed, perishableOnly);
 }
 
 /// One page of a disposition table, filtered and paged in SQL.
@@ -524,6 +530,7 @@ final dispositionPageProvider =
         delivered: q.delivered,
         holdReason: q.holdReason,
         isDestroyed: q.isDestroyed,
+        perishableOnly: q.perishableOnly,
       );
 });
 
@@ -823,6 +830,34 @@ final dispositionYearSourceProvider =
   ref.watch(packagesChangeTriggerProvider);
   ref.watch(warehouseEntriesChangeTriggerProvider);
   return ref.read(packageServiceProvider).getDispositionYears(finalTag);
+});
+
+/// Whether a disposition page (Sold / Destroyed / Re-exported / Released)
+/// has any perishables, so the chip is offered only where it can act.
+///
+/// ⚠️ Keyed by the page's tag AND asked of the data, not hardcoded. A
+/// perishable can be destroyed — one is ruled `destroy` right now — so a
+/// hardcoded "Sold only" would hide the chip exactly when it started to
+/// matter.
+final dispositionHasPerishablesProvider =
+    FutureProvider.family<bool, ({String finalTag, String? yard})>(
+        (ref, key) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  return ref
+      .read(packageServiceProvider)
+      .dispositionHasPerishables(key.finalTag, yard: key.yard);
+});
+
+/// The same question for Unsold Goods and its four Final Outcome pages.
+final unsoldHasPerishablesProvider =
+    FutureProvider.family<bool, ({String? yard, String? proposal})>(
+        (ref, key) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref
+      .read(disposalServiceProvider)
+      .unsoldHasPerishables(yard: key.yard, proposal: key.proposal);
 });
 
 /// Every SR number in Goods History, for its year filter.
@@ -1695,6 +1730,14 @@ class ExhaustedUnsoldQuery {
   /// Tender Sale versus five failed chances and a committee.
   final bool perishable;
 
+  /// Include BOTH unsold routes -- the committee route and the perishable
+  /// one. The yard's own pages want both; Top Management's decision tabs
+  /// want one each, so this stays off by default.
+  final bool includeAllRoutes;
+
+  /// Narrow to perishables only. Null is "all goods".
+  final bool? perishableOnly;
+
   const ExhaustedUnsoldQuery({
     this.page = 0,
     this.search,
@@ -1706,6 +1749,8 @@ class ExhaustedUnsoldQuery {
     this.proposal,
     this.delivered,
     this.perishable = false,
+    this.includeAllRoutes = false,
+    this.perishableOnly,
   });
 
   @override
@@ -1720,11 +1765,14 @@ class ExhaustedUnsoldQuery {
       other.outcome == outcome &&
       other.proposal == proposal &&
       other.delivered == delivered &&
-      other.perishable == perishable;
+      other.perishable == perishable &&
+      other.includeAllRoutes == includeAllRoutes &&
+      other.perishableOnly == perishableOnly;
 
   @override
   int get hashCode => Object.hash(page, search, yard, dateStart, dateEnd, year,
-      outcome, proposal, delivered, perishable);
+      outcome, proposal, delivered, perishable, includeAllRoutes,
+      perishableOnly);
 }
 
 /// One page of Unsold Goods, chosen and filtered by the database.
@@ -1747,6 +1795,8 @@ final exhaustedUnsoldPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
         proposal: q.proposal,
         delivered: q.delivered,
         perishable: q.perishable,
+        includeAllRoutes: q.includeAllRoutes,
+        perishableOnly: q.perishableOnly,
       );
 });
 

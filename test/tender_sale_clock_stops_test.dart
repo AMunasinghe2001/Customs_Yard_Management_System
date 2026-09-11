@@ -69,7 +69,7 @@ void main() {
         'final settled = widget.closeWhenAllDecided ? widget.sale.allDecided : allSold;'));
     // The clock and the perishable urgency both follow it.
     expect(src, contains('if (!settled &&'));
-    expect(src, contains('final urgentPerishable = !settled &&'));
+    expect(src, contains('!settled && isPerishableSale && widget.sale.saleTimePassed'));
 
     final yard = File('lib/screens/forfeited_packages/tender_disposal_screen.dart')
         .readAsStringSync();

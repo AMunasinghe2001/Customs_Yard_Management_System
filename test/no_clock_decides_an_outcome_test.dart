@@ -167,13 +167,19 @@ void main() {
       // all went Unsold is equally finished. `settled` is all-decided on the
       // yard's page and stays all-sold for the directorates, which measure
       // progress by the sold count.
-      expect(f, contains('!settled && widget.sale.isPerishableSale'));
+      // ⚠️ `isPerishableSale` is now hoisted into a local, because the
+      // LEAF follows what the goods are while the WASH follows urgency —
+      // two questions that used to share one flag.
+      expect(f, contains('!settled && isPerishableSale && widget.sale.saleTimePassed'));
       expect(f, contains(
           'final settled = widget.closeWhenAllDecided ? widget.sale.allDecided : allSold;'));
     });
 
     test('it carries the leaf the rest of the app uses for perishables', () {
-      expect(flat(dash), contains('urgentPerishable ? Icons.eco_rounded : Icons.receipt_long_rounded'));
+      // ⚠️ The leaf keys off the GOODS now, not urgency: a settled or
+      // still-appealing perishable sale kept losing the only mark that
+      // separated it from an ordinary tender.
+      expect(flat(dash), contains('isPerishableSale ? Icons.eco_rounded : Icons.receipt_long_rounded'));
     });
 
     test('the elapsed chip warms up sooner for them', () {

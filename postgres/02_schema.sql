@@ -8438,6 +8438,315 @@ end $$;
 
 
 -- ==========================================================================
+--  migrations/016_perishable_flag_on_outcome_views.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Perishable goods reach the Sold, Unsold and Final Outcome tables alongside
+-- everything else, and nothing on those rows says so.
+--
+-- A perishable runs ONE special tender sale — no re-valuation, no second
+-- round, no committee — so a reader scanning those tables cannot tell why a
+-- row has one tender behind it and its neighbour has four. The tender pages
+-- already mark them; these did not.
+--
+-- ⚠️ The flag goes in the VIEW, not in Dart, because these pages are
+-- server-paged: the filter has to narrow the query, or the pager would go on
+-- counting rows the screen had just removed.
+--
+-- ⚠️ `forfeited_packages.source` is the authority (postgres/07 made
+-- 'perishable' a real source). `package_items.nature` is the fallback for
+-- goods sold or released straight out of the yard without ever reaching a
+-- forfeited record. Both agree on all 8 rows in this database; keeping both
+-- means a route that skips one is still caught.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+-- ⚠️ plpgsql with a dynamic fallback, not plain SQL.
+--
+-- `package_items.nature` is added by postgres/06, which is applied by hand
+-- and is NOT folded into 02_schema.sql — so on the fresh database that file
+-- stands a new server up, the column does not exist and a static reference
+-- to it fails to parse the whole function. Checking the catalogue first
+-- keeps the fallback where the column is present and skips it where it is
+-- not, instead of making 02_schema.sql depend on another manual file.
+create or replace function public.item_is_perishable(p_item_id uuid)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $function$
+declare
+  hit boolean;
+begin
+  -- The authority: postgres/07 made 'perishable' a real forfeited source.
+  select exists (select 1 from public.forfeited_packages fp
+                  where fp.item_id = p_item_id
+                    and lower(trim(coalesce(fp.source, ''))) = 'perishable')
+    into hit;
+  if hit then
+    return true;
+  end if;
+
+  -- Fallback for goods sold or released straight out of the yard, which
+  -- never reach a forfeited record.
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'package_items'
+                and column_name = 'nature') then
+    execute 'select lower(trim(coalesce(nature, ''''))) = ''perishable'' '
+            'from public.package_items where id = $1'
+      into hit using p_item_id;
+    return coalesce(hit, false);
+  end if;
+  return false;
+end;
+$function$;
+
+revoke all on function public.item_is_perishable(uuid) from public;
+grant execute on function public.item_is_perishable(uuid) to authenticated;
+
+-- ── disposition_rows: Sold / Destroyed / Re-exported / Released ────────────
+do $$
+declare
+  body text;
+begin
+  -- Rebuild the view with one extra column, keeping its definition exactly
+  -- as it stands rather than retyping it — that is how two copies drift.
+  -- ⚠️ Guarded. disposition_rows is created by postgres/18, applied by
+  -- hand and not folded into 02_schema.sql, so on a fresh database it does
+  -- not exist yet. Failing here would break the file that stands a new
+  -- server up.
+  if not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                  where n.nspname = 'public' and c.relname = 'disposition_rows') then
+    return;
+  end if;
+  select pg_get_viewdef('public.disposition_rows'::regclass, true) into body;
+  if body like '%is_perishable%' then
+    return; -- already carries it
+  end if;
+  execute format(
+    'create or replace view public.disposition_rows '
+    'with (security_invoker = true) as '
+    'select d.*, public.item_is_perishable(d.item_id) as is_perishable '
+    'from (%s) d', rtrim(body, ';' || chr(10) || chr(13) || ' '));
+end $$;
+
+-- ── exhausted_unsold: the Unsold page and its Final Outcome tabs ───────────
+do $$
+declare
+  body text;
+begin
+  if not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                  where n.nspname = 'public' and c.relname = 'exhausted_unsold') then
+    return;
+  end if;
+  select pg_get_viewdef('public.exhausted_unsold'::regclass, true) into body;
+  if body like '%is_perishable%' then
+    return;
+  end if;
+  execute format(
+    'create or replace view public.exhausted_unsold '
+    'with (security_invoker = true) as '
+    'select u.*, public.item_is_perishable(u.item_id) as is_perishable '
+    'from (%s) u', rtrim(body, ';' || chr(10) || chr(13) || ' '));
+end $$;
+
+-- ── Verification ────────────────────────────────────────────────────────────
+do $$
+declare
+  v text;
+begin
+  foreach v in array array['disposition_rows', 'exhausted_unsold'] loop
+    -- Only assert about a view that actually exists here; see above.
+    if not exists (select 1 from pg_class c
+                     join pg_namespace n on n.oid = c.relnamespace
+                    where n.nspname = 'public' and c.relname = v) then
+      continue;
+    end if;
+    if not exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = v
+                      and column_name = 'is_perishable') then
+      raise exception '% is missing is_perishable', v;
+    end if;
+    -- Both views must still run as the caller: recreating one drops the
+    -- flag, and without it every per-yard policy under it is bypassed.
+    if not exists (select 1 from pg_class c
+                     join pg_namespace n on n.oid = c.relnamespace
+                    where n.nspname = 'public' and c.relname = v
+                      and 'security_invoker=true' = any (c.reloptions)) then
+      raise exception '% must run as the caller', v;
+    end if;
+  end loop;
+end $$;
+
+
+-- ==========================================================================
+--  migrations/017_unsold_includes_perishables.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- Unsold perishables never reached the yard's Unsold Goods page, nor any of
+-- the four Final Outcome pages.
+--
+-- The two routes are deliberately different (postgres/23 and /32):
+--
+--   normal goods  → 4+ failed tenders → committee re-valuation → proposal
+--   perishable    → ONE failed Special Tender Sale → proposal
+--
+-- `exhausted_unsold` encodes the FIRST route, and its two gate conditions --
+-- `tender_count > 3` and a `tender_committees` row -- are conditions a
+-- perishable can never satisfy, by design: goods that spoil cannot wait for
+-- the long route. So every unsold perishable was filtered out of the page
+-- that is supposed to list unsold goods.
+--
+-- In this database that hid 9 packages, two of which the Top Management
+-- Directorate had ALREADY ruled on ('destroy' and 'convert'). The rulings
+-- were recorded; the yard had no page that could show them.
+--
+-- ⚠️ Fixed with a UNION view rather than by loosening `exhausted_unsold`.
+-- Relaxing its gates would let a normal package through before its committee
+-- has valued it, which is the very thing those gates exist to prevent. The
+-- two routes stay separately defined and are joined only for DISPLAY.
+--
+-- ⚠️ The Top Management dashboard keeps reading the two views SEPARATELY
+-- (its Unsold tab and its Perishables tab), because there the distinction is
+-- the whole point -- one tab is deciding after a committee valuation, the
+-- other after a single spoiled sale. This view is for the pages that ask
+-- "what is unsold in this yard", where the answer is both.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+-- ── The union both routes present to the yard's pages ─────────────────────
+--
+-- Column shape is `exhausted_unsold`'s, because that is what the pages,
+-- filters and pager already read. Perishables have no committee, so the two
+-- committee columns are NULL for them -- which is accurate, not missing
+-- data: there was no committee to value them.
+--
+-- ⚠️ Guarded on BOTH sources existing. `exhausted_unsold` comes from
+-- postgres/23 and `unsold_perishables` from postgres/32; both are applied by
+-- hand and neither is folded into 02_schema.sql, so on the fresh database
+-- that file stands a new server up they are absent. Creating a view over a
+-- missing table would fail there and break the one file that has to work.
+do $outer$
+begin
+if to_regclass('public.exhausted_unsold') is null
+   or to_regclass('public.unsold_perishables') is null then
+  return;
+end if;
+
+execute $ddl$
+create or replace view public.unsold_all_routes
+with (security_invoker = true) as
+  select
+    forfeited_package_id,
+    package_id,
+    item_id,
+    sr_number,
+    consignee_name,
+    yard,
+    entry_qty,
+    forfeited_at,
+    item_name,
+    case_number,
+    tender_count,
+    submitted_value,
+    submitted_at,
+    proposal_id,
+    proposal,
+    decided_at,
+    delivered,
+    is_perishable
+  from public.exhausted_unsold
+
+  union all
+
+  select
+    forfeited_package_id,
+    package_id,
+    item_id,
+    sr_number,
+    consignee_name,
+    yard,
+    entry_qty,
+    forfeited_at,
+    item_name,
+    case_number,
+    tender_count,
+    -- No committee on this route. NULL says so; 0 would read as "valued at
+    -- nothing", which is a different and wrong statement.
+    null::numeric  as submitted_value,
+    null::timestamptz as submitted_at,
+    proposal_id,
+    proposal,
+    decided_at,
+    delivered,
+    true as is_perishable
+  from public.unsold_perishables
+$ddl$;
+
+execute $c$comment on view public.unsold_all_routes is
+  'Every unsold package in a yard, by either route: the committee route '
+  '(exhausted_unsold) and the single-special-sale perishable route '
+  '(unsold_perishables). is_perishable says which. Display only -- the two '
+  'source views stay separate for the Top Management decision tabs.'$c$;
+
+execute 'grant select on public.unsold_all_routes to authenticated';
+end
+$outer$;
+
+-- ── Verification ──────────────────────────────────────────────────────────
+do $$
+declare
+  n_union int;
+  n_parts int;
+  n_peri  int;
+begin
+  -- Nothing to verify where the sources -- and so the view -- do not exist.
+  if to_regclass('public.unsold_all_routes') is null then
+    return;
+  end if;
+
+  -- The view must run as the caller, or every per-yard policy beneath it is
+  -- bypassed and one yard reads another's unsold goods.
+  if not exists (select 1 from pg_class c
+                   join pg_namespace n on n.oid = c.relnamespace
+                  where n.nspname = 'public' and c.relname = 'unsold_all_routes'
+                    and 'security_invoker=true' = any (c.reloptions)) then
+    raise exception 'unsold_all_routes must run as the caller';
+  end if;
+
+  select count(*) into n_union from public.unsold_all_routes;
+  select (select count(*) from public.exhausted_unsold)
+       + (select count(*) from public.unsold_perishables) into n_parts;
+  if n_union <> n_parts then
+    raise exception 'unsold_all_routes has % rows, its two sources have %',
+      n_union, n_parts;
+  end if;
+
+  -- A package must not arrive by both routes: exhausted_unsold requires a
+  -- committee, unsold_perishables requires source='perishable' and no
+  -- committee is ever created for one. If that ever overlaps, a package
+  -- would be listed twice and counted twice by the pager.
+  if exists (select forfeited_package_id
+               from public.unsold_all_routes
+              group by forfeited_package_id having count(*) > 1) then
+    raise exception 'a package reached unsold_all_routes by both routes';
+  end if;
+
+  -- Every perishable-route row must be flagged, or the page's filter and
+  -- its row tint would disagree with the route the row actually took.
+  select count(*) into n_peri from public.unsold_all_routes where is_perishable;
+  if n_peri < (select count(*) from public.unsold_perishables) then
+    raise exception 'perishable rows lost their flag in the union';
+  end if;
+end $$;
+
+
+-- ==========================================================================
 --  migrations/012_rls_helpers_evaluated_once.sql (folded in)
 -- ==========================================================================
 

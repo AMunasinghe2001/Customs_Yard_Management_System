@@ -1012,6 +1012,14 @@ class DispositionRow {
   /// list of these can be keyed without colliding.
   final String rowKey;
 
+  /// Whether these goods are PERISHABLE.
+  ///
+  /// ⚠️ Resolved in the view (`item_is_perishable`), not here. A perishable
+  /// runs ONE special tender sale — no re-valuation, no second round, no
+  /// committee — so a reader scanning a mixed table cannot otherwise tell
+  /// why one row has a single tender behind it and its neighbour has four.
+  final bool isPerishable;
+
   /// 'entry' | 'item' | 'proposal' — which route recorded this disposition.
   /// The Re-exported page shows it as a Decided By pill (Yard vs Top
   /// Management), since the two carry quite different histories.
@@ -1075,6 +1083,7 @@ class DispositionRow {
 
   const DispositionRow({
     required this.rowKey,
+    this.isPerishable = false,
     required this.source,
     required this.packageId,
     required this.srNumber,
@@ -1099,6 +1108,7 @@ class DispositionRow {
 
   factory DispositionRow.fromJson(Map<String, dynamic> json) => DispositionRow(
         rowKey: json['row_key'].toString(),
+        isPerishable: json['is_perishable'] as bool? ?? false,
         source: json['source']?.toString() ?? 'entry',
         packageId: json['package_id'].toString(),
         srNumber: json['sr_number']?.toString() ?? '',

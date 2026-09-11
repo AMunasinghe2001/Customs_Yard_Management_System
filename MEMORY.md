@@ -2987,3 +2987,120 @@ demonstrated to be unnecessary, not assumed to be.
 
 Full suite green: **1520 tests**, `flutter analyze` clean of errors, release
 build succeeds.
+
+---
+
+## Unsold perishables reached no page at all (migration 017)
+
+⚠️ **`exhausted_unsold` can never contain a perishable, by design — and the
+yard's Unsold page read only that view.** The two unsold routes are
+deliberately different: normal goods arrive after **4+ failed tenders and a
+committee re-valuation**, a perishable after **ONE failed Special Tender
+Sale** (it is rotting; it cannot wait for the long route). The view's two
+gates — `tender_count > 3` **and** a `tender_committees` row — are therefore
+conditions a perishable cannot satisfy. In this database that hid **9
+packages from the yard, two of which the Top Management Directorate had
+already ruled on** (`destroy`, `convert`): the rulings were recorded and no
+yard page could show them.
+
+[migrations/017_unsold_includes_perishables.sql](migrations/017_unsold_includes_perishables.sql)
+adds **`unsold_all_routes`**, a `union all` of `exhausted_unsold` and
+`unsold_perishables` in the first view's column shape (the committee columns
+are NULL on the perishable side — accurate, not missing: there was no
+committee). ⚠️ Fixed with a union rather than by **loosening the gates**,
+which would let a normal package through *before* its committee has valued
+it — the very thing those gates exist to prevent.
+
+⚠️ **Three views, three questions.** Top Management's two decision tabs keep
+reading one route each (there the distinction *is* the tab); the yard's pages
+pass `includeAllRoutes: true` and get both. `verify` in the migration asserts
+the row counts add up, that **no package arrives by both routes** (it would be
+paged and counted twice) and that `security_invoker` survives — without it
+every per-yard policy underneath is bypassed.
+
+⚠️ **Guarded on both sources existing.** `postgres/23` and `/32` are applied
+by hand and folded into neither `02_schema.sql` nor each other, so on a fresh
+database the view is skipped rather than failing the one file that stands a
+new server up. Verified by replaying `01_supabase_compat.sql` + `02_schema.sql`
+into an empty database with **stderr actually captured**: 0 errors, guard held.
+
+### Perishables are marked, not hidden
+`is_perishable` (migration 016) drives both a **filter chip** and a **row
+tint** on the Sold/Destroyed/Re-exported/Released tables *and* now the
+Unsold + four Final Outcome pages. Both narrow **in SQL**: these pages are
+server-paged, so a Dart-side filter would cut rows out of a page the pager had
+already counted. The chip has **two states** — off means "all goods", never
+`false`, which would hide every perishable. `PerishableFilterChip` lives in
+[lib/widgets/perishable_row.dart](lib/widgets/perishable_row.dart); two copies
+of one control drift.
+
+### A settled perishable tender still reads as perishable
+⚠️ The leaf was keyed to `urgentPerishable`, which goes false the moment a sale
+settles **or** before bidding opens — so **decided and appealing** perishable
+sales lost their only distinguishing mark, exactly where there are most cards
+to scan (4 of 5 special sales here are fully decided). Split into what the
+goods **ARE** (`isPerishableSale` → leaf icon, amber tint, tag, at every
+stage) versus whether they need **acting on now** (`urgentPerishable` → amber
+wash + 1.5px border). A settled perishable's wash greys **towards amber**
+rather than to neutral, so "finished" and "perishable" are both still legible.
+
+⚠️ The grey belongs to the **surround and the border**, not the table's fill:
+header (0.07 white) < data (0.02 white) < surround. At a 0.45 muted border the
+table read heavier than the card holding it — the opposite of framing.
+
+### A filter is only offered where it can act
+⚠️ The Perishable chip was put on every disposition page, and Destroyed has
+**no** perishables — so left switched on the page read **"0 Destroyed"**,
+which looks like the yard destroyed nothing rather than like a filter matched
+nothing. `dispositionHasPerishablesProvider` / `unsoldHasPerishablesProvider`
+(a `count`, so it costs no rows) now gate it per page, each Final Outcome page
+asking about **its own** population — Converted has one, Auction has none.
+⚠️ Asked of the DATA, never hardcoded to "Sold only": a perishable **can** be
+destroyed (one is ruled `destroy` right now, simply not yet carried out), and
+a hardcoded rule would hide the chip exactly when it became useful.
+⚠️ A widget test that mounts one of these screens must override the provider —
+an un-stubbed real query leaves a pending reconnect timer at teardown.
+
+### Two tints that meant different things looked identical
+⚠️ Forfeited Goods washes an **expired appeal window** in `dangerRed` at 4%;
+the disposal tables wash a **perishable** in `warningAmber` at 6%. A red and
+an orange both diluted to a few percent over white are the *same pale rose*,
+so goods whose appeal had run out read as perishable. The perishable tint
+keeps the colour (it marks a KIND, and sits beside ordinary rows to compare
+against); expiry became a **3px left edge bar** instead — nothing else on
+these pages marks a row from its edge.
+
+⚠️ Settled-card washes are between two failures: invisible at 0.07, and at
+0.30 the card read as *disabled* with its contents murky. Settled grey sits at
+**0.09**, a settled perishable at **0.07 amber over 0.07 grey** — "this is a
+record now", not "this is switched off".
+
+### The 5-minute idle lock stopped appearing
+⚠️ **Two correct features collided.** Locking signs the user out; signing out
+rebuilds the whole `ProviderScope` to drop the previous session's cached rows
+(`core/session_reset.dart`). `idleLockedProvider` was a plain `StateProvider`
+— it lives *inside* that container — so one frame after the lock went up the
+rebuild reset it to `false` and the lock screen vanished. The app looked like
+it had simply stopped locking. **The lock's own state was stored in the thing
+the lock throws away.**
+
+The same bug, twice: `_IdleLockOverlayState._signingOut` is also inside the
+scope, so it came back `false` with the lock still raised and `_onLocked` ran
+again — a second sign-out, a second rebuild, a loop.
+
+Fixes: the flag moved to a process-global `ValueNotifier` (`idleLockedFlag`)
+that `idleLockedProvider` mirrors via a `StateNotifier`, so it survives the
+rebuild and the new container reads the lock that is still up; `_signingOut`
+became `static`. ⚠️ A global that outlives everything can **stick**, so the
+overlay clears it wherever a profile exists — a profile only exists after a
+successful sign-in, which is the one point where "still locked" cannot be
+true. ⚠️ It also outlives a TEST: `idle_lock_test.dart` needs a file-level
+`setUp`/`tearDown` reset, or a test that locks leaves the next one locked.
+
+⚠️ The end-to-end test was **checked for teeth** — reverted to the old
+in-container `StateProvider` it fails on exactly that assertion, so it holds
+the fix rather than describing it.
+
+Full suite: **1627 passing**, 2 skipped, 20 pre-existing failures in six files
+(unchanged baseline). `flutter analyze` clean of errors; release build
+succeeds.

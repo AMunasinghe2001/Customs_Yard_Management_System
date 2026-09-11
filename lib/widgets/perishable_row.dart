@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gap/gap.dart';
 
 import '../core/theme.dart';
 import '../models/models.dart';
@@ -34,3 +35,52 @@ Color? perishableRowColor(BuildContext context, bool isPerishable) =>
 
 /// The same colour at chip strength, for a legend or a badge.
 Color perishableAccent(BuildContext context) => context.colors.warningAmber;
+
+/// The "Perishable" narrowing chip, for any table that mixes them in.
+///
+/// ⚠️ Two states, not three. A "non-perishable" option would be a question
+/// nobody asks, and an unselected chip already means "all goods" — so the
+/// off state is null at the query, never `false`, which would hide every
+/// perishable row instead of showing them all.
+///
+/// Lives here rather than on one screen because the Sold / Destroyed /
+/// Re-exported / Released pages and the Unsold / Final Outcome pages all
+/// need the identical control; two copies of it drift.
+class PerishableFilterChip extends StatelessWidget {
+  const PerishableFilterChip({
+    super.key,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = perishableAccent(context);
+    return GestureDetector(
+      onTap: () => onChanged(!selected),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? accent.withOpacity(0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border:
+              Border.all(color: selected ? accent : context.colors.borderColor),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(selected ? Icons.check_rounded : Icons.eco_rounded,
+              size: 15,
+              color: selected ? accent : context.colors.textSecondary),
+          const Gap(6),
+          Text('Perishable',
+              style: TextStyle(
+                  color: selected ? accent : context.colors.textSecondary,
+                  fontSize: 12.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+        ]),
+      ),
+    );
+  }
+}

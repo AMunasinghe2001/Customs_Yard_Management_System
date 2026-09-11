@@ -146,8 +146,11 @@ void main() {
       // would put one on the desk far too early or far too late.
       expect(decision, contains('perishable: perishable'));
       final services = File('lib/services/services.dart').readAsStringSync();
-      expect(services,
-          contains("perishable ? 'unsold_perishables' : 'exhausted_unsold'"));
+      // The perishable list is still its OWN view, and still chosen first —
+      // the yard's combined view (migration 017) is a third answer for a
+      // different question and must not collapse these two into one.
+      expect(services, contains("? 'unsold_perishables'"));
+      expect(services, contains("'exhausted_unsold'"));
     });
   });
 }

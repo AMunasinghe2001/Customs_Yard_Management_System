@@ -1141,23 +1141,31 @@ class _SaleClosedChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = context.colors.textMuted;
+    // ⚠️ A SOLID ground, not a tint of the same grey.
+    //
+    // The chip only ever appears on a settled card, and that card is now
+    // washed grey — so a grey-on-grey chip disappeared into it exactly
+    // where it was meant to be read. Sitting it on the card's own base
+    // colour cuts it back out of the wash, and the green says "finished"
+    // rather than "inactive".
+    final green = context.colors.successGreen;
     return Tooltip(
       message: 'Every item on this sale is marked Sold or Unsold, so there '
           'is nothing left to decide.',
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
+          color: Color.alphaBlend(
+              green.withOpacity(0.14), context.colors.cardDark),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withOpacity(0.4)),
+          border: Border.all(color: green.withOpacity(0.55)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.check_circle_outline_rounded, size: 13, color: color),
+          Icon(Icons.check_circle_rounded, size: 13, color: green),
           const Gap(5),
           Text('All items decided',
               style: TextStyle(
-                  color: color, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  color: green, fontSize: 11.5, fontWeight: FontWeight.w700)),
         ]),
       ),
     );
@@ -3550,9 +3558,11 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     // Only once bidding has STARTED: before that there is nothing to act on,
     // and highlighting every future special sale would make the mark mean
     // nothing.
-    final urgentPerishable = !settled &&
-        widget.sale.isPerishableSale &&
-        widget.sale.saleTimePassed;
+    // What the goods ARE — true for every perishable sale at every stage.
+    final isPerishableSale = widget.sale.isPerishableSale;
+    // Whether it needs acting on NOW, which is a different question.
+    final urgentPerishable =
+        !settled && isPerishableSale && widget.sale.saleTimePassed;
     final amber = context.colors.warningAmber;
 
     // ⚠️ A settled sale RECEDES. Every item is decided, so the card is a
@@ -3568,8 +3578,18 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     // identical to one still waiting on a decision — which is the whole
     // point of the wash. `settled` already means every item is marked
     // Sold OR Unsold, so nothing here recedes while work remains.
-    final settledWash =
-        Color.alphaBlend(muted.withOpacity(0.16), context.colors.cardDark);
+    //
+    // ⚠️ A settled PERISHABLE greys towards AMBER rather than to neutral.
+    // Plain grey answers "is this finished?" but erases the one thing that
+    // still distinguishes these goods, and a page of finished cards then
+    // looks uniform — so the kind of goods is unreadable at exactly the
+    // point there are most cards to scan. Blending the amber INTO the grey
+    // keeps both answers on the card: receded, and still perishable.
+    final settledWash = isPerishableSale
+        ? Color.alphaBlend(
+            amber.withOpacity(0.07),
+            Color.alphaBlend(muted.withOpacity(0.07), context.colors.cardDark))
+        : Color.alphaBlend(muted.withOpacity(0.09), context.colors.cardDark);
 
     return Container(
       decoration: BoxDecoration(
@@ -3582,7 +3602,11 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: settled
-              ? (allSold ? green.withOpacity(0.30) : muted.withOpacity(0.5))
+              ? (isPerishableSale
+                  ? amber.withOpacity(0.45)
+                  : allSold
+                      ? green.withOpacity(0.30)
+                      : muted.withOpacity(0.5))
               : urgentPerishable
                   ? amber.withOpacity(0.55)
                   : context.colors.borderColor,
@@ -3599,16 +3623,22 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: (urgentPerishable ? amber : green).withOpacity(0.12),
+                  color: (isPerishableSale ? amber : green).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                // The leaf marks perishables everywhere else in the app;
-                // the card that needs acting on carries the same mark.
+                // ⚠️ The leaf follows what the goods ARE, not whether they
+                // still need acting on. It used to key off
+                // `urgentPerishable`, which goes false the moment the sale
+                // is settled or before bidding opens — so a decided
+                // perishable sale, and an appealing one, both lost the
+                // only mark distinguishing them from an ordinary tender.
+                // Urgency is carried by the amber wash and the border; the
+                // KIND of goods has to stay readable at every stage.
                 child: Icon(
-                    urgentPerishable
+                    isPerishableSale
                         ? Icons.eco_rounded
                         : Icons.receipt_long_rounded,
-                    color: urgentPerishable ? amber : green,
+                    color: isPerishableSale ? amber : green,
                     size: 20),
               ),
               const Gap(14),
@@ -3731,9 +3761,14 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                 // frames it. Painting both the same made the whole card one
                 // flat block with no edge to the data.
                 color: context.colors.cardDark,
+                // ⚠️ The GREY lives in the surround and this edge, not in
+                // the table's fill. At 0.45 the border read as a second dark
+                // band around an already-grey card and the table looked
+                // heavier than the card holding it; this is the lighter edge
+                // it had before, enough to cut the panel out of the wash.
                 border: Border.all(
                     color: settled
-                        ? context.colors.textMuted.withOpacity(0.45)
+                        ? context.colors.textMuted.withOpacity(0.28)
                         : context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -3750,11 +3785,24 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                   // table loses its top edge; a light one separates the
                   // column names from the rows underneath and keeps the
                   // grid legible inside the wash.
+                  //
+                  // Three tones, lightest first: header, then the data
+                  // rows a shade stronger, then the grey surround. That
+                  // order is what makes the table read as a panel sitting
+                  // ON the wash rather than a block cut out of it.
                   headingRowColor: settled
                       ? WidgetStateProperty.all(Color.alphaBlend(
-                          Colors.white.withOpacity(0.05),
+                          Colors.white.withOpacity(0.07),
                           context.colors.surfaceDark))
                       : _headingColor(context),
+                  // A touch stronger than the header — the data is what a
+                  // reader is here for, so it must not be the faintest band
+                  // on the card.
+                  dataRowColor: settled
+                      ? WidgetStateProperty.all(Color.alphaBlend(
+                          Colors.white.withOpacity(0.02),
+                          context.colors.cardDark))
+                      : null,
                   empty: const EmptyTableState(
                       message: 'No packages in this sale'),
                   columns: [

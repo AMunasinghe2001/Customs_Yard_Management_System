@@ -15,9 +15,45 @@ const Duration kIdleLockTimeout = Duration(minutes: 5);
 
 /// True while the idle lock screen is covering the app.
 ///
-/// Kept in a provider rather than the widget so anything can read it (and so
-/// the lock survives a route change underneath it).
-final idleLockedProvider = StateProvider<bool>((ref) => false);
+/// ⚠️ The value lives OUTSIDE the ProviderScope, in a ValueNotifier, and the
+/// provider only mirrors it.
+///
+/// Locking signs the user out, and signing out rebuilds the whole
+/// ProviderScope to drop the previous session's cached rows (see
+/// core/session_reset.dart). A plain StateProvider lives *in* that container,
+/// so the rebuild reset this flag to false one frame after the lock went up
+/// and the lock screen vanished again — the app looked like it had simply
+/// stopped locking. The two features are each correct; they collided because
+/// the lock's own state was stored in the thing the lock throws away.
+///
+/// Kept in a notifier the container cannot discard, it survives the rebuild,
+/// and the provider below re-reads it in whatever container comes next.
+final ValueNotifier<bool> idleLockedFlag = ValueNotifier<bool>(false);
+
+/// Reads [idleLockedFlag] and rebuilds watchers when it changes.
+///
+/// A provider so callers are unchanged, but it holds no state of its own —
+/// the notifier is the single source of truth across scope rebuilds.
+final idleLockedProvider = StateNotifierProvider<_IdleLockedState, bool>(
+    (ref) => _IdleLockedState());
+
+class _IdleLockedState extends StateNotifier<bool> {
+  _IdleLockedState() : super(idleLockedFlag.value) {
+    idleLockedFlag.addListener(_sync);
+  }
+
+  void _sync() => state = idleLockedFlag.value;
+
+  /// Writes go to the notifier; [_sync] brings the provider's own state along,
+  /// so the two can never disagree.
+  void set(bool value) => idleLockedFlag.value = value;
+
+  @override
+  void dispose() {
+    idleLockedFlag.removeListener(_sync);
+    super.dispose();
+  }
+}
 
 /// Watches for user activity and flips [idleLockedProvider] when there has been
 /// none for [kIdleLockTimeout].
@@ -68,7 +104,7 @@ class IdleLockController {
     // during the last few seconds of a countdown would otherwise still throw
     // the lock screen up over the portal chooser.
     if (!_armed) return;
-    _ref.read(idleLockedProvider.notifier).state = true;
+    _ref.read(idleLockedProvider.notifier).set(true);
   }
 
   /// Lock immediately, without waiting out the countdown.
@@ -79,7 +115,7 @@ class IdleLockController {
 
   /// Called after the user has signed back in.
   void unlock() {
-    _ref.read(idleLockedProvider.notifier).state = false;
+    _ref.read(idleLockedProvider.notifier).set(false);
     poke();
   }
 

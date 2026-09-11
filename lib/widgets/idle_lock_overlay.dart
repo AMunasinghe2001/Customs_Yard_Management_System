@@ -34,7 +34,18 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
   /// unlock has to navigate back to.
   String _loginRoute = '/';
   Color? _accent;
-  bool _signingOut = false;
+
+  /// Whether THIS lock has already done its sign-out.
+  ///
+  /// ⚠️ Static, because this State does not survive the lock.
+  ///
+  /// Signing out rebuilds the ProviderScope (core/session_reset.dart) and
+  /// this overlay is inside it, so the widget is torn down and rebuilt one
+  /// frame after the lock goes up. A plain field came back `false` with the
+  /// lock still raised, so `_onLocked` ran a second time: another sign-out,
+  /// another scope rebuild, and the app could sit in that loop instead of
+  /// resting on the lock screen. Cleared by [_unlock] and by a fresh sign-in.
+  static bool _signingOut = false;
 
   /// Where each role signs back in. Mirrors the router's post-login redirect,
   /// in reverse: a user is returned to the door they actually came through, so
@@ -113,6 +124,20 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
     if (profile == null) {
       controller.stop();
     } else {
+      // ⚠️ A signed-in profile means the lock is over, whatever the flag
+      // says. `idleLockedFlag` outlives the ProviderScope by design (that is
+      // what makes the lock survive its own sign-out), and a global that
+      // outlives everything can stick: if it were ever left true while
+      // somebody signed back in, the app would open straight onto the lock
+      // screen with no way past it. A profile only exists after a successful
+      // sign-in, so this is the point where that cannot be true any more.
+      if (_signingOut || idleLockedFlag.value) {
+        _signingOut = false;
+        if (idleLockedFlag.value) {
+          WidgetsBinding.instance.addPostFrameCallback(
+              (_) => idleLockedFlag.value = false);
+        }
+      }
       controller.arm();
     }
 

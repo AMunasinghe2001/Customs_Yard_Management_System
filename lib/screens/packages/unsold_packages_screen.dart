@@ -14,6 +14,7 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/outcome_filter.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/perishable_row.dart';
 import '../executive/unsold_shared.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
@@ -75,6 +76,10 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
   /// one bucket, which is not what an officer is looking for -- they want the
   /// goods going to auction, or back out of the country.
   String? _outcomeFilter;
+
+  /// Perishable-only narrowing. Null is "all goods" — false would hide every
+  /// perishable row rather than showing them all.
+  bool? _perishableOnly;
   int _page = 0;
 
   @override
@@ -107,6 +112,13 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
       year: _yearFilter,
       outcome: _outcomeFilter,
       proposal: widget.proposalFilter,
+      // ⚠️ Both unsold routes. A perishable reaches this list after ONE
+      // failed Special Tender Sale, with no committee — conditions
+      // `exhausted_unsold` can never satisfy, so without this the page that
+      // lists unsold goods silently omitted every perishable, decided ones
+      // included. See migration 017.
+      includeAllRoutes: true,
+      perishableOnly: _perishableOnly,
     );
     final async = ref.watch(exhaustedUnsoldPageProvider(query));
     final proposals =
@@ -205,7 +217,28 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        
+                        // ⚠️ Perishables reach this table by a different
+                        // route entirely — one special tender sale, no
+                        // re-valuation, no committee — and nothing else on
+                        // the row says so.
+                        // ⚠️ Only where this page HAS perishables. Each
+                        // Final Outcome page is its own population —
+                        // Converted has one, Auction has none — so the
+                        // chip follows the data rather than the page name.
+                        if (ref
+                                .watch(unsoldHasPerishablesProvider((
+                                  yard: myYardForQuery,
+                                  proposal: widget.proposalFilter,
+                                )))
+                                .valueOrNull ==
+                            true)
+                          PerishableFilterChip(
+                            selected: _perishableOnly == true,
+                            onChanged: (v) => setState(() {
+                              _perishableOnly = v ? true : null;
+                              _page = 0;
+                            }),
+                          ),
                         DateFilterButton(
                           dateRange: _dateRange,
                           year: _yearFilter,
@@ -303,7 +336,15 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                   final f = info.forfeited;
                                   final pkg = f.packageDetails;
                                   final qty = unsoldQty(f);
+                                  // Marks WHAT the goods are, at a tenth of
+                                  // the tender card's amber: findable at a
+                                  // glance, ignorable at a distance.
+                                  final isPerishable =
+                                      isPerishableGoods(forfeited: f);
                                   return DataRow(
+                                    color: WidgetStateProperty.resolveWith(
+                                        (_) => perishableRowColor(
+                                            context, isPerishable)),
                                     cells: unsoldCells(
                                       context,
                                       info: info,
