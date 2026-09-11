@@ -116,4 +116,44 @@ void main() {
               'in only strands them on an empty dashboard');
     });
   });
+
+  group('the lock must be escapable, not just tight', () {
+    final m019 =
+        File('migrations/019_locked_session_can_read_its_own_profile.sql')
+            .readAsStringSync();
+    final svc = File('lib/services/services.dart').readAsStringSync();
+
+    test('a locked session can still read its OWN profile', () {
+      // ⚠️ The app learns a password has expired by READING THE PROFILE.
+      // Migration 018 blocked exactly that, so finishOtpLogin's
+      // `.single()` got zero rows and threw — the officer saw "Sign in
+      // failed", never reached the change dialog, and had spent an OTP.
+      expect(m019, contains('profiles_expired_self_read'));
+      expect(m019, contains('auth.session_user_id()'));
+    });
+
+    test('and ONLY its own, and only while locked', () {
+      // One row, not a relaxation. Scoped to the expiry flag so it adds
+      // nothing for a healthy session.
+      expect(m019, contains("current_setting('app.password_expired', true) = 'on'"));
+      expect(m019, contains('id = auth.session_user_id()'));
+    });
+
+    test('the 30-minute idle rule does not fire while locked', () {
+      // ⚠️ A locked session cannot write its heartbeat, so last_seen_at
+      // goes null and isExpired treats null as long gone — signing the
+      // officer out on the next redirect, before they could change
+      // anything. The thing forcing the rotation made it impossible.
+      expect(svc, contains('!profile.isPasswordExpired &&'),
+          reason: 'the session check must skip a password-locked session');
+    });
+
+    test('session_user_id is kept separate from auth.uid', () {
+      // They answer different questions: "who may act" (nobody, while
+      // locked) versus "whose session is this" (still truthful).
+      expect(m019, contains('create or replace function auth.session_user_id()'));
+      expect(m019.contains('create or replace function auth.uid()'), isFalse,
+          reason: '019 must not widen the lock it depends on');
+    });
+  });
 }

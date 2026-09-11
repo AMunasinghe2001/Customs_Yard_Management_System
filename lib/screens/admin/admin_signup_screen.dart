@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/password_strength_field.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/directorate_yard_picker.dart';
 import '../../services/services.dart';
@@ -519,8 +520,11 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                                 .fadeIn(),
                             const Gap(14),
 
+                            PasswordRequirements(password: _passwordCtrl.text),
+                            const Gap(10),
                             TextFormField(
                               controller: _passwordCtrl,
+                              onChanged: (_) => setState(() {}),
                               // Enter submits, so the form can be completed from the
                               // keyboard without reaching for the mouse.
                               onFieldSubmitted: (_) =>
@@ -546,10 +550,12 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                                 .slideX(
                                     begin: 0.1, duration: 400.ms, delay: 320.ms)
                                 .fadeIn(),
+                            PasswordStrengthBar(password: _passwordCtrl.text),
                             const Gap(14),
 
                             TextFormField(
                               controller: _confirmCtrl,
+                              onChanged: (_) => setState(() {}),
                               // Enter submits, so the form can be completed from the
                               // keyboard without reaching for the mouse.
                               onFieldSubmitted: (_) =>
@@ -577,6 +583,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                                 .slideX(
                                     begin: 0.1, duration: 400.ms, delay: 360.ms)
                                 .fadeIn(),
+                            PasswordMatchBar(
+                                password: _passwordCtrl.text,
+                                confirm: _confirmCtrl.text),
                             const Gap(28),
 
                             SizedBox(

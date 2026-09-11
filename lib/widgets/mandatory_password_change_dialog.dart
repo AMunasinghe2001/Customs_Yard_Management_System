@@ -7,6 +7,7 @@ import '../core/security_policy.dart';
 import '../core/supabase_client.dart';
 import '../core/theme.dart';
 import 'app_dialog.dart';
+import 'password_strength_field.dart';
 
 /// Forces a password change before the app can be used.
 ///
@@ -181,13 +182,18 @@ class _MandatoryPasswordChangeDialogState
                   ]),
                 ),
                 const Gap(16),
+                // The rules, ABOVE the field, so they are read before typing
+                // rather than discovered by being rejected.
+                PasswordRequirements(password: _newCtrl.text),
+                const Gap(10),
                 TextField(
                   controller: _newCtrl,
                   obscureText: _obscureNew,
                   autofocus: true,
+                  // Repaints the checklist and the bar on every keystroke.
+                  onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     labelText: 'New Password',
-                    helperText: 'Minimum 8 characters',
                     prefixIcon: const Icon(Icons.lock_outline_rounded),
                     suffixIcon: IconButton(
                       icon: Icon(_obscureNew
@@ -198,10 +204,12 @@ class _MandatoryPasswordChangeDialogState
                     ),
                   ),
                 ),
+                PasswordStrengthBar(password: _newCtrl.text),
                 const Gap(12),
                 TextField(
                   controller: _confirmCtrl,
                   obscureText: _obscureConfirm,
+                  onChanged: (_) => setState(() {}),
                   onSubmitted: (_) => _busy ? null : _submit(),
                   decoration: InputDecoration(
                     labelText: 'Confirm New Password',
@@ -215,6 +223,8 @@ class _MandatoryPasswordChangeDialogState
                     ),
                   ),
                 ),
+                PasswordMatchBar(
+                    password: _newCtrl.text, confirm: _confirmCtrl.text),
                 if (_error != null) ...[
                   const Gap(12),
                   Text(_error!,

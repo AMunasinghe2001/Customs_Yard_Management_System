@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/password_strength_field.dart';
 import '../../core/providers.dart';
 import '../../core/supabase_client.dart';
 import '../../core/directorates.dart';
@@ -413,9 +414,38 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                 color: context.colors.textMuted, fontSize: 11)),
                       ),
                       const Gap(10),
+                      // ⚠️ ALWAYS in the tree, shown or not — the slot
+                      // stays and only its CONTENTS change.
+                      //
+                      // This was a bare `if`, which added two children above
+                      // the field on the first keystroke. The field then lost
+                      // focus and the officer had to click back into the box
+                      // for every following character.
+                      //
+                      // A fixed slot also keeps the layout from jumping under
+                      // the cursor as the checklist appears, which is worth
+                      // having on its own.
+                      //
+                      // Hidden until typing starts because the change is
+                      // OPTIONAL here (blank keeps the current password), and
+                      // a checklist of unmet rules on an untouched form reads
+                      // as an error blocking an unrelated edit.
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        alignment: Alignment.topCenter,
+                        child: _newPasswordCtrl!.text.isEmpty
+                            ? const SizedBox(width: double.infinity)
+                            : Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: PasswordRequirements(
+                                    password: _newPasswordCtrl!.text),
+                              ),
+                      ),
                       TextFormField(
                         controller: _newPasswordCtrl!,
                         obscureText: _obscureNew,
+                        onChanged: (_) => setDlgState(() {}),
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
                           labelText: 'New Password',
@@ -438,10 +468,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           return null;
                         },
                       ),
+                      PasswordStrengthBar(password: _newPasswordCtrl!.text),
                       const Gap(10),
                       TextFormField(
                         controller: _confirmPasswordCtrl!,
                         obscureText: _obscureConfirm,
+                        onChanged: (_) => setDlgState(() {}),
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
                           labelText: 'Confirm New Password',
@@ -465,6 +497,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           return null;
                         },
                       ),
+                      // Same reasoning: a fixed slot, so the fields below
+                      // never shift index. PasswordMatchBar already shows
+                      // nothing for an empty confirm box.
+                      PasswordMatchBar(
+                          password: _newPasswordCtrl!.text,
+                          confirm: _confirmPasswordCtrl!.text),
                       const Gap(10),
                       TextFormField(
                         initialValue: supabase.auth.currentUser?.email ?? '',

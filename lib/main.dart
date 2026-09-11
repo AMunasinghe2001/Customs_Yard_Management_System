@@ -28,6 +28,22 @@ void main() async {
 Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ⚠️ The idle lock starts OFF on every launch.
+  //
+  // `idleLockedFlag` is a process-global so the lock can outlive the
+  // ProviderScope rebuild its own sign-out causes. Nothing carries it between
+  // runs, but stating it here is what makes that guaranteed rather than
+  // incidental: a flag that outlives everything must have one unambiguous
+  // place where it is known to be false, and "the app just started, with
+  // nobody signed in" is it.
+  //
+  // ⚠️ NOT in the overlay's build(). That is where this check used to live,
+  // and it fired one frame after the lock was raised -- while the sign-out
+  // was still in flight and the profile was therefore still set -- so it
+  // cancelled the lock and the officer was dropped on the portal chooser
+  // with no lock screen at all.
+  idleLockedFlag.value = false;
+
   // Installed before anything else can fail, so start-up errors are logged too.
   await AppErrorHandler.install();
 

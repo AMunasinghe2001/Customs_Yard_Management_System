@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/password_strength_field.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../widgets/mandatory_password_change_dialog.dart';
@@ -748,15 +749,19 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
 
                             // ── Step 3: Password Change (if expired) ────────────────
                             if (_passwordStage) ...[
+                              PasswordRequirements(
+                                  password: _newPassCtrl.text),
+                              const Gap(10),
                               TextFormField(
                                 controller: _newPassCtrl,
+                                onChanged: (_) => setState(() {}),
                                 // Enter submits, so the form can be completed from the
                                 // keyboard without reaching for the mouse.
                                 onFieldSubmitted: (_) =>
                                     _isLoading ? null : _submitPasswordChange(),
                                 obscureText: _obscureNew,
                                 decoration: InputDecoration(
-                                  labelText: 'New Password (min 8 chars)',
+                                  labelText: 'New Password',
                                   prefixIcon: Icon(Icons.lock_reset_rounded,
                                       color: context.colors.textMuted),
                                   suffixIcon: IconButton(
@@ -776,9 +781,11 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
                                       duration: 400.ms,
                                       delay: 200.ms)
                                   .fadeIn(),
+                              PasswordStrengthBar(password: _newPassCtrl.text),
                               const Gap(16),
                               TextFormField(
                                 controller: _confirmPassCtrl,
+                                onChanged: (_) => setState(() {}),
                                 // Enter submits, so the form can be completed from the
                                 // keyboard without reaching for the mouse.
                                 onFieldSubmitted: (_) =>
@@ -805,6 +812,9 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
                                       duration: 400.ms,
                                       delay: 300.ms)
                                   .fadeIn(),
+                              PasswordMatchBar(
+                                  password: _newPassCtrl.text,
+                                  confirm: _confirmPassCtrl.text),
                               const Gap(24),
                               SizedBox(
                                       height: 54,

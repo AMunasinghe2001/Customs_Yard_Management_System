@@ -7,6 +7,7 @@ import 'package:gap/gap.dart';
 
 import '../core/providers.dart';
 import '../core/theme.dart';
+import 'password_strength_field.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../core/security_policy.dart';
 
@@ -418,10 +419,13 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
           style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
         ),
         const Gap(16),
+        PasswordRequirements(password: _passCtrl.text),
+        const Gap(10),
         TextFormField(
           controller: _passCtrl,
           autofocus: true,
           obscureText: _obscurePass,
+          onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             labelText: 'New Password *',
             prefixIcon:
@@ -444,10 +448,12 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
             return PasswordPolicy.violation(t);
           },
         ),
+        PasswordStrengthBar(password: _passCtrl.text),
         const Gap(14),
         TextFormField(
           controller: _confirmCtrl,
           obscureText: _obscureConfirm,
+          onChanged: (_) => setState(() {}),
           onFieldSubmitted: (_) => _busy ? null : _save(),
           decoration: InputDecoration(
             labelText: 'Confirm New Password *',
@@ -470,6 +476,8 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
             return null;
           },
         ),
+        PasswordMatchBar(
+            password: _passCtrl.text, confirm: _confirmCtrl.text),
       ];
 }
 

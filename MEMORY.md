@@ -3101,6 +3101,29 @@ true. ⚠️ It also outlives a TEST: `idle_lock_test.dart` needs a file-level
 in-container `StateProvider` it fails on exactly that assertion, so it holds
 the fix rather than describing it.
 
+### The lock never appeared at all — it cancelled itself
+⚠️ **A bug I introduced while fixing the previous one.** The "a profile
+exists, so we cannot be locked" safety net lived in the overlay's `build()`.
+Locking is two steps — the flag goes true, *then* the sign-out runs — and
+between them the profile is **still set**. So the very next build saw
+`locked == true` alongside a profile and cleared the flag, cancelling the lock
+it had just raised. The officer saw **no lock screen**: the session was
+silently signed out and the router dropped them on the portal chooser. That is
+the "10 minutes and it goes to the home page" symptom, and it is why fixing
+the flag's lifetime alone did not help.
+
+⚠️ **Found only by mounting the real overlay.** Every earlier test drove
+`IdleLockController` directly and passed throughout — the controller was never
+wrong. A trace of the real widget showed `t=315s locked=false profile=null`:
+the lock fired, wiped its own evidence, and left nothing on screen.
+`idle_lock_reaches_the_screen_test.dart` now mounts `IdleLockOverlay` and
+asserts the **seal and "Locked after" text are actually rendered**; both tests
+were confirmed to fail against the old code.
+
+The stale-global worry was real but belonged at **launch**, not in `build()` —
+`main()` now sets `idleLockedFlag = false` once, where "nobody is signed in"
+is unambiguous.
+
 ### The lock came back to the portal chooser, not the portal
 ⚠️ `_onLocked` read `routerProvider` and navigated **after** `signOut()` — but
 sign-out bumps the session epoch, which replaces the ProviderScope, so that
@@ -3168,11 +3191,96 @@ change permitted, cross-user change refused (42501), full access restored
 after; a healthy account (ICT, 78 days) is completely unaffected. The test
 account was restored to its original hash and timestamp afterwards.
 
+### 018 was too complete — it locked out the escape route (migration 019)
+⚠️ **The app learns a password has expired by READING THE PROFILE**
+(`isPasswordExpired` is computed from `password_updated_at`), and 018 blocked
+exactly that. `finishOtpLogin` does
+`from('profiles').select().eq('id', user.id).single()` — which returned **zero
+rows**, so `.single()` threw and the login screen showed the generic *"Sign in
+failed. Please try again."* The officer never reached the password-change
+dialog, and the OTP they had just spent was gone. **Two dead ends, both of my
+own making:**
+
+1. `profiles_expired_self_read` now lets a locked session read **one row —
+   its own**, and only while the expiry flag is on. Written against
+   `auth.session_user_id()` (a new function reading `app.current_user_id`
+   directly), because `auth.uid()` is precisely what is null here. Kept
+   separate from `auth.uid()` on purpose: they answer *"who may act"* (nobody)
+   versus *"whose session is this"* (still truthful). Verified as `yard_app`:
+   1 own profile, **0** other profiles, **0** packages/warehouses/tenders.
+2. A locked session **cannot write its heartbeat**, so `last_seen_at` goes
+   null and `SessionSecurityPolicy.isExpired` treats null as long gone —
+   signing the officer out on the next route redirect. `verifyUserSession`
+   now skips the 30-minute idle rule while the password is expired. Nothing is
+   lost: a locked session can already do nothing but change its own password.
+
 Client-side `isPasswordExpired` also fixed: `Duration.inDays` **truncates
 toward zero**, so 16 hours before and 16 hours after expiry both read `0` and
 `0 < 0` stayed false — the Disposal DC account sat at **-0.676 days** and was
 still offered "Skip for now". It now compares the **instant**.
 
-Full suite: **1650 passing**, 2 skipped, 20 pre-existing failures in six files
+### The form promised 8 characters and the validator demanded 12
+⚠️ Four directorate login screens carried `helperText: 'Minimum 8
+characters'` and ICT's field was labelled `New Password (min 8 chars)`, while
+`PasswordPolicy.violation` rejects anything under **12** plus upper, lower,
+digit, symbol and no common word. The form told the officer to do something
+it would then refuse — the classic cost of a second, hand-written copy of a
+rule.
+
+`PasswordPolicy.rules` is now the single source: a list of
+`(label, isMet)` pairs that generates the on-screen checklist, drives the
+bar, and is asserted to agree with `violation()` on 17 sample passwords.
+`allRulesMet()` and `isAcceptable()` can never diverge.
+
+`lib/widgets/password_strength_field.dart` holds three widgets used by **all
+17 password surfaces** (7 logins, 8 signups, 2 profile dialogs, forgot-password
+and the mandatory dialog — a test enumerates them, because a new screen is
+exactly where this gets forgotten):
+- `PasswordRequirements` — the rules **above** the field, each ticking green
+  as it is met, so the reader sees which one is outstanding rather than being
+  told one at a time. Icon *and* colour change: a red/green pair alone is
+  unreadable to the commonest colour blindness.
+- `PasswordStrengthBar` — red, filling by *rules met*, green only when the
+  form will actually accept it. ⚠️ Driven by the rule count, **not**
+  `PasswordPolicy.strength` (a 0-4 opinion): filling a bar to the end and then
+  rejecting the password is worse than showing no bar.
+- `PasswordMatchBar` — fills only on an exact match, and says nothing at all
+  about an untouched confirm box.
+
+On the optional change surfaces (both profile dialogs) the checklist appears
+only once typing starts — blank means "keep the current password", so unmet
+rules on an untouched form would read as an error blocking an unrelated edit.
+
+⚠️ A test greps `lib/` for the literal strings `Minimum 8 characters` and
+`min 8 chars` outside comments, so the contradiction cannot come back.
+
+⚠️ **The maximum is in the SAME rule as the minimum** — "Between 12 and 24
+characters" — so going past the ceiling un-ticks the line that the minimum
+ticked and the bar returns to red. A separate max rule would have let the bar
+sit green while the form quietly rejected the password. Typing is deliberately
+NOT capped with a field `maxLength` — that stops input with no explanation,
+where the red bar says why.
+
+⚠️ **24, not 128** (migration 020). The old ceiling was a limit on what the
+ALGORITHM can hash — and it sat *above* even bcrypt's own 72-byte truncation,
+so it could never fire: an officer would have had to enter 129 characters
+correctly, twice. A limit nobody can reach is not a limit; it only made the
+requirement line read as noise. 24 rather than 20 so a three-word passphrase
+still fits. ⚠️ No account is affected — passwords are bcrypt hashes, so the
+original length is unknowable and unchecked at sign-in; the rule applies only
+when a NEW password is set. ⚠️ `PasswordPolicy.maxLength` and
+`password_policy_violation` are the same rule written twice and must move
+together; a test now pins the number AND compares the app's message
+word-for-word against verdicts captured from the live database.
+
+⚠️ **The checklist must not be inserted with a bare `if`.** On both profile
+dialogs `if (...) ...[` added two children above the password field on the
+first keystroke; the field lost focus and typing stopped until the officer
+clicked back into the box. Fixed with a slot that is always in the tree whose
+contents change. A widget test of this is useless — `tester.enterText`
+focuses the field itself, so it passes against the broken code too — so the
+guard is a source check on the shape that was changed.
+
+Full suite: **1670 passing**, 2 skipped, 20 pre-existing failures in six files
 (unchanged baseline). `flutter analyze` clean of errors; clean schema replay
 (0 errors, stderr captured); release build succeeds.

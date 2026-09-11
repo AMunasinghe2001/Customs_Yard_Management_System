@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:gap/gap.dart';
 import '../core/theme.dart';
+import 'password_strength_field.dart';
 import 'dialog_close_button.dart';
 import '../core/providers.dart';
 import '../core/supabase_client.dart';
@@ -468,9 +469,30 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
                   TextStyle(color: context.colors.textMuted, fontSize: 11)),
         ),
         const Gap(12),
+        // ⚠️ ALWAYS in the tree, shown or not — the slot stays and only its
+        // CONTENTS change. A bare `if` here added two children above the
+        // field on the first keystroke, the field lost focus, and typing
+        // stopped until the officer clicked back into the box. A fixed slot
+        // also stops the layout jumping under the cursor.
+        //
+        // Hidden until typing starts because the change is optional here
+        // (blank keeps the current password), and unmet rules on an
+        // untouched form read as an error blocking an unrelated edit.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: _newPassCtrl.text.isEmpty
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: PasswordRequirements(password: _newPassCtrl.text),
+                ),
+        ),
         TextFormField(
           controller: _newPassCtrl,
           obscureText: _obscureNew,
+          onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             labelText: 'New Password',
             prefixIcon:
@@ -489,10 +511,12 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
             return null;
           },
         ),
+        PasswordStrengthBar(password: _newPassCtrl.text),
         const Gap(12),
         TextFormField(
           controller: _confirmPassCtrl,
           obscureText: _obscureConfirm,
+          onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             labelText: 'Confirm New Password',
             prefixIcon:
@@ -511,6 +535,10 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
             return null;
           },
         ),
+        // Same reasoning: a fixed slot. PasswordMatchBar already shows
+        // nothing for an empty confirm box.
+        PasswordMatchBar(
+            password: _newPassCtrl.text, confirm: _confirmPassCtrl.text),
       ],
     );
   }

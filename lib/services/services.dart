@@ -77,10 +77,23 @@ class AuthService {
       throw Exception('account_expired');
     }
 
-    if (SessionSecurityPolicy.isExpired(
-      lastActivityAt: profile.lastSeenAt,
-      now: DateTime.now(),
-    )) {
+    // ⚠️ Skipped while the PASSWORD has expired.
+    //
+    // A locked session cannot write its own heartbeat -- migration 018 shuts
+    // it out of everything but its own profile row -- so `last_seen_at`
+    // goes null, and `isExpired` treats null as "long gone". This check
+    // therefore signed the officer out on the very next route redirect,
+    // before they could reach the password-change dialog: the thing that
+    // forces the rotation also made the rotation impossible.
+    //
+    // Nothing is lost by skipping it. A locked session can read nothing and
+    // change nothing except its own password, which is a far tighter
+    // position than the 30-minute idle rule is protecting against.
+    if (!profile.isPasswordExpired &&
+        SessionSecurityPolicy.isExpired(
+          lastActivityAt: profile.lastSeenAt,
+          now: DateTime.now(),
+        )) {
       await signOut();
       throw Exception('session_expired');
     }

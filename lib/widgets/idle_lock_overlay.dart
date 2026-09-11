@@ -136,20 +136,20 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
     if (profile == null) {
       controller.stop();
     } else {
-      // ⚠️ A signed-in profile means the lock is over, whatever the flag
-      // says. `idleLockedFlag` outlives the ProviderScope by design (that is
-      // what makes the lock survive its own sign-out), and a global that
-      // outlives everything can stick: if it were ever left true while
-      // somebody signed back in, the app would open straight onto the lock
-      // screen with no way past it. A profile only exists after a successful
-      // sign-in, so this is the point where that cannot be true any more.
-      if (_signingOut || idleLockedFlag.value) {
-        _signingOut = false;
-        if (idleLockedFlag.value) {
-          WidgetsBinding.instance.addPostFrameCallback(
-              (_) => idleLockedFlag.value = false);
-        }
-      }
+      // ⚠️ Do NOT clear the lock flag here.
+      //
+      // A "a profile exists, so we cannot be locked" safety net belongs at
+      // SIGN-IN, not in build(). Locking is: flag goes true, then the
+      // sign-out runs. Between those two the profile is still set, so this
+      // build sees locked=true WITH a profile and cleared the flag —
+      // cancelling the lock it had just raised. The officer got no lock
+      // screen at all: the session was silently signed out and the router
+      // dropped them on the portal chooser, which is exactly the "it goes
+      // to the home page instead of locking" this was supposed to fix.
+      //
+      // The stale-global worry it was guarding against is real, but a fresh
+      // sign-in is where it is answered — see IdleLockController.unlock(),
+      // which every login screen reaches through _unlock.
       controller.arm();
     }
 

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/password_strength_field.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';
@@ -758,15 +759,20 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
             : Icons.warning_amber_rounded,
       ),
       const Gap(20),
+      // ⚠️ The rules, above the field, generated from PasswordPolicy. The
+      // helper text here used to read "Minimum 8 characters" while the
+      // validator rejected anything under 12.
+      PasswordRequirements(password: _newPassCtrl.text),
+      const Gap(10),
       TextFormField(
         controller: _newPassCtrl,
         // Enter submits, so the form can be completed from the
         // keyboard without reaching for the mouse.
         onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),
+        onChanged: (_) => setState(() {}),
         obscureText: _obscureNew,
         decoration: InputDecoration(
           labelText: 'New Password',
-          helperText: 'Minimum 8 characters',
           prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
           suffixIcon: IconButton(
             icon: Icon(_obscureNew ? Icons.visibility_off : Icons.visibility,
@@ -775,10 +781,12 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
           ),
         ),
       ),
+      PasswordStrengthBar(password: _newPassCtrl.text),
       const Gap(16),
       TextFormField(
         controller: _confirmPassCtrl,
         obscureText: _obscureConfirm,
+        onChanged: (_) => setState(() {}),
         decoration: InputDecoration(
           labelText: 'Confirm New Password',
           prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
@@ -791,6 +799,8 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
         ),
         onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),
       ),
+      PasswordMatchBar(
+          password: _newPassCtrl.text, confirm: _confirmPassCtrl.text),
       const Gap(24),
       SizedBox(
         height: 54,

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/password_strength_field.dart';
 import '../../core/yards.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
@@ -256,8 +257,11 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                                   begin: 0.1, duration: 400.ms, delay: 320.ms)
                               .fadeIn(),
                           const Gap(16),
+                          PasswordRequirements(password: _passwordCtrl.text),
+                          const Gap(10),
                           TextFormField(
                             controller: _passwordCtrl,
+                            onChanged: (_) => setState(() {}),
                             decoration: InputDecoration(
                               labelText: 'Password *',
                               prefixIcon: const Icon(Icons.lock_outline,
@@ -279,9 +283,11 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                               .slideX(
                                   begin: 0.1, duration: 400.ms, delay: 350.ms)
                               .fadeIn(),
+                          PasswordStrengthBar(password: _passwordCtrl.text),
                           const Gap(16),
                           TextFormField(
                             controller: _confirmCtrl,
+                            onChanged: (_) => setState(() {}),
                             decoration: InputDecoration(
                               labelText: 'Confirm Password *',
                               prefixIcon: const Icon(Icons.lock_outline,
@@ -305,6 +311,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                               .slideX(
                                   begin: 0.1, duration: 400.ms, delay: 400.ms)
                               .fadeIn(),
+                          PasswordMatchBar(
+                              password: _passwordCtrl.text, confirm: _confirmCtrl.text),
                           const Gap(32),
                           SizedBox(
                             height: 52,

@@ -9021,6 +9021,222 @@ end $$;
 
 
 -- ==========================================================================
+--  migrations/019_locked_session_can_read_its_own_profile.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- A locked session must still be able to read ITS OWN profile row.
+--
+-- ⚠️ Migration 018 locked an expired password out of everything by making
+-- auth.uid() null and auth.role() 'anon'. That was too complete: the app
+-- discovers that a password has expired by READING THE PROFILE
+-- (ProfileModel.isPasswordExpired is computed from password_updated_at), and
+-- the profile is exactly what 018 stopped it from reading.
+--
+-- The result was a dead end. finishOtpLogin signs in, then does
+--
+--   supabase.from('profiles').select().eq('id', user.id).single()
+--
+-- which came back with ZERO rows, so `.single()` threw and the login screen
+-- showed "Sign in failed. Please try again." The officer never reached the
+-- password-change dialog that 018 exists to force them into, and the code
+-- they had just spent was gone. Verified against the live database: the
+-- Disposal DC account returned 0 rows for its own id.
+--
+-- ⚠️ The fix is ONE row, not a relaxation. This policy matches a single
+-- profile -- the caller's own -- and only while the session is flagged
+-- expired. It is written against `app.current_user_id` rather than
+-- auth.uid(), because auth.uid() is precisely what is null here; that is the
+-- same reasoning that lets auth.change_password keep working.
+--
+-- Everything else stays shut: other people's profiles, packages, warehouses,
+-- tender sales. The session can see who it is and that its password has
+-- expired, and it can change that password. Nothing more.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+-- The caller's REAL id, regardless of the expiry flag.
+--
+-- ⚠️ Deliberately separate from auth.uid(). auth.uid() answers "who may act",
+-- which is nobody while a password is expired; this answers "whose session is
+-- this", which still has a truthful answer. Keeping them apart is what stops
+-- a future edit from accidentally re-opening the lock by widening one of them.
+create or replace function auth.session_user_id()
+returns uuid
+language sql
+stable
+as $fn$
+  select nullif(current_setting('app.current_user_id', true), '')::uuid;
+$fn$;
+
+comment on function auth.session_user_id() is
+  'The signed-in user id, even when the password has expired and auth.uid() '
+  'is therefore null. For the narrow set of things a locked session must '
+  'still do: read its own profile, and change its own password.';
+
+-- Only while locked, and only your own row.
+--
+-- ⚠️ Scoped with `password_expired = 'on'` so it adds nothing for a healthy
+-- session -- those are already covered by "Users can view own profile". A
+-- policy that applied always would be a second, parallel route to the same
+-- row, and the day someone edits one they would not think to check the other.
+drop policy if exists profiles_expired_self_read on public.profiles;
+create policy profiles_expired_self_read on public.profiles
+  for select
+  using (
+    current_setting('app.password_expired', true) = 'on'
+    and id = auth.session_user_id()
+  );
+
+-- ── Verification ────────────────────────────────────────────────────────────
+do $$
+declare
+  v_id    uuid;
+  v_seen  int;
+  v_other int;
+begin
+  select id into v_id from public.profiles limit 1;
+  if v_id is null then
+    return;  -- empty database (a fresh server); nothing to assert against
+  end if;
+
+  -- Stand up a locked session for that user.
+  perform set_config('app.current_user_id', v_id::text, false);
+  perform set_config('app.current_role', 'authenticated', false);
+  perform set_config('app.password_expired', 'on', false);
+
+  -- The lock must still be in force.
+  if auth.uid() is not null or auth.role() <> 'anon' then
+    raise exception 'migration 018 is not in effect; apply it first';
+  end if;
+
+  -- ⚠️ These run as the table OWNER, which bypasses RLS, so they cannot
+  -- prove the policy works -- only that the pieces it needs are right. The
+  -- real check is the yard_app session in the migration header, which
+  -- returned 1 own row and 0 of everything else.
+  if auth.session_user_id() <> v_id then
+    raise exception
+      'auth.session_user_id() must survive the expiry flag, or a locked '
+      'session cannot find out why it is locked';
+  end if;
+
+  if not exists (select 1 from pg_policies
+                  where schemaname = 'public' and tablename = 'profiles'
+                    and policyname = 'profiles_expired_self_read') then
+    raise exception 'profiles_expired_self_read was not created';
+  end if;
+
+  -- Leave the session clean.
+  perform set_config('app.current_user_id', '', false);
+  perform set_config('app.current_role', '', false);
+  perform set_config('app.password_expired', 'off', false);
+end $$;
+
+
+-- ==========================================================================
+--  migrations/020_password_max_length_is_practical.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+-- The password maximum becomes 24, from 128.
+--
+-- ⚠️ 128 was a ceiling on what the ALGORITHM can hash, not on what a person
+-- can type. bcrypt stops at 72 bytes and the rule was set above even that, so
+-- it could never fire: an officer would have had to enter 129 characters
+-- correctly, twice, at a shared desk. A limit nobody can reach is not a
+-- limit — it only made the requirement line read as noise beside the rules
+-- that do matter.
+--
+-- 24 rather than 20 so a three-word passphrase still fits. Passphrases are
+-- the easiest strong passwords to remember, and a 20-character cap quietly
+-- rules them out while doing nothing for security.
+--
+-- ⚠️ Must move together with PasswordPolicy.maxLength in
+-- lib/core/security_policy.dart. Those two numbers are the same rule written
+-- twice; when they drift, the form promises what the server refuses — which
+-- is exactly what the "Minimum 8 characters" hint was doing against this
+-- function's 12.
+--
+-- ⚠️ No existing account is affected. Passwords are stored as bcrypt hashes
+-- ($2a$), so their original length is unknowable and unchecked at sign-in —
+-- this rule applies only when a NEW password is set. Nobody is locked out by
+-- it; someone whose current password is longer than 24 simply cannot re-enter
+-- that same one on their next rotation.
+--
+-- Safe to re-run.
+-- ============================================================================
+
+create or replace function public.password_policy_violation(p_password text)
+returns text
+language plpgsql
+immutable
+as $function$
+begin
+  if p_password is null or length(p_password) < 12 then
+    return 'Password must be at least 12 characters.';
+  end if;
+  if length(p_password) > 24 then
+    -- A practical ceiling, not bcrypt's. See the header: the old 128 sat
+    -- above even bcrypt's 72-byte limit and could never be reached.
+    return 'Password must be at most 24 characters.';
+  end if;
+  if p_password !~ '[A-Z]' then
+    return 'Password must contain an uppercase letter.';
+  end if;
+  if p_password !~ '[a-z]' then
+    return 'Password must contain a lowercase letter.';
+  end if;
+  if p_password !~ '[0-9]' then
+    return 'Password must contain a number.';
+  end if;
+  if p_password !~ '[^A-Za-z0-9]' then
+    return 'Password must contain a special character.';
+  end if;
+  -- The handful that a dictionary attack tries first. Not a substitute for a
+  -- real breach list, but it costs nothing and stops the obvious ones.
+  if lower(p_password) ~ '(password|passw0rd|welcome|customs|qwerty|admin123|letmein|12345678)' then
+    return 'Password contains a commonly used word.';
+  end if;
+  return null;
+end;
+$function$;
+
+-- ── Verification ────────────────────────────────────────────────────────────
+do $$
+begin
+  -- The boundary itself is accepted.
+  if public.password_policy_violation('Redwood#Harbor47x12345aA') is not null then
+    raise exception '24 characters must be accepted, got: %',
+      public.password_policy_violation('Redwood#Harbor47x12345aA');
+  end if;
+
+  -- One over is not.
+  if public.password_policy_violation('Redwood#Harbor47x12345aAb') is null then
+    raise exception '25 characters must be rejected';
+  end if;
+
+  -- And the message says which end was wrong, so the app can show the same
+  -- thing the officer sees in the checklist.
+  if public.password_policy_violation('Redwood#Harbor47x12345aAb')
+       not like '%at most 24%' then
+    raise exception 'the message must name the maximum';
+  end if;
+
+  -- The lower bound and the character classes are untouched.
+  if public.password_policy_violation('Short1!') is null then
+    raise exception 'the 12-character minimum was lost';
+  end if;
+  if public.password_policy_violation('alllowercase123!') is null then
+    raise exception 'the uppercase rule was lost';
+  end if;
+  if public.password_policy_violation('Password1234!') is null then
+    raise exception 'the common-word rule was lost';
+  end if;
+end $$;
+
+
+-- ==========================================================================
 --  migrations/012_rls_helpers_evaluated_once.sql (folded in)
 -- ==========================================================================
 

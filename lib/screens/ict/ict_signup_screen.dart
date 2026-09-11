@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/password_strength_field.dart';
 import '../../models/models.dart';
 import '../../core/providers.dart';
 import '../../widgets/brand_panel.dart';
@@ -392,8 +393,11 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                                     : null,
                           ),
                           const Gap(14),
+                          PasswordRequirements(password: _passwordCtrl.text),
+                          const Gap(10),
                           TextFormField(
                             controller: _passwordCtrl,
+                            onChanged: (_) => setState(() {}),
                             // Enter submits, so the form can be completed from the
                             // keyboard without reaching for the mouse.
                             onFieldSubmitted: (_) =>
@@ -413,9 +417,11 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                             ),
                             validator: PasswordPolicy.validate,
                           ),
+                          PasswordStrengthBar(password: _passwordCtrl.text),
                           const Gap(14),
                           TextFormField(
                             controller: _confirmCtrl,
+                            onChanged: (_) => setState(() {}),
                             // Enter submits, so the form can be completed from the
                             // keyboard without reaching for the mouse.
                             onFieldSubmitted: (_) =>
@@ -437,6 +443,8 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                                 ? 'Passwords do not match'
                                 : null,
                           ),
+                          PasswordMatchBar(
+                              password: _passwordCtrl.text, confirm: _confirmCtrl.text),
                           const Gap(28),
                           SizedBox(
                             height: 52,
