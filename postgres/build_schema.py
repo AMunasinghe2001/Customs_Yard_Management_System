@@ -192,6 +192,8 @@ PERISHABLE_FLAG_ON_OUTCOME_VIEWS = os.path.join(
     ROOT, 'migrations', '016_perishable_flag_on_outcome_views.sql')
 UNSOLD_INCLUDES_PERISHABLES = os.path.join(
     ROOT, 'migrations', '017_unsold_includes_perishables.sql')
+EXPIRED_PASSWORD_LOCKS_SESSION = os.path.join(
+    ROOT, 'migrations', '018_expired_password_locks_the_session.sql')
 # ⚠️ postgres/47 is applied by hand on an existing server, so it was never
 # folded in here — and 015 reads the view it defines. Without it 02_schema.sql,
 # the ONE file that stands a new server up, fails on a fresh database.
@@ -312,6 +314,13 @@ if os.path.exists(PERISHABLE_FLAG_ON_OUTCOME_VIEWS):
 if os.path.exists(UNSOLD_INCLUDES_PERISHABLES):
     emit('migrations/017_unsold_includes_perishables.sql (folded in)',
          io.open(UNSOLD_INCLUDES_PERISHABLES, encoding='utf-8').read())
+
+# Redefines auth.uid() and auth.role(), so it must come after every policy
+# that uses them has been created -- it changes what they return, not their
+# shape, but replaying it earlier would be replaced by 01_supabase_compat.
+if os.path.exists(EXPIRED_PASSWORD_LOCKS_SESSION):
+    emit('migrations/018_expired_password_locks_the_session.sql (folded in)',
+         io.open(EXPIRED_PASSWORD_LOCKS_SESSION, encoding='utf-8').read())
 
 if os.path.exists(RLS_HELPERS_EVALUATED_ONCE):
     emit('migrations/012_rls_helpers_evaluated_once.sql (folded in)',

@@ -30,6 +30,15 @@ const Duration kIdleLockTimeout = Duration(minutes: 5);
 /// and the provider below re-reads it in whatever container comes next.
 final ValueNotifier<bool> idleLockedFlag = ValueNotifier<bool>(false);
 
+/// The portal whose login page the lock should return to.
+///
+/// ⚠️ Outside the ProviderScope for the same reason as [idleLockedFlag]: it
+/// is read AFTER the sign-out that rebuilt the container. Without it the app
+/// came back to the portal chooser instead of the sign-in the officer had
+/// been using — they were at the Disposal desk, and the app reopened on the
+/// front door with every portal on it.
+String lastLockedPortal = '/';
+
 /// Reads [idleLockedFlag] and rebuilds watchers when it changes.
 ///
 /// A provider so callers are unchanged, but it holds no state of its own —

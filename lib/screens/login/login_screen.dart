@@ -11,6 +11,7 @@ import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../widgets/mandatory_password_change_dialog.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -81,6 +82,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ref.read(loginErrorProvider.notifier).state =
             'Admin accounts must use the Admin Sign In.';
         return;
+      }
+      // ⚠️ An expired password is a dead session at the DATABASE now
+      // (migration 018): auth.uid() is null and auth.role() is 'anon', so
+      // every page would come back empty. This portal had no password stage
+      // at all, and three yard officers are already past 90 days — without
+      // this they would sign in to an empty app with no way to fix it.
+      if (profile.isPasswordExpired) {
+        ref.read(currentProfileProvider.notifier).state = profile;
+        if (!mounted) return;
+        final changed = await MandatoryPasswordChangeDialog.show(context,
+            accent: context.colors.primaryGold);
+        if (!changed) {
+          ref.read(loginErrorProvider.notifier).state =
+              'Your password has expired. Set a new one to sign in.';
+          return;
+        }
+        _passwordCtrl.text = '';
       }
       await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;

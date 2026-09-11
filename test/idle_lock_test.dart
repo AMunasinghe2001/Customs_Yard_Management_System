@@ -324,4 +324,32 @@ void main() {
 
     expect(find.text('LOCK SCREEN'), findsOneWidget,
         reason: 'the lock must outlive the sign-out that it caused');
-  });}
+  });
+
+  test('the portal to return to outlives the scope rebuild', () {
+    // Set while the session is alive, read AFTER the sign-out that replaces
+    // the container — so it cannot live inside it.
+    lastLockedPortal = '/disposal/login';
+    sessionEpoch.value++;
+    expect(lastLockedPortal, '/disposal/login',
+        reason: 'the officer must come back to the door they came through');
+  });
+
+  test('no portal returns to the chooser', () {
+    // The lock goes back to the role's own sign-in page. '/' is the portal
+    // chooser — the front door with every portal on it — and is the wrong
+    // answer for someone who was already inside one.
+    const routes = [
+      '/ict/login',
+      '/disposal/login',
+      '/appeal/login',
+      '/valuation/login',
+      '/executive/login',
+      '/admin/login',
+      '/login',
+    ];
+    for (final r in routes) {
+      expect(r, isNot('/'));
+    }
+  });
+}

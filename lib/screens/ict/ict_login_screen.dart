@@ -8,6 +8,7 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
+import '../../widgets/mandatory_password_change_dialog.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
 import '../../widgets/brand_panel.dart';
@@ -187,6 +188,26 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
   }
 
   Future<void> _finishLogin(ProfileModel profile) async {
+    // ⚠️ `_passwordStage` exists on this screen but was never set anywhere:
+    // the change form it draws was unreachable, so ICT had no way to rotate
+    // a password at all. With migration 018 that becomes a lock-out — an
+    // expired ICT account is refused by every RLS policy — and ICT is the
+    // portal that would have to rescue everyone else.
+    //
+    // Gated HERE because both sign-in paths (direct and post-OTP) end up in
+    // this method; guarding each of them separately is how one gets missed.
+    if (profile.isPasswordExpired) {
+      ref.read(currentProfileProvider.notifier).state = profile;
+      if (!mounted) return;
+      final changed = await MandatoryPasswordChangeDialog.show(context,
+          accent: AppTheme.ictCyan);
+      if (!changed) {
+        setState(() =>
+            _error = 'Your password has expired. Set a new one to sign in.');
+        return;
+      }
+      _passwordCtrl.text = '';
+    }
     ref.read(currentProfileProvider.notifier).state = profile;
     await _saveCredentials();
     if (mounted) context.go('/ict');

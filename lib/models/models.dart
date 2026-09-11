@@ -953,15 +953,38 @@ class ProfileModel {
 
   DateTime get _passwordAnchor => passwordUpdatedAt ?? createdAt;
 
-  /// Whole days until the current password expires (negative once expired).
+  /// The instant the current password stops being valid.
+  DateTime get passwordExpiresAt =>
+      _passwordAnchor.add(const Duration(days: passwordMaxAgeDays));
+
+  /// Whole days until the current password expires.
+  ///
+  /// ⚠️ Rounded DOWN toward the past (`floor`), not truncated toward zero.
+  /// `Duration.inDays` truncates, so 16 hours before expiry and 16 hours
+  /// AFTER it both came back as `0` — the two states this number exists to
+  /// tell apart. Displayed as "expires in 0 days" either way, while
+  /// [isPasswordExpired] read `0 < 0` and stayed false, so an account a day
+  /// past its 90 days was still offered "Skip for now".
+  ///
+  /// Negative once expired, which is what the callers assume.
   int get daysUntilPasswordExpiry {
-    final expiry =
-        _passwordAnchor.add(const Duration(days: passwordMaxAgeDays));
-    return expiry.difference(DateTime.now()).inDays;
+    final remaining = passwordExpiresAt.difference(DateTime.now());
+    if (remaining.isNegative) {
+      // -0.7 days must read as -1, not 0: it is past, and the caller's
+      // `< 0` test is the whole rotation rule.
+      return -((-remaining.inMicroseconds + Duration.microsecondsPerDay - 1) ~/
+          Duration.microsecondsPerDay);
+    }
+    return remaining.inDays;
   }
 
   /// True once the password is past its 90-day life — a change is mandatory.
-  bool get isPasswordExpired => daysUntilPasswordExpiry < 0;
+  ///
+  /// ⚠️ Compares the INSTANT, not the day count. The day count is for
+  /// display; this is the gate that decides whether the officer may skip,
+  /// and it must flip the moment the 90 days are up rather than whenever
+  /// a truncated number happens to cross zero.
+  bool get isPasswordExpired => !DateTime.now().isBefore(passwordExpiresAt);
 
   /// True in the final [passwordWarnDays] before expiry (not yet expired).
   bool get isPasswordExpiringSoon =>

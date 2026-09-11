@@ -3101,6 +3101,78 @@ true. ⚠️ It also outlives a TEST: `idle_lock_test.dart` needs a file-level
 in-container `StateProvider` it fails on exactly that assertion, so it holds
 the fix rather than describing it.
 
-Full suite: **1627 passing**, 2 skipped, 20 pre-existing failures in six files
-(unchanged baseline). `flutter analyze` clean of errors; release build
-succeeds.
+### The lock came back to the portal chooser, not the portal
+⚠️ `_onLocked` read `routerProvider` and navigated **after** `signOut()` — but
+sign-out bumps the session epoch, which replaces the ProviderScope, so that
+read reached into a container being torn down. The officer was left on the
+dashboard route; once the lock lifted, the redirect saw no session and sent
+them to `/`, the front door with every portal on it. The router is now read
+and the navigation issued **before** the sign-out, and `_unlock` re-states the
+route rather than trusting what is underneath. `lastLockedPortal` lives
+outside the scope for the same reason `idleLockedFlag` does — it is read after
+the rebuild.
+
+### "Expires in 0 days" still offered Skip
+⚠️ `Duration.inDays` **truncates toward zero**, so 16 hours BEFORE expiry and
+16 hours AFTER it both returned `0` — the two states the number exists to tell
+apart. `isPasswordExpired` read `0 < 0` and stayed false, so an account a day
+past its 90 days kept the "Skip for now" button. Verified against live data:
+the Disposal DC account sits at **-0.676 days** and was skippable.
+`isPasswordExpired` now compares the **instant** (`passwordExpiresAt`), and
+`daysUntilPasswordExpiry` floors toward the past so -0.7 reads as -1.
+`_skipPasswordChange` re-checks in all four directorate portals — hiding a
+button is a hint, not a rule, and expiry can cross while the form sits open.
+
+### The 90-day rule is now enforced by the DATABASE (migration 018)
+⚠️ **Rejecting the sign-in is not the fix** — a password is changed from
+*inside* a signed-in session, so refusing the sign-in would permanently lock
+out exactly the people it is meant to prompt. Instead the sign-in **succeeds
+into a state where only the password change works**.
+
+`auth.uid()` is the root of the authorization model, so an expired session
+makes it return NULL and every RLS policy denies it. ⚠️ **`auth.uid()` is not
+the only root**: 13 policies ask `auth.role()` instead (`"Officers can view
+all packages"` is just `auth.role() = 'authenticated'`). With only `uid()`
+gated, a locked session **still read all 176 packages and 320 forfeited
+packages** — found by testing, not by reading. `auth.role()` now returns
+`'anon'` for an expired session too.
+
+⚠️ The age is **not** looked up inside `auth.uid()` — it runs once per policy
+per row, so a `profiles` lookup there would put a query on every row of every
+screen. `auth.begin_session(id, role)` computes it once per connection into
+`app.password_expired`; `auth.uid()` stays a session-variable read. The client
+calls that function instead of `set_config`, so **it cannot decide its own
+verdict**.
+
+`auth.change_password` keeps working because it is SECURITY DEFINER and takes
+the user id as an **argument** — it never calls `auth.uid()`. ⚠️ That is also
+the hole it opens: a locked session could aim it at someone else's id, so it
+is now wrapped to require `app.current_user_id = p_user_id` (the original body
+is copied to `change_password_unchecked` by `pg_get_functiondef`, never
+retyped). ⚠️ And the pool must be dropped after a change — `setCurrentUser`
+cannot notice, the user id is unchanged, so idle connections keep
+`password_expired = on` and would lock the officer out of the app they just
+fixed.
+
+⚠️ **A portal that can sign in must be able to change.** The yard and admin
+screens had no password stage at all, and ICT's `_passwordStage` was never set
+to true anywhere — its change form was unreachable. All three would have been
+dead ends. `MandatoryPasswordChangeDialog` (not dismissible; backing out signs
+out) now covers them, and a test asserts all **seven** portals both notice
+expiry and offer a way out.
+
+⚠️ **Four accounts are already past 90 days** — three yard officers and the
+Disposal DC — and will be locked to password-change-only on next sign-in.
+Verified end-to-end against the live database: locked = 0 rows everywhere,
+change permitted, cross-user change refused (42501), full access restored
+after; a healthy account (ICT, 78 days) is completely unaffected. The test
+account was restored to its original hash and timestamp afterwards.
+
+Client-side `isPasswordExpired` also fixed: `Duration.inDays` **truncates
+toward zero**, so 16 hours before and 16 hours after expiry both read `0` and
+`0 < 0` stayed false — the Disposal DC account sat at **-0.676 days** and was
+still offered "Skip for now". It now compares the **instant**.
+
+Full suite: **1650 passing**, 2 skipped, 20 pre-existing failures in six files
+(unchanged baseline). `flutter analyze` clean of errors; clean schema replay
+(0 errors, stderr captured); release build succeeds.

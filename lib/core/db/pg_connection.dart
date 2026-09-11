@@ -334,14 +334,31 @@ class PgDatabase {
 
   String? get currentUserId => _currentUserId;
 
-  /// Writes the session variables the compatibility functions read.
+  /// Re-asks the database what this user may do, on every connection.
   ///
-  /// `set_config(..., false)` makes them last for the whole session rather
-  /// than one transaction, so every later query sees them.
+  /// ⚠️ Needed after a password change, which [setCurrentUser] cannot notice:
+  /// the user id does not change, so the pool is never dropped, and the idle
+  /// connections keep the `app.password_expired = on` they were opened with.
+  /// The officer would have set a valid new password and still been locked
+  /// out by whichever stale connection their next query landed on.
+  Future<void> refreshSessionState() => close();
+
+  /// Announces who this connection is acting as.
+  ///
+  /// ⚠️ Calls `auth.begin_session` rather than writing the session variables
+  /// directly, so the CLIENT does not get to decide whether its own password
+  /// is still valid. It supplies an identity; the database decides what that
+  /// identity may do, and sets `app.password_expired` accordingly. An expired
+  /// password then reads as signed-out to `auth.uid()` and as `anon` to
+  /// `auth.role()`, which is every RLS policy in the schema — while
+  /// `auth.change_password` keeps working, because it takes the user id as an
+  /// argument instead of asking who is calling. See migration 018.
+  ///
+  /// `set_config(..., false)` inside it makes the variables last for the whole
+  /// session rather than one transaction, so every later query sees them.
   Future<void> _applySession(Session conn) async {
     await conn.execute(
-      Sql.named("select set_config('app.current_user_id', @uid, false), "
-          "set_config('app.current_role', @role, false)"),
+      Sql.named('select auth.begin_session(@uid, @role)'),
       parameters: {
         // An empty string, not null: `current_setting` returns '' for an unset
         // variable anyway, and the SQL side treats '' as "nobody".

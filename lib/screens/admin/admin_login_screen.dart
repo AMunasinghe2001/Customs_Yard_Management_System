@@ -9,6 +9,7 @@ import '../../widgets/brand_panel.dart';
 import '../../widgets/forgot_password_panel.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
+import '../../widgets/mandatory_password_change_dialog.dart';
 import '../../services/services.dart';
 import '../../widgets/auth_back_button.dart';
 
@@ -83,6 +84,22 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
         await supabase.auth.signOut();
         setState(() => _error = 'Account is disabled. Contact super admin.');
         return;
+      }
+      // ⚠️ Expired means the DATABASE has already shut this session out
+      // (migration 018) — every admin page would load empty. This portal had
+      // no password stage, so the change has to happen here or there is no
+      // way back in.
+      if (profile.isPasswordExpired) {
+        ref.read(currentProfileProvider.notifier).state = profile;
+        if (!mounted) return;
+        final changed = await MandatoryPasswordChangeDialog.show(context,
+            accent: context.colors.primaryGold);
+        if (!changed) {
+          setState(() =>
+              _error = 'Your password has expired. Set a new one to sign in.');
+          return;
+        }
+        _passwordCtrl.text = '';
       }
       await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;

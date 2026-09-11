@@ -312,6 +312,19 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   Future<void> _skipPasswordChange() async {
     final profile = _pendingProfile;
     if (profile == null) return;
+    // ⚠️ Re-checked HERE, not only where the button is drawn.
+    //
+    // Hiding a control is a hint, not a rule: this same method is what the
+    // button calls, and the expiry can also cross while the form sits open.
+    // An expired password is the one case where signing in without changing
+    // it is not allowed, so the refusal belongs on the action.
+    if (profile.isPasswordExpired) {
+      setState(() {
+        _passwordExpired = true;
+        _error = 'Your password has expired. Set a new one to sign in.';
+      });
+      return;
+    }
     setState(() => _isLoading = true);
     try {
       await _finishLogin(profile);

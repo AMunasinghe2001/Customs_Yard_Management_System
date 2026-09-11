@@ -74,12 +74,25 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
     final profile = ref.read(currentProfileProvider);
     final role = profile?.role;
     _loginRoute = _routeForRole[role] ?? '/';
+    lastLockedPortal = _loginRoute;
     _accent = _accentForRole[role] ??
         (role == 'disposal'
             ? Theme.of(context).extension<AppColors>()?.successGreen
             : role == 'valuation'
                 ? Theme.of(context).extension<AppColors>()?.primaryGold
                 : Theme.of(context).extension<AppColors>()?.accentLightBlue);
+
+    // ⚠️ Read the router BEFORE signing out, and navigate BEFORE it too.
+    //
+    // signOut() bumps the session epoch, which replaces the whole
+    // ProviderScope — so a `ref.read(routerProvider)` afterwards reaches
+    // into a container that is being torn down. The officer was left on the
+    // dashboard route instead of their portal's login page, and once the
+    // lock was lifted that is where the app came back to: the redirect then
+    // bounced them to '/' — the portal chooser — rather than to the sign-in
+    // they had been using.
+    final router = ref.read(routerProvider);
+    router.go(_loginRoute);
 
     try {
       await ref.read(authServiceProvider).signOut();
@@ -90,19 +103,18 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
     }
     if (!mounted) return;
     ref.read(currentProfileProvider.notifier).state = null;
-
-    // Swap the route underneath to the login page straight away. The lock
-    // screen is opaque and covers it, so nothing of this is seen -- but it
-    // means the dashboard is torn down (stopping its polling, and releasing
-    // whatever it had loaded) rather than left mounted behind the lock with a
-    // profile that no longer exists.
-    ref.read(routerProvider).go(_loginRoute);
   }
 
   void _unlock() {
     _signingOut = false;
-    // The login page is already the route underneath (put there when the lock
-    // went up), so lifting the overlay reveals it -- no navigation needed here.
+    // ⚠️ Navigate again rather than trusting what is underneath.
+    //
+    // The route was set when the lock went up, but the sign-out that
+    // followed replaced the ProviderScope and re-ran the router's redirect
+    // with no session — which sends any non-public route to '/'. Re-stating
+    // the portal here is what guarantees the officer lands back on the
+    // sign-in page they came from, not on the portal chooser.
+    ref.read(routerProvider).go(lastLockedPortal);
     ref.read(idleLockControllerProvider).unlock();
   }
 

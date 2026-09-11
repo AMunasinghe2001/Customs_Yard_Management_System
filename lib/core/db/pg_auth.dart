@@ -198,6 +198,17 @@ class PgAuth {
         'select auth.change_password(@id, @pw)',
         parameters: {'id': user.id, 'pw': attrs.password},
       );
+      // ⚠️ Drop the pool so every connection re-asks whether this password is
+      // still expired.
+      //
+      // `setCurrentUser` cannot notice a password change -- the user id is
+      // the same, so the pool is never dropped -- and the idle connections
+      // still carry the `app.password_expired = on` they were opened with.
+      // The officer would have set a valid new password and still been shut
+      // out by whichever stale connection their next query landed on. Here
+      // rather than in the caller, so every route to a password change gets
+      // it. See migration 018.
+      await PgDatabase.instance.refreshSessionState();
     }
 
     if (attrs.email != null || attrs.data != null) {
