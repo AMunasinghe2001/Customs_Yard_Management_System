@@ -443,7 +443,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                 options: const [
                   StyledDropdownOption('all', 'All Roles'),
                   StyledDropdownOption('officer', 'Officer'),
-                  StyledDropdownOption('admin', 'DC / SDDC'),
+                  StyledDropdownOption('admin', 'SDDC / DDC'),
                   StyledDropdownOption('disposal', 'Central Disposal'),
                   StyledDropdownOption('valuation', 'Valuation'),
                   StyledDropdownOption('appeal', 'Appeal'),
@@ -662,7 +662,7 @@ class _RoleChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (role) {
       'officer' => ('Officer', context.colors.accentLightBlue),
-      'admin' => ('DC / SDDC', context.colors.primaryGold),
+      'admin' => ('SDDC / DDC', context.colors.primaryGold),
       'disposal' => ('Disposal', context.colors.successGreen),
       'valuation' => ('Valuation', context.colors.warningAmber),
       'appeal' => ('Appeal', context.colors.heldOrange),

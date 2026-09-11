@@ -334,9 +334,9 @@ class _AppShellState extends ConsumerState<AppShell> {
                             // ⚠️ The officer's POST, not their permission
                             // level.
                             //
-                            // This showed "DC / SDDC" for every admin and the
+                            // This showed "SDDC / DDC" for every admin and the
                             // raw role for everyone else -- so a Deputy
-                            // Commissioner and a Senior Deputy Commissioner
+                            // Director of Customs and a Senior Deputy Director
                             // read identically, and an officer read "OFFICER".
                             // `role` has only two yard values; which post an
                             // officer actually holds is `job_role`, set by ICT

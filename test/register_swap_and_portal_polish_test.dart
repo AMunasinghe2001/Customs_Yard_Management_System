@@ -68,7 +68,9 @@ void main() {
 
   group('DC and SDDC are shown apart', () {
     test('the short titles name each post on its own', () {
-      expect(kPostShortTitles['dc'], 'DC');
+      // ⚠️ DDC — a yard holds no plain DC; the KEY is legacy, the post is
+      // not. See kPostTitles.
+      expect(kPostShortTitles['dc'], 'DDC');
       expect(kPostShortTitles['sddc'], 'SDDC');
       expect(kPostShortTitles['officer'], 'Officer');
     });
@@ -81,7 +83,7 @@ void main() {
           isActive: true,
           createdAt: DateTime.now(),
           jobRole: post);
-      expect(p('dc').postShortTitle, 'DC');
+      expect(p('dc').postShortTitle, 'DDC');
       expect(p('sddc').postShortTitle, 'SDDC');
       expect(p('officer').postShortTitle, 'Officer');
     });
@@ -94,7 +96,7 @@ void main() {
           role: 'admin',
           isActive: true,
           createdAt: DateTime.now());
-      expect(p.postShortTitle, 'DC / SDDC');
+      expect(p.postShortTitle, 'SDDC / DDC');
     });
 
     test('the ICT table and filter both work off the post', () {

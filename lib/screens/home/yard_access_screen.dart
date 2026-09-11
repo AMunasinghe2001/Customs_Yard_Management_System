@@ -61,9 +61,10 @@ class YardAccessScreen extends ConsumerWidget {
                       // Officer tile
                       _RoleTile(
                         icon: Icons.badge_rounded,
-                        title: 'Officer',
+                        title: 'SC / DSC / ASC',
                         subtitle:
-                            'Customs officers — sign in with your credentials',
+                            'Superintendent of Customs and deputy / assistant '
+                            'grades',
                         tag: 'Yard Staff',
                         accent: context.colors.accentLightBlue,
                         onSignIn: () => context.go('/login'),
@@ -78,12 +79,13 @@ class YardAccessScreen extends ConsumerWidget {
 
                       const Gap(14),
 
-                      // DC / SDDC tile
+                      // SDDC / DDC tile
                       _RoleTile(
                         icon: Icons.admin_panel_settings_rounded,
-                        title: 'DC / SDDC',
+                        title: 'SDDC / DDC',
                         subtitle:
-                            'Deputy / Senior Deputy Commissioner — full yard control',
+                            'Senior Deputy / Deputy Director of Customs — '
+                            'full yard control',
                         tag: 'Yard Administration',
                         accent: context.colors.primaryGold,
                         onSignIn: () => context.go('/admin/login'),

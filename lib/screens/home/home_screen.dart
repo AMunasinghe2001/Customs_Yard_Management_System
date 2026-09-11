@@ -165,7 +165,7 @@ class HomeScreen extends StatelessWidget {
                                 icon: Icons.terminal_rounded,
                                 title: 'ICT Directorate',
                                 subtitle:
-                                    'DC / SDDC & Officers\nprovisioning & accounts',
+                                    'SDDC / DDC & Officers\nprovisioning & accounts',
                                 accentColor: AppTheme.ictCyan,
                                 onLogin: (ctx) => ctx.go('/ict/login'),
                                 onSignup: (ctx) => ctx.go('/ict/signup'),

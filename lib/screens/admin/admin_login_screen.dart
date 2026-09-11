@@ -8,8 +8,10 @@ import '../../core/theme.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/forgot_password_panel.dart';
 import '../../core/supabase_client.dart';
+import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
-import '../../widgets/mandatory_password_change_dialog.dart';
+import '../../models/models.dart';
+import '../../widgets/password_expired_stage.dart';
 import '../../services/services.dart';
 import '../../widgets/auth_back_button.dart';
 
@@ -27,6 +29,13 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   bool _isLoading = false;
   String? _error;
   bool _rememberMe = false;
+
+  /// The profile waiting behind an expired password.
+  ///
+  /// ⚠️ A STAGE in this panel, not a modal — the directorate portals already
+  /// do it this way, and a dialog read as an interruption to something else
+  /// when it IS the sign-in.
+  ProfileModel? _expiredProfile;
 
   @override
   void initState() {
@@ -92,14 +101,11 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
       if (profile.isPasswordExpired) {
         ref.read(currentProfileProvider.notifier).state = profile;
         if (!mounted) return;
-        final changed = await MandatoryPasswordChangeDialog.show(context,
-            accent: context.colors.primaryGold);
-        if (!changed) {
-          setState(() =>
-              _error = 'Your password has expired. Set a new one to sign in.');
-          return;
-        }
-        _passwordCtrl.text = '';
+        setState(() {
+          _expiredProfile = profile;
+          _error = null;
+        });
+        return;
       }
       await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;
@@ -228,7 +234,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             child: BrandPanel(
               accent: context.colors.primaryGold,
               deepColor: const Color(0xFF050411),
-              badgeLabel: 'DC / SDDC Portal',
+              badgeLabel: 'SDDC / DDC Portal',
               badgeIcon: Icons.admin_panel_settings_rounded,
             ),
           ),
@@ -251,20 +257,50 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Text('DC / SDDC Sign In',
+                                Text('SDDC / DDC Sign In',
                                         style: Theme.of(context)
                                             .textTheme
                                             .headlineMedium)
                                     .animate()
                                     .fadeIn(duration: 400.ms),
                                 const Gap(8),
-                                Text('Restricted to DC / SDDC officers only',
+                                Text(
+                                        _expiredProfile != null
+                                            ? 'Your password has expired'
+                                            : 'Restricted to SDDC / DDC officers only',
                                         style: TextStyle(
                                             color: context.colors.textSecondary,
                                             fontSize: 14))
                                     .animate()
                                     .fadeIn(delay: 100.ms),
                                 const Gap(40),
+                                // Replaces the credentials form: they have
+                                // already been accepted.
+                                if (_expiredProfile != null) ...[
+                                  PasswordExpiredStage(
+                                    accent: context.colors.primaryGold,
+                                    onDone: () async {
+                                      _passwordCtrl.text = '';
+                                      await _saveCredentials();
+                                      if (!mounted) return;
+                                      final p = _expiredProfile!;
+                                      setState(() => _expiredProfile = null);
+                                      ref
+                                          .read(currentProfileProvider.notifier)
+                                          .state = p;
+                                      if (!mounted) return;
+                                      context.showSuccess(
+                                          'Logged in successfully as ${p.fullName}');
+                                      context.go('/admin');
+                                    },
+                                    onSignOut: () => setState(() {
+                                      _expiredProfile = null;
+                                      _passwordCtrl.text = '';
+                                      _error =
+                                          'Your password has expired. Set a new one to sign in.';
+                                    }),
+                                  ),
+                                ] else ...[
                                 if (_error != null) ...[
                                   Container(
                                     padding: const EdgeInsets.all(14),
@@ -418,13 +454,14 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                                       const Gap(6),
                                       Flexible(
                                         child: Text(
-                                            'DC / SDDC accounts are provisioned by the ICT Directorate.',
+                                            'SDDC / DDC accounts are provisioned by the ICT Directorate.',
                                             textAlign: TextAlign.center,
                                             style: TextStyle(
                                                 color: context.colors.textMuted,
                                                 fontSize: 13)),
                                       ),
                                     ])).animate().fadeIn(delay: 500.ms),
+                                ],
                               ],
                             )),
                   ),
@@ -448,8 +485,29 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
           ),
         ),
         AuthBackButton(
-          tooltip: 'Back to yard access',
-          onPressed: () => context.go('/yard-access'),
+          tooltip: _expiredProfile != null
+              ? 'Back to sign in'
+              : 'Back to yard access',
+          // ⚠️ Step back a STAGE before leaving. The expiry step is a
+          // setState stage of this one route, not a route of its own, so
+          // there was nothing for the arrow to pop and it fell through to
+          // the chooser.
+          //
+          // Leaving also ENDS the session: that stage runs inside a live one,
+          // and walking away used to land on the dashboard with no password
+          // entered. See core/abandon_sign_in.dart.
+          onPressed: () async {
+            await abandonSignIn(ref);
+            if (!mounted) return;
+            if (_expiredProfile != null) {
+              setState(() {
+                _expiredProfile = null;
+                _passwordCtrl.text = '';
+              });
+              return;
+            }
+            if (context.mounted) context.go('/yard-access');
+          },
         ),
       ]),
     );

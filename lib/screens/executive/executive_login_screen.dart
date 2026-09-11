@@ -8,6 +8,7 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../widgets/password_strength_field.dart';
 import '../../core/supabase_client.dart';
+import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
@@ -724,7 +725,41 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
             },
           ),
         ),
-        const AuthBackButton(tooltip: 'Back to portals'),
+        AuthBackButton(
+          tooltip: _otpStage || _passwordStage
+              ? 'Back to sign in'
+              : 'Back to portals',
+          // ⚠️ Step back a STAGE before leaving the screen.
+          //
+          // The OTP and password steps are `setState` stages of this one
+          // route, not routes of their own — so there was nothing for the
+          // arrow to pop and it fell through to the portal chooser. From a
+          // stage, back means back to the credentials form; only from the
+          // form itself does it leave.
+          //
+          // Leaving also ENDS the session: the password stage runs inside a
+          // live one (core/abandon_sign_in.dart).
+          onPressed: () async {
+            if (_passwordStage || _otpStage) {
+              await abandonSignIn(ref);
+              _countdownTimer?.cancel();
+              if (!mounted) return;
+              setState(() {
+                _passwordStage = false;
+                _otpStage = false;
+                _otpCtrl.clear();
+                _newPassCtrl.clear();
+                _confirmPassCtrl.clear();
+                _pendingProfile = null;
+                _error = null;
+                _success = null;
+              });
+              return;
+            }
+            await abandonSignIn(ref);
+            if (context.mounted) context.go('/');
+          },
+        ),
       ]),
     );
   }

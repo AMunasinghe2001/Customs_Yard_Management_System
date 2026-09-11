@@ -97,10 +97,14 @@ void main() {
   });
 
   group('DC and SDDC are separate posts', () {
-    test('three posts are offered, not two roles', () {
-      expect(kPostTitles.keys.toList(), ['officer', 'dc', 'sddc']);
+    test('the posts offered are the two groups, not two roles', () {
+      // ⚠️ A yard is RUN by SDDC and DC and STAFFED by the Superintendent
+      // grades; the permission role cannot tell any of them apart, which is
+      // why the post is its own field.
+      expect(kAssignablePostKeys, ['sddc', 'dc', 'sc', 'dsc', 'asc']);
       expect(kPostTitles['dc'], contains('DC'));
       expect(kPostTitles['sddc'], contains('SDDC'));
+      expect(kPostTitles['sc'], contains('Superintendent'));
     });
 
     test('both admin posts still carry the admin permission', () {
@@ -113,6 +117,7 @@ void main() {
 
     test('every post maps to a role and vice versa', () {
       expect(kPostRoles.keys.toSet(), kPostTitles.keys.toSet());
+      expect(kPostShortTitles.keys.toSet(), kPostTitles.keys.toSet());
     });
 
     test('postTitle prefers the recorded post over the bare role', () {
@@ -123,7 +128,9 @@ void main() {
     });
 
     test('an account with no post recorded still reads sensibly', () {
-      expect(_profile(role: 'admin').postTitle, 'DC / SDDC');
+      // ⚠️ SDDC / DDC — a yard holds no plain DC. Without a recorded post
+      // the two admin grades cannot be told apart, so both are named.
+      expect(_profile(role: 'admin').postTitle, 'SDDC / DDC');
       expect(_profile(role: 'officer').postTitle, 'Officer');
     });
 
@@ -138,11 +145,25 @@ void main() {
   group('the ICT form writes the post it collected', () {
     final ict = _read('lib/screens/ict/ict_dashboard_screen.dart');
 
-    test('every post picker is built from the shared map', () {
-      // Add, Edit and the Role Filter -- so a post added to kPostTitles shows
-      // up in all three without another edit.
-      expect('for (final e in kPostTitles.entries)'.allMatches(ict).length, 3,
-          reason: 'the two dialogs and the filter must offer the same posts');
+    test('every post picker is built from the shared maps', () {
+      // Add, Edit and the Role Filter, so a post added to the model shows up
+      // in all three without another edit.
+      //
+      // ⚠️ They do NOT all read the same list any more, and that is the
+      // point: Add offers only kAssignablePostKeys, while Edit and the
+      // filter still walk kPostTitles so an account holding the legacy
+      // 'officer' post keeps its label and stays findable.
+      final add = 'for (final key in kAssignablePostKeys)'.allMatches(ict).length;
+      final legacyAware =
+          'for (final e in kPostTitles.entries)'.allMatches(ict).length;
+      final editSet = 'if (kPostTitles.containsKey(selectedPost)) selectedPost,'
+          .allMatches(ict)
+          .length;
+      expect(add, 1, reason: 'the Add dialog offers only assignable posts');
+      expect(editSet, 1,
+          reason: 'Edit must keep a legacy post in its own dropdown');
+      expect(legacyAware, greaterThanOrEqualTo(1),
+          reason: 'the filter must still list legacy posts');
     });
 
     test('the Edit dialog uses the same styled dropdown as Add', () {

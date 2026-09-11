@@ -4231,7 +4231,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                     children: [
                       material.Tooltip(
                         message: !canUpdatePackage
-                            ? 'Package updates are restricted to DC / SDDC officers only'
+                            ? 'Package updates are restricted to SDDC / DDC officers only'
                             : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -4271,7 +4271,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
                           message: isOfficer
-                              ? 'Actions are restricted to DC / SDDC officers only'
+                              ? 'Actions are restricted to SDDC / DDC officers only'
                               : (isConfiscated
                                   ? 'Confiscated / Forfeited / Abandoned packages cannot be actioned'
                                   : ''),
@@ -4339,7 +4339,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       ),
                       material.Tooltip(
                         message: isOfficer
-                            ? 'Only DC / SDDC can record the final disposition'
+                            ? 'Only SDDC / DDC can record the final disposition'
                             : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -4354,7 +4354,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           icon: const Icon(Icons.outbound_rounded, size: 18),
                           label: const Text('Final Disposition'),
                           // Officers may view but never record the final
-                          // disposition — the action is DC / SDDC only.
+                          // disposition — the action is SDDC / DDC only.
                           onPressed: isOfficer
                               ? null
                               : () => _showFinalDispositionDialog(
@@ -8749,7 +8749,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       icon: Icons.assignment_return_rounded,
       label: 'Release',
       description:
-          'Return the goods to the owner. DC / SDDC approval required.',
+          'Return the goods to the owner. SDDC / DDC approval required.',
       color: Color(0xFF43A047),
       adminOnly: true,
     ),
@@ -8766,7 +8766,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'DESTROYED',
       icon: Icons.delete_forever_rounded,
       label: 'Destroy',
-      description: 'Mark goods for destruction. DC / SDDC approval required.',
+      description: 'Mark goods for destruction. SDDC / DDC approval required.',
       color: Color(0xFFE64A19),
       adminOnly: true,
     ),
@@ -8774,7 +8774,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'RE-EXPORTED',
       icon: Icons.flight_takeoff_rounded,
       label: 'Re-export',
-      description: 'Goods sent back to origin. DC / SDDC approval required.',
+      description: 'Goods sent back to origin. SDDC / DDC approval required.',
       color: Color(0xFF00ACC1),
       adminOnly: true,
     ),
@@ -8782,7 +8782,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'OTHER',
       icon: Icons.more_horiz_rounded,
       label: 'Other',
-      description: 'Custom outcome. DC / SDDC approval required.',
+      description: 'Custom outcome. SDDC / DDC approval required.',
       color: Color(0xFF7E57C2),
       adminOnly: true,
     ),
@@ -8979,7 +8979,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       if (widget.isOfficer) ...[
                         const Gap(6),
                         Text(
-                          'Final disposition is restricted to DC / SDDC officers.',
+                          'Final disposition is restricted to SDDC / DDC officers.',
                           style: material.TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
@@ -9102,7 +9102,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                                         BorderRadius.circular(
                                                             4),
                                                   ),
-                                                  child: Text('DC / SDDC',
+                                                  child: Text('SDDC / DDC',
                                                       style: material.TextStyle(
                                                           fontSize: 8,
                                                           fontWeight:

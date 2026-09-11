@@ -207,7 +207,7 @@ void main() {
         'lib/screens/valuation/valuation_signup_screen.dart',
         'lib/widgets/disposal_profile_dialog.dart',
         'lib/widgets/forgot_password_panel.dart',
-        'lib/widgets/mandatory_password_change_dialog.dart',
+        'lib/widgets/password_expired_stage.dart',
       ];
       for (final path in surfaces) {
         final src = File(path).readAsStringSync();

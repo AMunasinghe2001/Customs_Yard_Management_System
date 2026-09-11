@@ -3281,6 +3281,165 @@ contents change. A widget test of this is useless — `tester.enterText`
 focuses the field itself, so it passes against the broken code too — so the
 guard is a source check on the shape that was changed.
 
-Full suite: **1670 passing**, 2 skipped, 20 pre-existing failures in six files
+### The officer-post vocabulary was renamed throughout
+The old list (Officer / DC "Deputy Commissioner" / SDDC) did not match the
+service. Now:
+
+| Where | Posts |
+|---|---|
+| Yard Administration | **SDDC**, **DC** — Senior Deputy / Deputy Director of Customs |
+| Yard Staff | **SC**, **DSC**, **ASC** — Superintendent of Customs and its deputy and assistant grades |
+| Top Management | **DGC**, **ADGC**, **SDC**, **DC** |
+| Disposal / Appeal / Valuation | **DC**, **SDDC** only |
+| ICT | DC, SDDC **plus System Administrator** — the one directorate with a third post, because somebody has to provision the accounts |
+
+⚠️ **A yard holds no plain DC — the post is DDC.** The key is still `dc`
+(three live accounts store it in `profiles.job_role`), but the label and short
+form read **DDC (Deputy Director of Customs)**. A plain DC belongs to the
+directorates. The `SDDC / DDC` pair also replaced `DC / SDDC` across ~24
+user-facing strings in the admin portal, ICT console, home screen and package
+dialog; the remaining `DC / SDDC` mentions are directorate comments and are
+correct as they stand.
+
+### The password-expiry step is a STAGE on every portal, not a modal
+⚠️ Three portals (yard, admin, ICT) opened `MandatoryPasswordChangeDialog`
+while the four directorate portals drew the step inside their sign-in panel —
+so the same moment in the same flow looked like a different product depending
+on which door the officer came through. A modal also reads as an interruption
+to something else, when it **is** the sign-in and there is nothing behind it
+to return to.
+
+`lib/widgets/password_expired_stage.dart` now serves the yard and admin
+screens, and ICT uses its own `_passwordStage` (which already drew the form —
+it had simply never been switched on). The stage **replaces** the credentials
+form rather than covering it: those credentials have already been accepted,
+and leaving them visible invites the officer to try them again. The dialog is
+deleted.
+
+### 🔴 Abandoning the expiry step let you in WITHOUT a password
+⚠️ **The worst bug of this whole sequence.** The password-expiry step runs
+*inside* a live session — `signInWithPassword` has already succeeded by the
+time the officer is asked for a new password, and that is precisely what makes
+the change possible (migration 018). So pressing the back arrow left a real
+session behind: `supabase.auth.currentUser` set, `currentProfileProvider`
+populated. The router then saw "logged in" on a public page and **delivered
+the dashboard with no password ever entered**, bypassing the 90-day rule
+entirely. Observed: a Central Disposal account backed out of its expiry screen
+and landed in a **yard** dashboard with no profile shown.
+
+Two layers, because the back arrow was only one exit:
+1. `core/abandon_sign_in.dart` — every one of the seven portals now ends the
+   session *before* navigating away. Order matters: navigating first lets the
+   redirect run against a session that is still live. Cheap on an untouched
+   form (it checks for a session first), and it clears the local profile even
+   when the sign-out throws.
+2. **The router** refuses an expired password on any route — a public page
+   drops the stale session rather than letting it authorise the *next*
+   navigation. Placed there, not in `verifyUserSession`, which must keep
+   tolerating an expired password or the change form becomes unreachable.
+
+Four live accounts sit on this path today (Disposal DC + three yard officers).
+
+### Back goes BACK
+⚠️ All 16 `AuthBackButton`s navigated to a hard-coded route — the portal
+chooser, or a sign-in page — so an officer who reached a screen from somewhere
+else was thrown out to the front door instead of to the page they had just
+left. The arrow now pops history (`context.canPop()` → `context.pop()`) and
+falls back to a named route only when there is nothing to pop (a fresh launch,
+a deep link, or a `go()` that replaced the stack).
+
+⚠️ The seven LOGIN screens keep an `onPressed` — not to pick a destination but
+because leaving a half-finished sign-in must `abandonSignIn` first. Popping
+alone would leave the expired session alive, which is the hole above.
+
+⚠️ **A stage is not a route.** The OTP and password-expiry steps are
+`setState` stages of ONE screen, so `canPop()` is false there and the arrow
+fell straight through to the portal chooser. From a stage, back now means
+**back to the credentials form**; only from the form itself does it leave the
+screen — and it signs out either way, because the expiry stage runs inside a
+live session.
+
+### The Sign In link sat above the form
+The signup screens put "Already have an account? Sign In" right under the
+subtitle, while the sign-in screens put "Create Account" **below** the button
+with a divider. The pair is one choice seen from two sides, so it belongs in
+the same place on both; above the fields it read as a warning before the
+officer had done anything. Moved, and it now disappears once the OTP stage
+begins, exactly as the sign-in version does.
+
+### The dropdown menu opened outside the field's border
+⚠️ The menu was anchored to the widget's render box — which is the `InkWell`
+around an `InputDecorator`, and **the decorator includes the helper line under
+the box**. So `size.height` carried that line and the menu opened below it,
+visibly detached from the border. `_fieldBoxHeight()` walks to the nearest
+`InputDecorator` and measures its own box, falling back to the full height for
+the chip variant that has no decorator at all.
+
+### The Position dropdown did not match the fields under it
+`StyledDropdownFormField` defaults to `isDense` with 12px vertical padding
+while a plain `TextFormField` on the same form takes Material's roomier
+default — so it sat visibly shorter than every box below it. The five
+directorate signups now pass `isDense: false` and 16px.
+
+⚠️ Its hover wash also covered the **helper text**, so the gap below the field
+appeared to shrink as the cursor arrived: the `InkWell` wraps the whole
+`InputDecorator`, and the decorator includes the helper line *under* the box.
+An InkWell cannot be clipped to part of its child, and the field does not need
+the wash — it already has a hover cursor and a focus border, exactly like the
+fields beside it. ⚠️ **The fix is moving the HELPER LINE, not the ink.** Three attempts, two
+wrong:
+1. transparent `hoverColor`/`focusColor` — the tap ripple still washed the
+   helper line;
+2. all four ink colours transparent — the grey went, and so did the click
+   animation, which was never what was asked;
+3. InkWell inside the decorator's `child` — the ripple shrank to the value
+   text alone, missing the icon, arrow and padding.
+
+The ripple must cover the whole box, and **only the decorator knows that
+shape** — but the decorator also draws the helper line beneath it. So the
+helper text is taken off the `InputDecoration` (`helperText: null`) and
+rendered as a sibling below; the decorator is then exactly the box, and the
+InkWell around it ripples across exactly the box. ⚠️ `errorText` had to move
+with it, or the message would draw twice — `error: SizedBox.shrink()` keeps
+the red border without the text.
+
+Verified by widget test, not by eye: **ink = decorator = 51px, ink width =
+field width = 800**, while the whole widget is **74px** — so the helper line
+sits outside the ink. A tap over the prefix icon still opens the menu, and the
+helper text still renders.
+
+⚠️ The file's other two InkWells are left alone — the chip variant wraps only
+a Container (no helper line) and the menu-item one is inside the popup, where
+a splash is exactly right.
+
+(The "Sign In" link on every signup screen was already present and correctly
+routed — `auth/signup_screen.dart` is the only one without it, and it is dead
+code, routed from nowhere.)
+
+### Yard-staff labels follow the posts
+The chooser said **SC / DSC / ASC** while the sign-in behind it still said
+"Officer Sign In" and "Officer Portal". Both now name the grades; the signup
+screen reads **Yard Staff Sign Up**.
+
+⚠️ **The KEYS did not change, only the labels.** `profiles.job_role` holds
+`dc`/`officer` and directorate accounts are keyed by username (`DG`, `ADG`,
+`VDC`). Renaming a key would orphan the live account carrying it — so `DG`
+still keys the row that now renders "DGC (Director General of Customs)".
+
+⚠️ **`officer` survives as a legacy key.** It is still in `kPostTitles` and
+`kPostRoles` so the three live accounts holding it keep a title, but it is
+absent from `kAssignablePostKeys`, so ICT cannot hand it out any more. The Add
+dialog offers only assignable posts; **Edit and the role filter still walk the
+full map**, or an account on a legacy post would show a dropdown with no
+matching value and be silently re-posted on save.
+
+No migration needed: `profiles` constrains only `role` (admin/officer/…), and
+every new post maps onto an existing one via `kPostRoles`.
+
+Also corrected: "Executive Sign Up" → **Top Management Sign Up**, and the
+Appeal signup subtitle which claimed "one for AD and one for ADD" while its
+picker offered DC/SDDC.
+
+Full suite: **1726 passing**, 2 skipped, 20 pre-existing failures in six files
 (unchanged baseline). `flutter analyze` clean of errors; clean schema replay
 (0 errors, stderr captured); release build succeeds.

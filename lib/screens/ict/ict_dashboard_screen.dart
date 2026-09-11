@@ -23,7 +23,7 @@ import 'yard_directorate_tab.dart';
 import '../../widgets/error_view.dart';
 
 /// ICT Directorate Portal: Central user provisioning and management for
-/// DC / SDDC (Yard Admins) and Yard Officers across all customs yards.
+/// SDDC / DDC (Yard Admins) and Yard Officers across all customs yards.
 class IctDashboardScreen extends ConsumerStatefulWidget {
   const IctDashboardScreen({super.key});
 
@@ -144,7 +144,10 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     // The POST held, a key of kPostTitles. The permission role is derived
     // from it (kPostRoles): DC and SDDC are different posts that share the
     // 'admin' role, so the role alone cannot record which one this is.
-    String selectedPost = 'officer';
+    // ⚠️ The most junior ASSIGNABLE post, not the legacy 'officer' key. A
+    // new account should never be created into a post ICT no longer hands
+    // out; the legacy key survives only for accounts that already carry it.
+    String selectedPost = kYardStaffPostKeys.last;
     // Both start unset: the yard list depends on the directorate, and a
     // pre-filled pair would quietly assign whichever yard happened to be first.
     String? selectedDirectorate;
@@ -328,14 +331,19 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                         icon: Icons.shield_outlined,
                         accent: AppTheme.ictCyan,
                         value: selectedPost,
+                        // ⚠️ kAssignablePostKeys, not kPostTitles.entries.
+                        // The map still carries the legacy 'officer' key so
+                        // the accounts holding it keep rendering, but it is
+                        // not a post ICT should hand out any more — the
+                        // Superintendent grades replaced it.
                         options: [
-                          for (final e in kPostTitles.entries)
-                            StyledDropdownOption(e.key, e.value),
+                          for (final key in kAssignablePostKeys)
+                            StyledDropdownOption(key, kPostTitles[key]!),
                         ],
                         onChanged: otpSent
                             ? null
                             : (v) => setDialogState(
-                                () => selectedPost = v ?? 'officer'),
+                                () => selectedPost = v ?? kYardStaffPostKeys.first),
                       ),
                     ),
                     const Gap(12),
@@ -721,12 +729,19 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     icon: Icons.shield_outlined,
                     accent: AppTheme.ictCyan,
                     value: selectedPost,
+                    // ⚠️ The assignable posts, plus this account's OWN post
+                    // if it is a legacy one. Dropping the legacy key from
+                    // the list would leave the dropdown with no matching
+                    // value and silently re-post the officer on save.
                     options: [
-                      for (final e in kPostTitles.entries)
-                        StyledDropdownOption(e.key, e.value),
+                      for (final key in {
+                        ...kAssignablePostKeys,
+                        if (kPostTitles.containsKey(selectedPost)) selectedPost,
+                      })
+                        StyledDropdownOption(key, kPostTitles[key]!),
                     ],
-                    onChanged: (v) =>
-                        setDialogState(() => selectedPost = v ?? 'officer'),
+                    onChanged: (v) => setDialogState(
+                        () => selectedPost = v ?? kYardStaffPostKeys.last),
                   ),
                 ),
                 const Gap(12),
@@ -1433,7 +1448,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                   Row(children: [
                     Expanded(
                       child: _buildKpiCard(
-                        title: 'DC / SDDC (Admins)',
+                        title: 'SDDC / DDC (Admins)',
                         value: '$totalAdmins',
                         subtitle: 'Yard Administrator Accounts',
                         icon: Icons.admin_panel_settings_rounded,
@@ -1927,7 +1942,7 @@ class _IctSideRail extends StatefulWidget {
       _items[index.clamp(0, _items.length - 1)];
 
   static const _items = [
-    _IctRailItem('Staff Accounts', 'Officers & DC / SDDC',
+    _IctRailItem('Staff Accounts', 'Yard administration & staff',
         Icons.groups_2_rounded),
     _IctRailItem('Yards & Directorates', 'Offices and their yards',
         Icons.account_tree_rounded),
@@ -2316,7 +2331,7 @@ class _LoadingField extends StatelessWidget {
 /// The dialogs previously used bare `DropdownButtonFormField`s, which opened
 /// the plain grey Material menu — the last place in ICT still doing that — and
 /// the Account Role one had no `isExpanded`, so its longest item
-/// ("DC / SDDC (Yard Admin)") overflowed the row by 49px.
+/// ("SDDC / DDC (Yard Admin)") overflowed the row by 49px.
 class _IctDialogDropdown extends StatelessWidget {
   const _IctDialogDropdown({
     required this.label,

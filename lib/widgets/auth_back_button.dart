@@ -24,13 +24,29 @@ import 'package:go_router/go_router.dart';
 /// blur) rather than from the theme's text colours, which would vanish there in
 /// light mode.
 class AuthBackButton extends StatefulWidget {
-  /// Where the arrow goes. Defaults to the portal chooser at `/`.
+  /// What the arrow does INSTEAD of going back a page.
+  ///
+  /// ⚠️ Only pass this when the screen has something to undo on the way out
+  /// — ending a half-finished sign-in, say. For plain navigation leave it
+  /// null: the arrow then returns to whatever page the user actually came
+  /// from, rather than to a fixed destination that may be nowhere near it.
   final VoidCallback? onPressed;
+
+  /// Where to go when there is no page to go back to.
+  ///
+  /// A deep link, a fresh launch, or a `go()` that replaced the stack all
+  /// leave nothing to pop, and the arrow must still do something sensible.
+  final String fallbackRoute;
 
   /// Tooltip / semantic label for the control.
   final String tooltip;
 
-  const AuthBackButton({super.key, this.onPressed, this.tooltip = 'Back'});
+  const AuthBackButton({
+    super.key,
+    this.onPressed,
+    this.tooltip = 'Back',
+    this.fallbackRoute = '/',
+  });
 
   @override
   State<AuthBackButton> createState() => _AuthBackButtonState();
@@ -71,7 +87,23 @@ class _AuthBackButtonState extends State<AuthBackButton> {
                   shape: const CircleBorder(),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
-                    onTap: widget.onPressed ?? () => context.go('/'),
+                    // ⚠️ Go BACK, not to a fixed page.
+                    //
+                    // Every one of these used to jump to the portal chooser
+                    // (or another hard-coded route), so an officer who had
+                    // reached a sign-in from somewhere else was thrown out
+                    // to the front door instead of to the page they had
+                    // just left. `canPop` is what tells the two cases apart:
+                    // with history, pop; without it — a fresh launch, or a
+                    // `go()` that replaced the stack — fall back.
+                    onTap: widget.onPressed ??
+                        () {
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go(widget.fallbackRoute);
+                          }
+                        },
                     child: Icon(
                       Icons.arrow_back_rounded,
                       size: 20,

@@ -3752,7 +3752,7 @@ class IctService {
     required String fullName,
     String? mobileNumber,
     String? badgeNumber,
-    required String role, // 'admin' (DC / SDDC) or 'officer'
+    required String role, // 'admin' (SDDC / DDC) or 'officer'
     /// The POST held: a key of `kPostTitles` ('officer', 'dc', 'sddc'). DC and
     /// SDDC share the admin role, so the role alone cannot record which.
     String? jobRole,
@@ -9945,7 +9945,7 @@ class AppealService {
   }
 }
 
-/// Valuation Directorate (DC / SDDC). A yard's disposal request lands here
+/// Valuation Directorate (SDDC / DDC). A yard's disposal request lands here
 /// FIRST: the directorate reads every yard's pending requests (cross-yard),
 /// enters a cost per package item, then forwards the request to the Central
 /// Disposal Directorate. Only after forwarding does Central Disposal see it.

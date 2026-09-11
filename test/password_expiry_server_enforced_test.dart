@@ -91,8 +91,13 @@ void main() {
       test('${path.split('/').last} offers a way to change an expired password',
           () {
         final src = File(path).readAsStringSync();
+        // ⚠️ A STAGE on every portal now — the modal is gone. Three screens
+        // used a dialog, so the same moment in the same flow looked like a
+        // different product depending on which door the officer came
+        // through, and a modal reads as an interruption to something else
+        // when it IS the sign-in.
         final hasStage = src.contains('_passwordStage') ||
-            src.contains('MandatoryPasswordChangeDialog');
+            src.contains('PasswordExpiredStage');
         expect(hasStage, isTrue,
             reason: '$path can sign in, so it must be able to change');
         expect(src.contains('isPasswordExpired'), isTrue,
@@ -100,20 +105,37 @@ void main() {
       });
     }
 
-    test('the shared dialog cannot be dismissed away', () {
-      // "Later" is what the 90 days already were.
-      final d = File('lib/widgets/mandatory_password_change_dialog.dart')
-          .readAsStringSync();
-      expect(d, contains('canPop: false'));
-      expect(d, contains('barrierDismissible: false'));
+    test('the stage offers no way to carry on without changing', () {
+      // ⚠️ "Later" is what the 90 days already were. As a STAGE there is no
+      // barrier to dismiss and nothing behind it — the sign-in form it
+      // replaces has already been accepted — so the only exits are a new
+      // password or signing out.
+      final d =
+          File('lib/widgets/password_expired_stage.dart').readAsStringSync();
+      expect(d.contains('Skip'), isFalse,
+          reason: 'an expired password cannot be postponed');
+      expect(d, contains('Update Password & Sign In'));
     });
 
     test('backing out signs the officer out rather than stranding them', () {
-      final d = File('lib/widgets/mandatory_password_change_dialog.dart')
-          .readAsStringSync();
+      final d =
+          File('lib/widgets/password_expired_stage.dart').readAsStringSync();
       expect(d, contains('signOut()'),
           reason: 'an expired session can read nothing; leaving it signed '
               'in only strands them on an empty dashboard');
+    });
+
+    test('the stage replaces the credentials form, not covers it', () {
+      // A modal reads as an interruption to something else; this IS the
+      // sign-in, and the credentials behind it have already been accepted.
+      for (final path in const [
+        'lib/screens/login/login_screen.dart',
+        'lib/screens/admin/admin_login_screen.dart',
+      ]) {
+        final src = File(path).readAsStringSync();
+        expect(src, contains('] else ...['),
+            reason: '$path must swap the form out, not draw over it');
+      }
     });
   });
 

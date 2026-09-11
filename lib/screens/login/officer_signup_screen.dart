@@ -212,7 +212,7 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text('Officer Sign Up',
+                          Text('Yard Staff Sign Up',
                                   style: Theme.of(context)
                                       .textTheme
                                       .headlineMedium)

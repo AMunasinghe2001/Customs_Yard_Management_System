@@ -8,8 +8,8 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../widgets/password_strength_field.dart';
 import '../../core/supabase_client.dart';
+import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
-import '../../widgets/mandatory_password_change_dialog.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
 import '../../widgets/brand_panel.dart';
@@ -200,14 +200,17 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
     if (profile.isPasswordExpired) {
       ref.read(currentProfileProvider.notifier).state = profile;
       if (!mounted) return;
-      final changed = await MandatoryPasswordChangeDialog.show(context,
-          accent: AppTheme.ictCyan);
-      if (!changed) {
-        setState(() =>
-            _error = 'Your password has expired. Set a new one to sign in.');
-        return;
-      }
-      _passwordCtrl.text = '';
+      // ⚠️ This screen's OWN stage, not a modal. `_passwordStage` already
+      // drew the form; it was simply never switched on, so the dialog was
+      // standing in for a step that existed. Using it keeps ICT looking like
+      // the other portals.
+      setState(() {
+        _pendingProfile = profile;
+        _passwordStage = true;
+        _otpStage = false;
+        _error = null;
+      });
+      return;
     }
     ref.read(currentProfileProvider.notifier).state = profile;
     await _saveCredentials();
@@ -866,7 +869,35 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
             },
           ),
         ),
-        const AuthBackButton(tooltip: 'Back to portals'),
+        AuthBackButton(
+          tooltip: _otpStage || _passwordStage
+              ? 'Back to sign in'
+              : 'Back to portals',
+          // ⚠️ Step back a STAGE before leaving. The OTP and password steps
+          // are setState stages of this one route, so there was nothing to
+          // pop and the arrow fell through to the portal chooser.
+          onPressed: () async {
+            if (_passwordStage || _otpStage) {
+              await abandonSignIn(ref);
+              _countdownTimer?.cancel();
+              _lockTimer?.cancel();
+              if (!mounted) return;
+              setState(() {
+                _passwordStage = false;
+                _otpStage = false;
+                _otpCtrl.clear();
+                _newPassCtrl.clear();
+                _confirmPassCtrl.clear();
+                _pendingProfile = null;
+                _error = null;
+                _success = null;
+              });
+              return;
+            }
+            await abandonSignIn(ref);
+            if (context.mounted) context.go('/');
+          },
+        ),
       ]),
     );
   }

@@ -103,6 +103,38 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (!isLoggedIn && !isPublicPage) return '/';
+
+      // ⚠️ An expired password may not reach ANY page of the app.
+      //
+      // The change is collected inside a live session — `signInWithPassword`
+      // has already succeeded by then — so abandoning that step left a real
+      // session behind. Walking back to a portal page, or any other route,
+      // then satisfied "is logged in" and the redirect below delivered the
+      // dashboard with no password ever entered. A Disposal account landed
+      // in a YARD dashboard with no profile at all.
+      //
+      // Checked HERE rather than in verifyUserSession, which deliberately
+      // tolerates an expired password (that is what lets the change happen).
+      // The router is the layer that knows whether the destination is a
+      // sign-in page — the one place such a session is allowed to be.
+      if (isLoggedIn) {
+        final profile = ref.read(currentProfileProvider);
+        if (profile != null && profile.isPasswordExpired) {
+          if (isPublicPage) {
+            // On a public page there is nothing to protect, but the stale
+            // session must not survive to authorise the NEXT navigation.
+            try {
+              await ref.read(authServiceProvider).signOut();
+            } catch (_) {
+              // The profile is cleared either way; the server expires it.
+            }
+            ref.read(currentProfileProvider.notifier).state = null;
+            return null;
+          }
+          return '/';
+        }
+      }
+
       if (isLoggedIn &&
           (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
         final profile = ref.read(currentProfileProvider);

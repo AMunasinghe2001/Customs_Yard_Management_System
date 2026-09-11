@@ -20,6 +20,33 @@ class _PickResult<T> {
 }
 
 /// Opens the shared styled popup anchored under [anchorContext]'s render box.
+/// The height of the field's own box, with any helper/error line removed.
+///
+/// ⚠️ A dropdown built on [InputDecorator] reports a height that INCLUDES the
+/// helper text under the box, so anchoring a menu to it drops the menu below
+/// that line instead of against the border. There is no public API for the
+/// decorator's inner box, so this measures the nearest [InputDecorator]
+/// descendant's own render box and falls back to the full height when the
+/// field has no decorator at all (the chip variant).
+double _fieldBoxHeight(BuildContext anchorContext, double fullHeight) {
+  RenderBox? decoratorBox;
+  void visit(Element el) {
+    if (decoratorBox != null) return;
+    if (el.widget is InputDecorator) {
+      final ro = el.renderObject;
+      if (ro is RenderBox && ro.hasSize) decoratorBox = ro;
+      return;
+    }
+    el.visitChildren(visit);
+  }
+
+  if (anchorContext is Element) anchorContext.visitChildren(visit);
+  final h = decoratorBox?.size.height;
+  // A decorator with no helper text reports the same height as the wrapper,
+  // so this is a no-op there — it only bites where a helper line exists.
+  return (h != null && h > 0 && h <= fullHeight) ? h : fullHeight;
+}
+
 Future<_PickResult<T>?> _showStyledMenu<T>(
   BuildContext anchorContext, {
   required T? value,
@@ -36,7 +63,16 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
       Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
   if (renderBox == null || overlayBox == null) return null;
 
+  // ⚠️ Anchor to the FIELD BOX, not to the whole widget.
+  //
+  // On the form variant this render box is the InkWell wrapping an
+  // InputDecorator, and the decorator includes the helper line UNDER the box.
+  // Measuring it therefore put the menu below the helper text — visibly
+  // detached from the field, hanging outside its border — and made the width
+  // disagree with the border too. `_fieldBoxHeight` trims the helper line back
+  // off so the menu hangs off the box the user actually clicked.
   final offset = renderBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+  final anchorHeight = _fieldBoxHeight(anchorContext, renderBox.size.height);
   // Match the popup width to the anchor button so the option cells fill the
   // whole width — no dead white space to the right of the list — but cap it so
   // a full-width form field doesn't open a page-wide, unbalanced menu.
@@ -47,7 +83,7 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
           .clamp(0.0, kMaxMenuWidth);
   final position = RelativeRect.fromLTRB(
     offset.dx,
-    offset.dy + renderBox.size.height + 6,
+    offset.dy + anchorHeight + 4,
     overlayBox.size.width - offset.dx - renderBox.size.width,
     0,
   );
@@ -324,25 +360,46 @@ class StyledDropdownFormField<T> extends StatelessWidget {
           });
         }
         return Builder(builder: (btnContext) {
-          return InkWell(
+          Future<void> openMenu() async {
+            final picked = await _showStyledMenu<T>(
+              btnContext,
+              value: value,
+              allLabel: '',
+              options: options,
+              includeAll: false,
+              columns: columns,
+              perPage: perPage,
+              menuWidth: menuWidth,
+              accentColor: accentColor,
+            );
+            if (picked == null) return;
+            final v = picked.isAll ? null : picked.value;
+            field.didChange(v);
+            onChanged(v);
+          }
+
+          // ⚠️ The helper line is drawn OUTSIDE the decorator.
+          //
+          // The ripple must cover the whole field — icon, value, arrow and
+          // all the padding between them — and the only widget that knows
+          // that shape is the decorator itself. But the decorator also draws
+          // the helper line UNDER the box, so an InkWell around it washed
+          // grey over text outside the field's border.
+          //
+          // Two earlier attempts were both wrong: killing the ink lost the
+          // click animation, and moving the InkWell into the decorator's
+          // `child` shrank the ripple to the value text alone.
+          //
+          // So the helper text is taken off the decoration and rendered as a
+          // sibling below. The decorator is then exactly the box, the
+          // InkWell around it ripples across exactly the box, and the helper
+          // line sits outside the ink entirely.
+          final helper = (helperText == null || helperText!.trim().isEmpty)
+              ? null
+              : helperText!;
+          final field0 = InkWell(
             borderRadius: BorderRadius.circular(splashRadius),
-            onTap: () async {
-              final picked = await _showStyledMenu<T>(
-                btnContext,
-                value: value,
-                allLabel: '',
-                options: options,
-                includeAll: false,
-                columns: columns,
-                perPage: perPage,
-                menuWidth: menuWidth,
-                accentColor: accentColor,
-              );
-              if (picked == null) return;
-              final v = picked.isAll ? null : picked.value;
-              field.didChange(v);
-              onChanged(v);
-            },
+            onTap: openMenu,
             child: InputDecorator(
               isEmpty: value == null,
               decoration: InputDecoration(
@@ -350,12 +407,15 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 labelStyle: labelStyle ?? const TextStyle(fontSize: 12),
                 floatingLabelBehavior: floatingLabelBehavior,
                 isDense: isDense,
-                helperText: (helperText == null || helperText!.trim().isEmpty)
-                    ? null
-                    : helperText,
+                // Rendered below instead — see the note above.
+                helperText: null,
                 filled: fillColor != null,
                 fillColor: fillColor,
-                errorText: field.errorText,
+                // ⚠️ Not errorText — that would draw the message under the
+                // box, inside the ink again, AND a second time in the
+                // sibling below. `errorBorder` still fires off this flag, so
+                // the red outline is kept.
+                error: field.errorText == null ? null : const SizedBox.shrink(),
                 prefixIcon: prefixIcon,
                 prefixIconConstraints: prefixIconConstraints,
                 contentPadding: contentPadding ??
@@ -377,6 +437,29 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 maxLines: 1,
               ),
             ),
+          );
+
+          if (helper == null && field.errorText == null) return field0;
+          // Matches what InputDecorator would have drawn: the same 12px
+          // inset and the theme's helper/error styling.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              field0,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                child: Text(
+                  field.errorText ?? helper!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: field.errorText != null
+                        ? Theme.of(context).colorScheme.error
+                        : context.colors.textMuted,
+                  ),
+                ),
+              ),
+            ],
           );
         });
       },

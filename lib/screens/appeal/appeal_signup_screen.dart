@@ -321,28 +321,10 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
                         Text('Appeal Sign Up',
                             style: Theme.of(context).textTheme.headlineMedium),
                         const Gap(4),
-                        Text('Head-office account — one for AD and one for ADD',
+                        Text('Head-office account — one for DC and one for SDDC',
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 14)),
-                        const Gap(8),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 40),
-                          child: Row(children: [
-                            Text('Already have an account?',
-                                style: TextStyle(
-                                    color: context.colors.textMuted,
-                                    fontSize: 13)),
-                            TextButton(
-                              onPressed: () => context.go('/appeal/login'),
-                              child: Text('Sign In',
-                                  style: TextStyle(
-                                      color: accent,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13)),
-                            ),
-                          ]),
-                        ),
                         const Gap(20),
                         if (_success != null) ...[
                           _banner(context, _success!, accent,
@@ -358,6 +340,16 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
                           StyledDropdownFormField<String>(
                             value: _position,
                             label: 'Position *',
+                            // ⚠️ Matches the TextFormFields under it. The
+                            // widget defaults to `isDense` with 12px of
+                            // vertical padding, while a plain field on this
+                            // form takes Material's roomier default — so the
+                            // dropdown sat visibly shorter than every box
+                            // below it, and its hover splash ate into the
+                            // gap before the helper text.
+                            isDense: false,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 16),
                             helperText:
                                 'Only one DC and one SDDC account can exist',
                             menuWidth: 364,
@@ -465,6 +457,30 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
                               onPressed: _isLoading ? null : () => _sendOtp(),
                             ),
                           ),
+                          // ⚠️ UNDER the form, mirroring the sign-in screens'
+                          // "Create Account". The pair is one choice seen from
+                          // two sides, so it belongs in the same place on
+                          // both — it sat above the fields here, which read as
+                          // a warning before the officer had done anything.
+                          const Gap(20),
+                          Divider(
+                              color:
+                                  context.colors.borderColor.withOpacity(0.5)),
+                          Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('Already have an account?',
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 13)),
+                                TextButton(
+                                  onPressed: () => context.go('/appeal/login'),
+                                  child: Text('Sign In',
+                                      style: TextStyle(
+                                          color: accent,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ]),
                         ],
                         if (_otpSent) ...[
                           Row(children: [
@@ -567,9 +583,12 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
             ),
           ),
         ]),
-        AuthBackButton(
+        // No onPressed: the arrow returns to whatever page the officer
+        // came from, falling back to the sign-in only when there is no
+        // history to pop.
+        const AuthBackButton(
           tooltip: 'Back to sign in',
-          onPressed: () => context.go('/appeal/login'),
+          fallbackRoute: '/appeal/login',
         ),
       ]),
     );

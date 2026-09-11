@@ -8,10 +8,12 @@ import '../../core/theme.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/forgot_password_panel.dart';
 import '../../core/supabase_client.dart';
+import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
+import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/auth_back_button.dart';
-import '../../widgets/mandatory_password_change_dialog.dart';
+import '../../widgets/password_expired_stage.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -25,6 +27,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordCtrl = TextEditingController();
   bool _obscurePassword = true;
   bool _rememberMe = false;
+
+  /// The profile waiting behind an expired password, and the stage that
+  /// collects the new one.
+  ///
+  /// ⚠️ A STAGE in this panel, not a modal. The four directorate portals
+  /// already did it this way; a dialog made the same moment in the same flow
+  /// look like a different product, and read as an interruption to something
+  /// else when it IS the sign-in.
+  ProfileModel? _expiredProfile;
 
   @override
   void initState() {
@@ -91,14 +102,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (profile.isPasswordExpired) {
         ref.read(currentProfileProvider.notifier).state = profile;
         if (!mounted) return;
-        final changed = await MandatoryPasswordChangeDialog.show(context,
-            accent: context.colors.primaryGold);
-        if (!changed) {
-          ref.read(loginErrorProvider.notifier).state =
-              'Your password has expired. Set a new one to sign in.';
-          return;
-        }
-        _passwordCtrl.text = '';
+        setState(() => _expiredProfile = profile);
+        ref.read(loginErrorProvider.notifier).state = null;
+        return;
       }
       await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;
@@ -222,7 +228,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: BrandPanel(
               accent: context.colors.accentLightBlue,
               deepColor: const Color(0xFF050411),
-              badgeLabel: 'Officer Portal',
+              badgeLabel: 'SC / DSC / ASC Portal',
               badgeIcon: Icons.person_outline_rounded,
             ),
           ),
@@ -245,20 +251,56 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Text('Officer Sign In',
+                                Text('SC / DSC / ASC Sign In',
                                         style: Theme.of(context)
                                             .textTheme
                                             .headlineMedium)
                                     .animate()
                                     .fadeIn(duration: 400.ms),
                                 const Gap(8),
-                                Text('Enter your credentials to access the system',
+                                Text(
+                                        _expiredProfile != null
+                                            ? 'Your password has expired'
+                                            : 'Enter your credentials to access the system',
                                         style: TextStyle(
                                             color: context.colors.textSecondary,
                                             fontSize: 14))
                                     .animate()
                                     .fadeIn(delay: 100.ms),
                                 const Gap(40),
+                                // The expiry step REPLACES the credentials
+                                // form: they have already been accepted, and
+                                // leaving them on screen would invite the
+                                // officer to try them again.
+                                if (_expiredProfile != null) ...[
+                                  PasswordExpiredStage(
+                                    accent: context.colors.primaryGold,
+                                    onDone: () async {
+                                      _passwordCtrl.text = '';
+                                      await _saveCredentials();
+                                      if (!mounted) return;
+                                      final p = _expiredProfile!;
+                                      setState(() => _expiredProfile = null);
+                                      ref
+                                          .read(currentProfileProvider.notifier)
+                                          .state = p;
+                                      if (!mounted) return;
+                                      context.showSuccess(
+                                          'Logged in successfully as ${p.fullName}');
+                                      context.go('/dashboard');
+                                    },
+                                    onSignOut: () {
+                                      setState(() {
+                                        _expiredProfile = null;
+                                        _passwordCtrl.text = '';
+                                      });
+                                      ref
+                                          .read(loginErrorProvider.notifier)
+                                          .state =
+                                          'Your password has expired. Set a new one to sign in.';
+                                    },
+                                  ),
+                                ] else ...[
                                 if (error != null) ...[
                                   Container(
                                     padding: const EdgeInsets.all(14),
@@ -412,13 +454,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       const Gap(6),
                                       Flexible(
                                         child: Text(
-                                            'Officer accounts are provisioned by the ICT Directorate.',
+                                            'Yard staff accounts are provisioned by the ICT Directorate.',
                                             textAlign: TextAlign.center,
                                             style: TextStyle(
                                                 color: context.colors.textMuted,
                                                 fontSize: 13)),
                                       ),
                                     ])).animate().fadeIn(delay: 600.ms),
+                                ],
                               ],
                             )),
                   ),
@@ -442,8 +485,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
         AuthBackButton(
-          tooltip: 'Back to yard access',
-          onPressed: () => context.go('/yard-access'),
+          tooltip: _expiredProfile != null
+              ? 'Back to sign in'
+              : 'Back to yard access',
+          // ⚠️ Step back a STAGE before leaving. The expiry step is a
+          // setState stage of this one route, not a route of its own, so
+          // there was nothing for the arrow to pop and it fell through to
+          // the chooser.
+          //
+          // Leaving also ENDS the session: that stage runs inside a live one,
+          // and walking away used to land on the dashboard with no password
+          // entered. See core/abandon_sign_in.dart.
+          onPressed: () async {
+            await abandonSignIn(ref);
+            if (!mounted) return;
+            if (_expiredProfile != null) {
+              setState(() {
+                _expiredProfile = null;
+                _passwordCtrl.text = '';
+              });
+              return;
+            }
+            if (context.mounted) context.go('/yard-access');
+          },
         ),
       ]),
     );

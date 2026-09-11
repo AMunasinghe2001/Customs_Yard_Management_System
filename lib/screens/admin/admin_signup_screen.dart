@@ -289,7 +289,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
             child: BrandPanel(
               accent: context.colors.primaryGold,
               deepColor: const Color(0xFF050411),
-              badgeLabel: 'DC / SDDC • Create Account',
+              badgeLabel: 'SDDC / DDC • Create Account',
               badgeIcon: Icons.person_add_rounded,
             ),
           ),
@@ -306,14 +306,14 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text('DC / SDDC Sign Up',
+                          Text('SDDC / DDC Sign Up',
                                   style: Theme.of(context)
                                       .textTheme
                                       .headlineMedium)
                               .animate()
                               .fadeIn(duration: 400.ms),
                           const Gap(4),
-                          Text('Create a DC / SDDC account',
+                          Text('Create a SDDC / DDC account',
                                   style: TextStyle(
                                       color: context.colors.textSecondary,
                                       fontSize: 14))
@@ -735,9 +735,12 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                 ),
               ))),
         ]),
-        AuthBackButton(
+        // No onPressed: the arrow returns to whatever page the officer
+        // came from, falling back to the sign-in only when there is no
+        // history to pop.
+        const AuthBackButton(
           tooltip: 'Back to sign in',
-          onPressed: () => context.go('/admin/login'),
+          fallbackRoute: '/admin/login',
         ),
       ]),
     );

@@ -885,13 +885,14 @@ class ProfileModel {
     if (j != null && j.isNotEmpty) {
       return kPostTitles[j] ?? j;
     }
-    return isAdmin ? 'DC / SDDC' : 'Officer';
+    return isAdmin ? 'SDDC / DDC' : 'Officer';
   }
 
   /// [postTitle] shortened for a chip or badge.
   ///
-  /// The full title carries the expansion ("DC (Deputy Commissioner)"), which
-  /// overflows a table row. Falls back to the same "DC / SDDC" as [postTitle]
+  /// The full title carries the expansion ("DDC (Deputy Director of Customs)"),
+  /// which overflows a table row. Falls back to the same "SDDC / DDC" as
+  /// [postTitle]
   /// for an account with no post recorded -- the two cannot be told apart
   /// without one.
   String get postShortTitle {
@@ -899,7 +900,7 @@ class ProfileModel {
     if (j != null && j.isNotEmpty) {
       return kPostShortTitles[j] ?? kPostTitles[j] ?? j;
     }
-    return isAdmin ? 'DC / SDDC' : 'Officer';
+    return isAdmin ? 'SDDC / DDC' : 'Officer';
   }
 
   /// Yard officer (front-line yard staff, not a directorate account).
@@ -1285,29 +1286,77 @@ const Map<String, String> kDirectorateRoleNames = {
 /// The posts ICT can assign to a yard account, keyed by what is stored in
 /// `profiles.job_role`.
 ///
-/// DC and SDDC are two separate posts. They share the 'admin' permission role,
-/// so the role alone cannot tell them apart -- which is why the post is its
-/// own field rather than being derived from the role.
+/// ⚠️ Two GROUPS, not one list:
+///
+///   Yard Administration — SDDC and DDC (Senior Deputy / Deputy Director of
+///                         Customs). These run the yard. There is no plain
+///                         DC in a yard; that post belongs to the
+///                         directorates.
+///   Yard Staff          — SC, DSC and ASC (Superintendent of Customs and
+///                         its deputy and assistant grades).
+///
+/// The administration posts share the 'admin' permission role and the staff
+/// posts share 'officer', so the role alone cannot tell any of them apart --
+/// which is why the post is its own field rather than derived from the role.
+///
+/// ⚠️ The KEYS are what sits in `profiles.job_role` on live accounts and must
+/// not be renamed. 'officer' is kept as the legacy key for a plain yard
+/// officer; accounts created before the Superintendent grades existed carry
+/// it, and it still reads as Yard Staff.
 const Map<String, String> kPostTitles = {
+  // Yard Administration
+  //
+  // ⚠️ The KEY is 'dc' but the post is DDC — Deputy Director of Customs.
+  // A yard holds no plain DC; that title belongs to the directorates. The
+  // key predates the rename and is what live accounts store in
+  // `profiles.job_role`, so it stays while the label reads correctly.
+  'sddc': 'SDDC (Senior Deputy Director of Customs)',
+  'dc': 'DDC (Deputy Director of Customs)',
+  // Yard Staff
+  'sc': 'SC (Superintendent of Customs)',
+  'dsc': 'DSC (Deputy Superintendent of Customs)',
+  'asc': 'ASC (Assistant Superintendent of Customs)',
+  // ⚠️ Legacy. Live accounts still store this; it is not offered for new
+  // ones (see [kAssignablePostKeys]) but must keep rendering.
   'officer': 'Officer',
-  'dc': 'DC (Deputy Commissioner)',
-  'sddc': 'SDDC (Senior Deputy Commissioner)',
 };
 
 /// The SHORT form of each post, for a table chip or a badge where the full
 /// title would overflow the row.
 const Map<String, String> kPostShortTitles = {
-  'officer': 'Officer',
-  'dc': 'DC',
   'sddc': 'SDDC',
+  // ⚠️ DDC, not DC — see kPostTitles. The key is legacy; the post is not.
+  'dc': 'DDC',
+  'sc': 'SC',
+  'dsc': 'DSC',
+  'asc': 'ASC',
+  'officer': 'Officer',
 };
 
 /// The permission role each post carries.
 const Map<String, String> kPostRoles = {
-  'officer': 'officer',
-  'dc': 'admin',
   'sddc': 'admin',
+  'dc': 'admin',
+  'sc': 'officer',
+  'dsc': 'officer',
+  'asc': 'officer',
+  'officer': 'officer',
 };
+
+/// The two posts that RUN a yard, in seniority order.
+const List<String> kYardAdminPostKeys = ['sddc', 'dc'];
+
+/// The posts that STAFF a yard, in seniority order.
+///
+/// ⚠️ 'officer' is absent on purpose: it is the legacy key, still rendered
+/// for the accounts that carry it but no longer offered for a new one.
+const List<String> kYardStaffPostKeys = ['sc', 'dsc', 'asc'];
+
+/// Everything ICT may assign to a NEW yard account, administration first.
+const List<String> kAssignablePostKeys = [
+  ...kYardAdminPostKeys,
+  ...kYardStaffPostKeys,
+];
 
 const Map<String, String> kRecordableExpenseKinds = {
   'destruction_expense': 'Destruction Expenses',
@@ -2555,8 +2604,8 @@ class TenderDisposalModel {
 // Two institutional head-office accounts only (not personal). Whoever holds
 // the post logs in with the shared branch email + password.
 const Map<String, String> kDisposalPositions = {
-  'DC': 'DC (Director)',
-  'SDDC': 'SDDC (Senior Deputy Director)',
+  'DC': 'DC (Director of Customs)',
+  'SDDC': 'SDDC (Senior Deputy Director of Customs)',
 };
 
 String disposalPositionLabel(String? code) =>
@@ -2567,8 +2616,8 @@ String disposalPositionLabel(String? code) =>
 // (profiles.username is globally unique), so the Appeal Directorate uses the
 // `adc` / `asddc` usernames while displaying the same DC / SDDC titles.
 const Map<String, String> kAppealPositions = {
-  'ADC': 'DC (Director)',
-  'ASDDC': 'SDDC (Senior Deputy Director)',
+  'ADC': 'DC (Director of Customs)',
+  'ASDDC': 'SDDC (Senior Deputy Director of Customs)',
 };
 
 String appealPositionLabel(String? code) =>
@@ -2579,31 +2628,41 @@ String appealPositionLabel(String? code) =>
 // so the Valuation Directorate uses the `vdc` / `vsddc` usernames while
 // displaying the same DC / SDDC titles.
 const Map<String, String> kValuationPositions = {
-  'VDC': 'DC (Director)',
-  'VSDDC': 'SDDC (Senior Deputy Director)',
+  'VDC': 'DC (Director of Customs)',
+  'VSDDC': 'SDDC (Senior Deputy Director of Customs)',
 };
 
 String valuationPositionLabel(String? code) =>
     kValuationPositions[code] ?? (code ?? 'Valuation Directorate');
 
-// ── Executive Office positions (DG / ADG — Customs' two highest posts) ───────
+// ── Top Management Directorate positions ────────────────────────────────────
 // Keys are the *usernames* (globally unique in profiles.username).
+//
+// ⚠️ 'DG' and 'ADG' are LIVE usernames (exec.dg, exec.adg) -- the keys stay
+// as they are even though the titles they render have changed to DGC and
+// ADGC. Renaming a key here would orphan the account that carries it.
 const Map<String, String> kExecutivePositions = {
-  'DG': 'DG (Director General)',
-  'ADG': 'ADG (Additional Director General)',
+  'DG': 'DGC (Director General of Customs)',
+  'ADG': 'ADGC (Additional Director General of Customs)',
+  'SDC': 'SDC (Senior Director of Customs)',
   // Sits on the Top Management Directorate to observe. VIEW-ONLY: no committee appointment,
   // no committee valuation, no final outcome — see [isExecutiveViewOnly].
-  'DC': 'DC (Deputy Commissioner)',
+  'DC': 'DC (Director of Customs)',
 };
 
 String executivePositionLabel(String? code) =>
     kExecutivePositions[code] ?? (code ?? "Director General's Office");
 
 // ── ICT Directorate positions ──────────────────────────────────────────────
+// ⚠️ ICT is the ONE directorate with a third post. Every other directorate
+// holds a DC and an SDDC; ICT also has the System Administrator, because
+// somebody has to provision the accounts the other posts sign in with.
 const Map<String, String> kIctPositions = {
-  'IDC': 'DC (Director ICT)',
-  'ISDDC': 'SDDC (Senior Deputy Director ICT)',
-  'ICT_ADMIN': 'Chief ICT Officer / System Admin',
+  'IDC': 'DC (Director of Customs)',
+  'ISDDC': 'SDDC (Senior Deputy Director of Customs)',
+  'ICT_ADMIN': 'System Administrator',
+  // ⚠️ Legacy key. ict.admin carries it on the live database; kept so that
+  // account keeps rendering, not offered for a new one.
   'ICT_OFFICER': 'ICT Officer',
 };
 
