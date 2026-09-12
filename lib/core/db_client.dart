@@ -1,12 +1,14 @@
 /// The database handle.
 ///
-/// This used to construct a Supabase client against a cloud project. The app
-/// now talks to the office PostgreSQL server directly, so the name `supabase`
-/// resolves to a local client with the same API instead — see lib/core/db/.
+/// ⚠️ There is no Supabase here, and there is no cloud. The app talks to a
+/// standard PostgreSQL server through the `postgres` Dart package — see
+/// lib/core/db/ for the whole layer.
 ///
-/// The name is kept deliberately. It appears at 198 call sites across 24
-/// files; renaming it would be churn with no behavioural change, and would
-/// bury the real diff of this migration in noise.
+/// The identifier `supabase` survives as the handle's NAME at ~198 call sites
+/// across 24 files. It is a variable name, not a dependency: renaming it
+/// would touch every data-layer call in the app for no behavioural change,
+/// and a mechanical rename of that size is a poor trade against the chance of
+/// one silent mistake in it. The package itself is gone from pubspec.yaml.
 export 'db/pg_client.dart' show supabase, databaseDescription, logSql;
 export 'db/pg_auth.dart'
     show

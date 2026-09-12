@@ -8,7 +8,7 @@ import '../core/theme.dart';
 import 'password_strength_field.dart';
 import 'dialog_close_button.dart';
 import '../core/providers.dart';
-import '../core/supabase_client.dart';
+import '../core/db_client.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'error_view.dart';

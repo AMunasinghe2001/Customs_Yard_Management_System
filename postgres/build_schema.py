@@ -11,7 +11,7 @@ import re
 
 import pathlib
 ROOT = str(pathlib.Path(__file__).resolve().parent.parent)
-MIG = os.path.join(ROOT, 'supabase', 'migrations')
+MIG = os.path.join(ROOT, 'db', 'migrations')
 OUT = os.path.join(ROOT, 'postgres', '02_schema.sql')
 
 HEADER = """-- ============================================================================
@@ -26,7 +26,7 @@ HEADER = """-- =================================================================
 --  schema would mean re-deriving 88 ALTERs, and one slip there is a column
 --  silently missing in production.
 --
---  Run AFTER 01_supabase_compat.sql — the migrations reference auth.uid(),
+--  Run AFTER 01_auth_and_session.sql — the migrations reference auth.uid(),
 --  auth.users and the supabase_realtime publication, all of which that file
 --  provides.
 --
@@ -122,12 +122,12 @@ def make_rerunnable(sql: str) -> str:
 
 parts = [None]  # placeholder for the header
 
-base = os.path.join(ROOT, 'supabase', 'schema.sql')
+base = os.path.join(ROOT, 'db', 'schema.sql')
 if os.path.exists(base):
     body = io.open(base, encoding='utf-8').read()
     parts.append(
         '-- ' + '=' * 74 + '\n'
-        '--  BASE SCHEMA (supabase/schema.sql)\n'
+        '--  BASE SCHEMA (db/schema.sql)\n'
         '-- ' + '=' * 74 + '\n\n' + make_rerunnable(body) + '\n')
 
 # Same-day migrations sort by FILENAME, which is not the order they were
@@ -155,7 +155,7 @@ def sort_key(name: str) -> str:
 
 names = sorted((f for f in os.listdir(MIG) if f.endswith('.sql')), key=sort_key)
 
-# The multi-yard migration lives OUTSIDE supabase/migrations (in migrations/)
+# The multi-yard migration lives OUTSIDE db/migrations (in migrations/)
 # and the README says to run it afterwards. That order works on a database that
 # already has data, but not on a fresh build: `20260620_seed_data.sql` inserts
 # rows carrying a `yard` value, and the column does not exist until multi-yard
@@ -321,7 +321,7 @@ if os.path.exists(UNSOLD_INCLUDES_PERISHABLES):
 
 # Redefines auth.uid() and auth.role(), so it must come after every policy
 # that uses them has been created -- it changes what they return, not their
-# shape, but replaying it earlier would be replaced by 01_supabase_compat.
+# shape, but replaying it earlier would be replaced by 01_auth_and_session.
 if os.path.exists(EXPIRED_PASSWORD_LOCKS_SESSION):
     emit('migrations/018_expired_password_locks_the_session.sql (folded in)',
          io.open(EXPIRED_PASSWORD_LOCKS_SESSION, encoding='utf-8').read())

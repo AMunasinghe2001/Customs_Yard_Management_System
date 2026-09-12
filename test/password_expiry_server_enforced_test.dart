@@ -65,7 +65,7 @@ void main() {
     });
 
     test('it survives a fresh database that lacks change_password', () {
-      // auth.change_password is not in 01_supabase_compat.sql or anywhere
+      // auth.change_password is not in 01_auth_and_session.sql or anywhere
       // in postgres/ — it was added to the running database by hand, so
       // 02_schema.sql must not fail on its absence.
       expect(migration, contains('skipping its guard'));

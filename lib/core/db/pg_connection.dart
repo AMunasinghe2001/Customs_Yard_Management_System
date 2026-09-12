@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show SocketException;
+import 'dart:io' show File, Platform, SecurityContext, SocketException;
 
 import 'package:flutter/foundation.dart';
 import 'package:postgres/postgres.dart';
@@ -44,11 +44,89 @@ class PgConfig {
       int.fromEnvironment('PG_MAX_CONN_AGE', defaultValue: -1);
   static const int _queryTimeoutDefine =
       int.fromEnvironment('PG_QUERY_TIMEOUT', defaultValue: -1);
+  static const String _sslRootCertDefine =
+      String.fromEnvironment('PG_SSL_ROOT_CERT');
 
   /// The server PC on the office LAN. `localhost` suits running the app on the
   /// same machine as the database.
-  static String get host =>
-      AppEnv.read('PG_HOST', dartDefine: _hostDefine, fallback: 'localhost');
+  ///
+  /// Accepts a domain name, an IPv4 address, or a bracketed IPv6 literal. The
+  /// raw value is normalised by [_normaliseHost], because a branch office is
+  /// configured by someone pasting into Notepad rather than by a build script.
+  static String get host => _normaliseHost(
+      AppEnv.read('PG_HOST', dartDefine: _hostDefine, fallback: 'localhost'));
+
+  /// Trims the shapes people actually paste into a `.env`.
+  ///
+  /// ⚠️ Not cosmetic. `postgres://` or a trailing `:5432` reaches the resolver
+  /// verbatim and fails as "host lookup failed", which reads like the server
+  /// is down rather than like the line has an extra six characters on it —
+  /// and the person reading it is at a branch office with no one to ask.
+  ///
+  /// A bare IPv6 literal is BRACKETED rather than rejected: `::1` is a
+  /// perfectly reasonable thing to type, and the socket layer needs `[::1]`
+  /// to tell the address from a port separator.
+  ///
+  /// A value that is still empty after trimming falls back to `localhost`, so
+  /// `PG_HOST=` (set but blank) behaves like "not set" instead of failing to
+  /// resolve the empty string.
+  static String _normaliseHost(String raw) {
+    var h = raw.trim();
+    if (h.isEmpty) return 'localhost';
+
+    // A whole URL, or just a scheme someone left on.
+    final schemeAt = h.indexOf('://');
+    if (schemeAt >= 0) h = h.substring(schemeAt + 3);
+    // Anything after the authority: a database path, a query string.
+    for (final cut in ['/', '?']) {
+      final i = h.indexOf(cut);
+      if (i >= 0) h = h.substring(0, i);
+    }
+    // user:pass@host
+    final at = h.lastIndexOf('@');
+    if (at >= 0) h = h.substring(at + 1);
+    h = h.trim();
+    if (h.isEmpty) return 'localhost';
+
+    if (h.startsWith('[')) {
+      // Already a bracketed IPv6 literal; drop any :port after the bracket.
+      final close = h.indexOf(']');
+      if (close > 0) return h.substring(0, close + 1);
+      return h;
+    }
+
+    // ⚠️ Count the colons before stripping one. A single colon is host:port;
+    // several mean a bare IPv6 literal, where stripping at the first colon
+    // would leave a fragment that resolves to nothing.
+    final colons = ':'.allMatches(h).length;
+    if (colons == 1) {
+      h = h.substring(0, h.indexOf(':'));
+    } else if (colons > 1) {
+      return '[$h]';
+    }
+    return h.trim().isEmpty ? 'localhost' : h.trim();
+  }
+
+  /// Test seam: is THIS host a loopback address?
+  ///
+  /// The rule, asked of a given value rather than of whatever the machine's
+  /// `.env` currently names — a test of the latter breaks the moment the
+  /// file points at a real deployment.
+  @visibleForTesting
+  static bool debugIsLoopback(String h) {
+    final v = h.trim().toLowerCase();
+    return v == 'localhost' ||
+        v == '127.0.0.1' ||
+        v == '::1' ||
+        v == '[::1]' ||
+        v.startsWith('127.');
+  }
+
+  /// Test seam for [_normaliseHost]: the rule is worth pinning directly
+  /// rather than only through whatever `.env` the test machine happens to
+  /// have.
+  @visibleForTesting
+  static String debugNormaliseHost(String raw) => _normaliseHost(raw);
 
   static int get port => AppEnv.readInt('PG_PORT',
       dartDefine: _portDefine, fallback: 5432, dartDefineSentinel: -1);
@@ -96,6 +174,89 @@ class PgConfig {
   /// default only because it would break existing self-signed LAN installs.
   static bool get verifySsl => AppEnv.readBool('PG_SSL_VERIFY',
       dartDefine: _sslVerifyDefine, fallback: false);
+
+  /// Path to the server's CA certificate (`ca.crt`), for verified TLS.
+  ///
+  /// ⚠️ Needed the moment the server's certificate is SELF-SIGNED, which is
+  /// the normal case for an office PostgreSQL behind a static IP: nobody
+  /// buys a public certificate for `203.0.113.10`. `SslMode.verifyFull` then
+  /// checks the chain against the machine's trust store, which has never
+  /// heard of that certificate, and every connection fails — so the usual
+  /// "fix" is to drop back to `require`, which encrypts but accepts ANY
+  /// certificate and leaves the link open to a man in the middle.
+  ///
+  /// Naming the CA here keeps verification ON while trusting exactly one
+  /// issuer: your own. A relative path is resolved beside the executable, so
+  /// `PG_SSL_ROOT_CERT=ca.crt` works on an installed copy.
+  ///
+  /// Empty means "use the operating system's trust store", which is correct
+  /// when the certificate comes from a real CA (Let's Encrypt on a domain).
+  static String get sslRootCertPath => AppEnv.read('PG_SSL_ROOT_CERT',
+      dartDefine: _sslRootCertDefine, fallback: '');
+
+  /// [sslRootCertPath] resolved to something openable: absolute as given,
+  /// relative taken from the executable's own folder rather than from
+  /// whatever directory the app happens to be launched from.
+  static String? get resolvedSslRootCertPath {
+    final raw = sslRootCertPath.trim();
+    if (raw.isEmpty) return null;
+    final f = File(raw);
+    if (f.isAbsolute) return f.path;
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      final beside = File('$exeDir${Platform.pathSeparator}$raw');
+      if (beside.existsSync()) return beside.path;
+    } catch (_) {
+      // Fall through to the path as given.
+    }
+    return f.path;
+  }
+
+  /// Why the configured CA file cannot be used, or null when it is fine.
+  static String? get sslRootCertProblem {
+    final path = resolvedSslRootCertPath;
+    if (path == null) return null;
+    if (!File(path).existsSync()) {
+      return 'PG_SSL_ROOT_CERT points at "$path", which does not exist. '
+          'Copy ca.crt beside the executable.';
+    }
+    return null;
+  }
+
+  /// The trust anchor for a verified connection, or null to use the OS store.
+  ///
+  /// ⚠️ Built once and cached. `setTrustedCertificates` reads the file from
+  /// disk, and the pool opens a fresh connection whenever it grows or retires
+  /// one — re-reading on every open would put a file read on the hot path for
+  /// no benefit, since the certificate cannot change while the app runs.
+  static SecurityContext? _cachedContext;
+  static bool _contextBuilt = false;
+
+  static SecurityContext? get securityContext {
+    if (_contextBuilt) return _cachedContext;
+    _contextBuilt = true;
+    final path = resolvedSslRootCertPath;
+    if (path == null) return _cachedContext = null;
+    try {
+      final ctx = SecurityContext(withTrustedRoots: true)
+        ..setTrustedCertificates(path);
+      return _cachedContext = ctx;
+    } catch (e) {
+      // A bad certificate must not be silent: without this the app would fall
+      // back to the OS trust store, verification would fail against a
+      // self-signed server, and the error would name TLS rather than the file
+      // that is actually wrong.
+      debugPrint('SECURITY: could not load PG_SSL_ROOT_CERT "$path": $e');
+      return _cachedContext = null;
+    }
+  }
+
+  /// Test seam: forget the cached context so a changed path is re-read.
+  @visibleForTesting
+  static void resetSecurityContextCache() {
+    _cachedContext = null;
+    _contextBuilt = false;
+  }
 
   static Endpoint get endpoint => Endpoint(
         host: host,
@@ -152,6 +313,12 @@ class PgConfig {
           'server certificate is not checked, so a machine in the middle can '
           'still read it. Set PG_SSL_VERIFY=true outside a trusted LAN.';
     }
+    // ⚠️ A CA path that does not resolve is worse than none: verifyFull then
+    // falls back to the OS trust store, which has never heard of a
+    // self-signed office certificate, so every connection fails with a TLS
+    // error that names the handshake rather than the missing file.
+    final certProblem = sslRootCertProblem;
+    if (certProblem != null) return certProblem;
     return null;
   }
 
@@ -234,11 +401,13 @@ class PgConfig {
         connectTimeout: Duration(seconds: connectTimeoutSeconds),
         queryTimeout: Duration(seconds: queryTimeoutSeconds),
         sslMode: sslMode,
+        securityContext: securityContext,
         onOpen: onOpen,
       );
 
   static ConnectionSettings get settings => ConnectionSettings(
         sslMode: sslMode,
+        securityContext: securityContext,
         // The app is long-running and mostly idle between actions; without a
         // timeout a dropped LAN link would hang the first query after it.
         //
@@ -304,7 +473,7 @@ class PgDatabase {
   /// This is what makes RLS work without a rewrite. Supabase gave every policy
   /// `auth.uid()`; here `auth.uid()` is a SQL function that reads the session
   /// variable `app.current_user_id`, so the 73 existing policies keep working
-  /// exactly as written — see supabase_compat in the schema.
+  /// exactly as written — see postgres/01_auth_and_session.sql.
   ///
   /// Null while signed out, which makes `auth.uid()` null and every
   /// user-scoped policy deny. That is the correct default: a bug that forgets

@@ -16,11 +16,18 @@ void main() {
       // The default install: app and database on the same PC. Nothing crosses
       // a wire, so demanding TLS here would be noise that trains people to
       // ignore the warning that matters.
-      expect(PgConfig.isLoopbackHost, isTrue,
-          reason: 'test defaults expect PG_HOST=localhost');
-      expect(PgConfig.useSsl, isFalse);
-      expect(PgConfig.transportWarning, isNull);
-      expect(PgConfig.enforceTransportPolicy, returnsNormally);
+      //
+      // ⚠️ Asserts the RULE, not the machine's current `.env`. This used to
+      // require `PgConfig.isLoopbackHost` to be true, which made it a test of
+      // whichever server the developer happened to be pointed at — it broke
+      // the moment the .env named a real deployment, reporting a config
+      // change as a security regression.
+      expect(PgConfig.debugNormaliseHost('localhost'), 'localhost');
+      for (final h in ['localhost', '127.0.0.1', '::1']) {
+        expect(PgConfig.debugIsLoopback(h), isTrue, reason: h);
+      }
+      expect(PgConfig.debugIsLoopback('10.10.71.15'), isFalse,
+          reason: 'a LAN address is a network hop, however short');
     });
 
     test('loopback is recognised by every spelling', () {
@@ -44,10 +51,15 @@ void main() {
     });
 
     test('describe names the TLS state', () {
-      // The connection-failure screen shows this string; "no TLS" against a
-      // remote host is the single most useful thing on it.
-      expect(PgConfig.describe, contains('no TLS'));
+      // ⚠️ Reads the live config, so it asserts the SHAPE of the string
+      // rather than one deployment's values.
       expect(PgConfig.describe, contains(PgConfig.host));
+      // The connection-failure screen shows this string, and its TLS state is
+      // the single most useful thing on it — whichever state that is.
+      expect(
+          PgConfig.describe,
+          anyOf(contains('no TLS'), contains('TLS, unverified'),
+              contains('TLS, verified')));
     });
   });
 

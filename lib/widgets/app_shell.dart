@@ -5,7 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 import '../core/theme.dart';
-import '../core/supabase_client.dart';
+import '../core/db_client.dart';
 import '../core/providers.dart';
 import '../models/models.dart';
 import '../services/services.dart';

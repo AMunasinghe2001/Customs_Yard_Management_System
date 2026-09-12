@@ -23,7 +23,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/warehouse_selection_dialog.dart';
 import '../../widgets/print_barcode_dialog.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../core/app_log.dart';
 import '../../widgets/app_dialog.dart';
 

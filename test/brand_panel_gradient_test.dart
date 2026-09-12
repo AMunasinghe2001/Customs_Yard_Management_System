@@ -151,9 +151,16 @@ void main() {
       // what removes the edge, so the generated stops are the point.
       expect(source, contains('for (var i = 0; i < 6; i++) (i / 5)'));
       // Six colours to go with them.
-      final colours = source.substring(source.indexOf('colors: ['));
-      expect(RegExp(r'Color\.lerp|widget\.deepColor|_corner')
-              .allMatches(colours.substring(0, 700))
+      //
+      // ⚠️ Measured to the CLOSING bracket, not over a fixed character
+      // window. The window was 700 chars and the explanatory comments inside
+      // the list have since grown past it, so the check started reporting
+      // three stops for a list that still has six.
+      final from = source.indexOf('colors: [');
+      final to = source.indexOf('],', from);
+      final colours = source.substring(from, to);
+      expect(RegExp(r'Color\.lerp|widget\.deepColor|behind,$')
+              .allMatches(colours)
               .length,
           greaterThanOrEqualTo(5));
     });

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
-import 'supabase_client.dart';
+import 'db_client.dart';
 
 /// Ends a sign-in that was started but never finished.
 ///

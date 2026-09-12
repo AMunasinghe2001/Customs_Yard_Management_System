@@ -63,8 +63,8 @@ flutter pub get
 ```
 
 3. Create a Supabase project.
-4. Run the SQL in [supabase/schema.sql](supabase/schema.sql) inside the Supabase SQL Editor.
-5. Update Supabase credentials in [lib/core/supabase_client.dart](lib/core/supabase_client.dart).
+4. Run the SQL in [db/schema.sql](db/schema.sql) inside the Supabase SQL Editor.
+5. Update Supabase credentials in [lib/core/db_client.dart](lib/core/db_client.dart).
 6. Run the application:
 
 ```bash
@@ -76,8 +76,8 @@ flutter run -d windows
 The app expects:
 
 - Supabase Auth enabled
-- the database schema in [supabase/schema.sql](supabase/schema.sql)
-- publishable project URL and anon key configured in [lib/core/supabase_client.dart](lib/core/supabase_client.dart)
+- the database schema in [db/schema.sql](db/schema.sql)
+- publishable project URL and anon key configured in [lib/core/db_client.dart](lib/core/db_client.dart)
 
 ## Build
 

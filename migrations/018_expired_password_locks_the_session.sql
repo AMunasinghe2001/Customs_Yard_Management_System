@@ -162,7 +162,7 @@ begin
    where proname = 'change_password' and pronamespace = 'auth'::regnamespace;
 
   -- ⚠️ Guarded, not asserted. auth.change_password is not defined in
-  -- 01_supabase_compat.sql or anywhere else in postgres/ -- it was added to
+  -- 01_auth_and_session.sql or anywhere else in postgres/ -- it was added to
   -- the running database by hand, like the views postgres/23 and /32 build.
   -- So on the fresh database 02_schema.sql stands up it does not exist yet,
   -- and failing here would break the one file that has to work. The lock

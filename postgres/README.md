@@ -7,10 +7,10 @@ PostgreSQL server on the office PC. These files build that database.
 
 | # | File | What it does |
 |---|------|--------------|
-| 1 | `01_supabase_compat.sql` | Recreates the `auth` schema Supabase provided — `auth.uid()`, `auth.role()`, `auth.users` — plus the `anon` / `authenticated` / `service_role` roles and the `supabase_realtime` publication. |
+| 1 | `01_auth_and_session.sql` | Creates the project's own `auth` schema — `auth.uid()`, `auth.role()`, `auth.users` — plus the `anon` / `authenticated` / `service_role` grant-target roles and the change-notification publication. **Standard PostgreSQL only**: the sole extensions are `uuid-ossp` and `pgcrypto`, both shipped with Postgres. |
 | 2 | `02_schema.sql` | Every table, function, policy and trigger: the base schema followed by all source migrations in date order. |
 | 3 | `03_realtime.sql` | NOTIFY triggers on the 18 tables the app watches, replacing Supabase's realtime channels. |
-| 4 | `04_auth.sql` | `sign_in` / `sign_up` / `change_password` over `auth.users`, using bcrypt. |
+| 4 | `04_auth.sql` | `sign_in` / `sign_up` / `change_password` over `auth.users`, using bcrypt. ⚠️ Re-creates `auth.change_password` UNWRAPPED, which undoes the caller-owns-the-account guard from `migrations/018`. Re-apply 018 after this file, or an expired session can change somebody else's password. |
 | 5 | `66_yard_app_role.sql` | Creates the non-superuser account the desktop clients use, so PostgreSQL RLS actually enforces each yard boundary. |
 
 Run them in order. Each depends on the one before: `02_schema.sql` references
@@ -77,7 +77,7 @@ in `postgresql.conf` and a LAN rule in `pg_hba.conf`.
 ## Regenerating the schema
 
 `02_schema.sql` is generated — do not edit it by hand. After adding a migration
-under `supabase/migrations/`:
+under `migrations/`:
 
 ```
 python postgres/build_schema.py

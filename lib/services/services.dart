@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../core/app_log.dart';
+import '../core/db/connection_health.dart';
 import '../core/parse_isolate.dart';
-import '../core/supabase_client.dart';
+import '../core/db_client.dart';
 import '../core/app_session.dart';
 import '../core/session_reset.dart';
 import '../core/security_policy.dart';
@@ -110,7 +111,13 @@ class AuthService {
       {int retries = 2}) async {
     for (int attempt = 0;; attempt++) {
       try {
-        return await action();
+        final result = await action();
+        // ⚠️ Reported HERE, not at the call sites. This is the one place that
+        // knows a query actually reached the server, and 228 callers go
+        // through it — the banner cannot be kept honest by asking each of
+        // them to remember.
+        ConnectionHealth.reportSuccess();
+        return result;
       } on AuthApiException {
         rethrow; // genuine auth error → don't retry
       } catch (e) {
@@ -122,7 +129,14 @@ class AuthService {
             s.contains('failed host lookup') ||
             s.contains('failedtoopensocket') ||
             s.contains('timed out');
-        if (!transient || attempt >= retries) rethrow;
+        if (!transient || attempt >= retries) {
+          // ⚠️ Only a TRANSPORT failure raises the banner. A permission
+          // denial or a constraint violation is the database answering,
+          // which means the link is fine — blaming the network there would
+          // send an officer to check their router over a bug in the app.
+          if (transient) ConnectionHealth.reportOffline(ConnectionHealth.describe(e));
+          rethrow;
+        }
         await Future.delayed(Duration(milliseconds: 700 * (attempt + 1)));
       }
     }
@@ -3206,7 +3220,7 @@ class AdminService {
         s.contains('profiles_role_check')) {
       return 'This database does not accept the "$role" account type yet. '
           'The migration that adds it has not been run on this server — ask '
-          'ICT to apply supabase/migrations (20260839_ict_directorates_and_yards.sql).';
+          'ICT to apply db/migrations (20260839_ict_directorates_and_yards.sql).';
     }
     // 23505 = unique_violation: username or e-mail already taken.
     if (s.contains('23505') || s.contains('duplicate') || s.contains('unique')) {
@@ -3215,7 +3229,7 @@ class AdminService {
     // 42703 = undefined_column: the app is newer than the database.
     if (s.contains('42703') || s.contains('does not exist')) {
       return 'This database is missing a column this version of the app needs. '
-          'Ask ICT to run the pending migrations in supabase/migrations.';
+          'Ask ICT to run the pending migrations in db/migrations.';
     }
     if (s.contains('permission denied') ||
         s.contains('row-level security') ||

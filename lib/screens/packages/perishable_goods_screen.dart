@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/post_status_activities.dart';
 import '../../core/providers.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';

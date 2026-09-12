@@ -7,7 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../widgets/password_strength_field.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';
@@ -152,7 +152,7 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
       // way. Almost always a database that has not run the ICT migration.
       return 'This account has no profile record, so it cannot sign in. '
           'It was created before the ICT migration was applied — ask ICT to '
-          'run supabase/migrations, then register again.';
+          'run db/migrations, then register again.';
     }
     // The code is CONSUMED the moment it verifies, so a second tap of
     // "Verify & Sign In" finds nothing left. Without this the user saw the

@@ -7,7 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../widgets/password_strength_field.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';

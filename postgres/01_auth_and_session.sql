@@ -1,19 +1,24 @@
 -- ============================================================================
---  01 · Supabase compatibility layer
+--  01 · Authentication and session state
 --
---  The app used to reach Supabase, whose Postgres provides an `auth` schema:
+--  ⚠️ This is STANDARD PostgreSQL. `auth` is a schema this project creates
+--  and owns, like `public`; nothing here needs Supabase, and the only two
+--  extensions used (uuid-ossp, pgcrypto) ship with PostgreSQL itself.
+--
+--  The name `auth` is kept because all 73 RLS policies are written against
+--  these three symbols:
 --
 --      auth.uid()   -> the signed-in user's id
 --      auth.role()  -> 'authenticated' / 'anon'
 --      auth.users   -> the account table
 --
---  Every one of the 73 RLS policies is written against those. Recreating them
---  here means **the policies do not have to be rewritten at all** — they carry
---  over verbatim, which is the whole reason this file exists. Rewriting 73
---  policies by hand would have been 73 chances to widen access by accident.
+--  Keeping the names means **the policies do not have to be rewritten at
+--  all**. Rewriting 73 access-control rules by hand would have been 73
+--  chances to widen access by accident, and a policy that is wrong is silent
+--  — it does not fail, it just shows one yard another yard's goods.
 --
---  What replaces Supabase's session: the app sets a session variable right
---  after connecting (see PgDatabase._applySession):
+--  How a session is established: the app sets a session variable right after
+--  connecting (see PgDatabase._applySession, which calls auth.begin_session):
 --
 --      select set_config('app.current_user_id', '<uuid>', false);
 --      select set_config('app.current_role',    'authenticated', false);
@@ -31,9 +36,8 @@ create extension if not exists pgcrypto;
 create schema if not exists auth;
 
 -- ── auth.users ──────────────────────────────────────────────────────────────
---  Supabase owned this table; here it is ours. Only the columns the app and
---  the schema's foreign keys actually reference are kept — a faithful copy of
---  Supabase's internal shape would be dead weight.
+--  The account table. Only the columns the app and the schema's foreign keys
+--  actually reference are kept.
 --
 --  `encrypted_password` holds a bcrypt hash from pgcrypto's crypt(); the app
 --  never sees a plaintext password after sign-up.
@@ -113,15 +117,14 @@ begin
   end if;
 end $$;
 
--- ── Supabase's built-in roles ───────────────────────────────────────────────
+-- ── The grant target roles ──────────────────────────────────────────────────
 --  The schema carries 36 `grant ... to authenticated / anon / service_role`
---  statements. Those roles are created by Supabase's platform, not by
---  Postgres, so a plain install has to make them or every one of those grants
+--  statements, so those three roles have to exist or every one of the grants
 --  fails and takes its migration down with it.
 --
---  NOLOGIN: nothing ever connects AS these roles. The app connects as its own
---  user; these exist only so the grants have a target and the policies read
---  the same as they did on Supabase.
+--  ⚠️ NOLOGIN. Nothing ever connects AS these roles — the app connects as its
+--  own user (yard_app). They exist only to give the grants a target and to
+--  keep the 73 policies readable as written.
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then

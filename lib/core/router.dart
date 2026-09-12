@@ -41,7 +41,7 @@ import '../screens/forfeited_packages/forfeited_packages_screen.dart';
 import '../screens/forfeited_packages/tender_disposal_screen.dart';
 import '../screens/forfeited_packages/destruction_disposal_screen.dart';
 import '../widgets/app_shell.dart';
-import '../core/supabase_client.dart';
+import '../core/db_client.dart';
 import '../core/providers.dart';
 import '../services/services.dart';
 import 'app_log.dart';

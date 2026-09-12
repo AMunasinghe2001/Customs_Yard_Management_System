@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'supabase_client.dart';
+import 'db_client.dart';
 import '../models/models.dart';
 import '../services/services.dart';
-import 'supabase_client.dart';
+import 'db_client.dart';
 import 'yards.dart';
 import 'directorates.dart';
 

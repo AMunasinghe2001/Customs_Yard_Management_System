@@ -28,7 +28,7 @@ BEGIN
        AND column_name='destroying_deposit')
   THEN
     RAISE EXCEPTION
-      'Run supabase/migrations/20260826_destroying_deposit.sql first.';
+      'Run db/migrations/20260826_destroying_deposit.sql first.';
   END IF;
 END $$;
 

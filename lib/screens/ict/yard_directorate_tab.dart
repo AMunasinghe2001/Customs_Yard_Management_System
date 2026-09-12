@@ -471,7 +471,7 @@ class YardDirectorateTab extends ConsumerWidget {
     }
     if (s.contains('42p01') || s.contains('does not exist')) {
       return 'These tables are not in this database yet. Run '
-          'supabase/migrations/20260839_ict_directorates_and_yards.sql.';
+          'db/migrations/20260839_ict_directorates_and_yards.sql.';
     }
     return e.toString().replaceAll('Exception: ', '');
   }
@@ -1121,7 +1121,7 @@ class _LoadFailed extends StatelessWidget {
             missing
                 // The single most likely cause, named outright.
                 ? 'The $what table is not in this database yet. Run '
-                    'supabase/migrations/20260839_ict_directorates_and_yards.sql, '
+                    'db/migrations/20260839_ict_directorates_and_yards.sql, '
                     'then reload.'
                 : 'Could not load $what: $error',
             style: TextStyle(

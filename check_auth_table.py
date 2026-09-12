@@ -34,6 +34,6 @@ try:
         
         if not users_exists:
             print("\nERROR: auth.users table is missing!")
-            print("Need to run 01_supabase_compat.sql")
+            print("Need to run 01_auth_and_session.sql")
 finally:
     conn.close()

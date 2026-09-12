@@ -98,8 +98,13 @@ void main() {
       // The default stays so a fresh checkout runs, but the app must be able
       // to say it is using it.
       expect(PgConfig.defaultPassword, equals('postgres'));
-      expect(PgConfig.usingDefaultPassword, isTrue,
-          reason: 'no .env in the test environment');
+      // ⚠️ The FLAG must be honest, whichever way it reads. Asserting `true`
+      // assumed no `.env` on the machine; once one exists — which is the
+      // normal state for a configured install — the test failed on a
+      // correctly configured app. What matters is that the two agree.
+      expect(PgConfig.usingDefaultPassword,
+          PgConfig.password == PgConfig.defaultPassword,
+          reason: 'the flag must match the password actually in use');
     });
   });
 

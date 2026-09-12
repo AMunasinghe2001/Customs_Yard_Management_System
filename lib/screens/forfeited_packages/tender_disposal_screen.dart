@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../core/app_session.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';

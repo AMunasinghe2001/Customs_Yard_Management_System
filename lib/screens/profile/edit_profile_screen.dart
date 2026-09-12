@@ -8,7 +8,7 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../widgets/password_strength_field.dart';
 import '../../core/providers.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../core/directorates.dart';
 import '../../models/models.dart';
 import '../../widgets/styled_form_dialog.dart';

@@ -210,7 +210,7 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
     }
     if (low.contains('23514') || low.contains('check constraint')) {
       return 'This database has not been migrated for the ICT portal yet. '
-          'Run supabase/migrations/20260839_ict_directorates_and_yards.sql, '
+          'Run db/migrations/20260839_ict_directorates_and_yards.sql, '
           'then try again.';
     }
 

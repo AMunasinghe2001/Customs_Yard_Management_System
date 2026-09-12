@@ -18,7 +18,7 @@ import '../../widgets/empty_state_card.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';

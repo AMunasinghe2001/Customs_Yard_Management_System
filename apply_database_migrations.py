@@ -11,7 +11,7 @@ DB_USER = os.getenv('PG_USER', 'postgres')
 DB_PASSWORD = os.getenv('PG_PASSWORD', 'postgres')
 
 TARGETS = sys.argv[1:] or [
-    'postgres/01_supabase_compat.sql',
+    'postgres/01_auth_and_session.sql',
     'postgres/02_schema.sql',
     'postgres/04_auth.sql',
 ]

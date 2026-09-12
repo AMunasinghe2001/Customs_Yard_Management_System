@@ -21,12 +21,12 @@ new row for relation "forfeited_packages" violates check constraint
 "forfeited_packages_source_check"
 ```
 
-→ Run **`supabase/migrations/20260616_forfeited_source_other.sql`**
+→ Run **`db/migrations/20260616_forfeited_source_other.sql`**
 (adds `'other'` to the allowed `forfeited_packages.source` values).
 
 ## 2. Enables the Valuation Directorate feature
 
-→ Run **`supabase/migrations/20260617_valuation_directorate.sql`**
+→ Run **`db/migrations/20260617_valuation_directorate.sql`**
 (new `valuation` role, RLS, position guard, `valuation_status` / per-item
 `valuation_cost` columns, `valuation_set_costs` RPC, and a **one-shot** backfill
 that marks all *pre-existing* disposal requests `forwarded`).

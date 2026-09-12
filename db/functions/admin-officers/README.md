@@ -15,13 +15,13 @@ Flow (from Admin → Officers → **Add Officer**):
 In the Supabase SQL editor, run:
 
 ```
-supabase/migrations/20260609_officer_username_auth.sql
+db/migrations/20260609_officer_username_auth.sql
 ```
 
 This adds `profiles.username`, the `officer_signup_otps` table, and the
 `email_for_login(identifier)` RPC used for **username-or-email login**.
 
-> Run order overall: `supabase/schema.sql` → `supabase/migrations/*.sql`
+> Run order overall: `db/schema.sql` → `db/migrations/*.sql`
 > (including this one) → `migrations/001_multi_yard.sql` →
 > `migrations/002_strict_yard_isolation.sql`.
 

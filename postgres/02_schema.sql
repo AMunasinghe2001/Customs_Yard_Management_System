@@ -10,7 +10,7 @@
 --  schema would mean re-deriving 88 ALTERs, and one slip there is a column
 --  silently missing in production.
 --
---  Run AFTER 01_supabase_compat.sql — the migrations reference auth.uid(),
+--  Run AFTER 01_auth_and_session.sql — the migrations reference auth.uid(),
 --  auth.users and the supabase_realtime publication, all of which that file
 --  provides.
 --
@@ -21,7 +21,7 @@
 set client_min_messages = warning;
 
 -- ==========================================================================
---  BASE SCHEMA (supabase/schema.sql)
+--  BASE SCHEMA (db/schema.sql)
 -- ==========================================================================
 
 -- ================================================================
@@ -7834,7 +7834,16 @@ begin
                  join pg_namespace n on n.oid = c.relnamespace
                 where n.nspname = 'public' and c.relname = v
                   and c.relkind = 'v') then
-      execute format('alter view public.%I set (security_invoker = true)', v);
+      -- Same exclusion as the verification below: an extension's view is
+      -- not ours to alter.
+      if not exists (select 1 from pg_depend d
+                       join pg_class c2 on c2.oid = d.objid
+                       join pg_namespace n2 on n2.oid = c2.relnamespace
+                      where n2.nspname = 'public' and c2.relname = v
+                        and d.classid = 'pg_class'::regclass
+                        and d.deptype = 'e') then
+        execute format('alter view public.%I set (security_invoker = true)', v);
+      end if;
     end if;
   end loop;
 end $$;
@@ -7844,11 +7853,23 @@ do $$
 declare
   bad text;
 begin
+  -- ⚠️ EXTENSION-owned views are excluded, and must be.
+  --
+  -- A server with pg_stat_statements installed into `public` has two views
+  -- there that belong to the extension, not to this project: they cannot be
+  -- altered without owning the extension, and they carry no application data
+  -- for a policy to protect. Without this the check failed on exactly such a
+  -- server and took the whole schema build down with it — a deployment
+  -- blocked by a rule about views the rule was never meant to cover.
   select string_agg(c.relname, ', ') into bad
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public'
      and c.relkind = 'v'
+     and not exists (select 1 from pg_depend d
+                      where d.objid = c.oid
+                        and d.classid = 'pg_class'::regclass
+                        and d.deptype = 'e')
      and not coalesce('security_invoker=true' = any (c.reloptions), false);
 
   if bad is not null then
@@ -8914,7 +8935,7 @@ begin
    where proname = 'change_password' and pronamespace = 'auth'::regnamespace;
 
   -- ⚠️ Guarded, not asserted. auth.change_password is not defined in
-  -- 01_supabase_compat.sql or anywhere else in postgres/ -- it was added to
+  -- 01_auth_and_session.sql or anywhere else in postgres/ -- it was added to
   -- the running database by hand, like the views postgres/23 and /32 build.
   -- So on the fresh database 02_schema.sql stands up it does not exist yet,
   -- and failing here would break the one file that has to work. The lock

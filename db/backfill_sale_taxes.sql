@@ -28,7 +28,7 @@ BEGIN
      WHERE table_schema='public' AND table_name='disposal_taxes')
   THEN
     RAISE EXCEPTION
-      'Run supabase/migrations/20260611_disposal_taxes.sql first.';
+      'Run db/migrations/20260611_disposal_taxes.sql first.';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
@@ -36,7 +36,7 @@ BEGIN
        AND column_name='applied_taxes')
   THEN
     RAISE EXCEPTION
-      'Run supabase/migrations/20260611_tender_sale_sold_price.sql first.';
+      'Run db/migrations/20260611_tender_sale_sold_price.sql first.';
   END IF;
 END $$;
 
