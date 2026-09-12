@@ -3309,9 +3309,40 @@ class AdminService {
           m.contains('user already');
       if (exists) {
         // Half-created / re-verified account: sign in and refresh metadata.
+        //
+        // ⚠️ Only when the account is being RE-CREATED AS ITSELF.
+        //
+        // This branch exists for an account whose auth.users row was made but
+        // whose profile write then failed — signing in and re-writing the
+        // profile repairs it. But it was reached for ANY existing e-mail, so
+        // signing up on a second portal with an address that already had an
+        // account silently signed in as that account and upserted the new
+        // role over it. One e-mail, one id: the ICT account became a Disposal
+        // account, and ICT ceased to exist.
+        //
+        // That is privilege escalation by sign-up form: anyone who knows an
+        // officer's address and password could re-point their account at a
+        // portal of their choosing. The repair is only ever valid when the
+        // role being written is the role already there.
         final res = await AuthService._withNetworkRetry(() => supabase.auth
             .signInWithPassword(email: email.trim(), password: password));
         user = res.user;
+        final existing = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user!.id)
+            .maybeSingle();
+        final existingRole = (existing == null)
+            ? null
+            : (existing as Map<String, dynamic>)['role']?.toString();
+        if (existingRole != null && existingRole.isNotEmpty &&
+            existingRole != role) {
+          await supabase.auth.signOut();
+          throw Exception(
+              'An account already exists for this e-mail address, in a '
+              'different directorate. One e-mail address may hold one '
+              'account. Ask ICT to transfer it, or use another address.');
+        }
         try {
           await supabase.auth.updateUser(UserAttributes(data: metadata));
         } catch (_) {}

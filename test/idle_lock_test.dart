@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -351,5 +352,58 @@ void main() {
     for (final r in routes) {
       expect(r, isNot('/'));
     }
+  });
+
+  group('the lock wears the portal it locked', () {
+    final src = File('lib/widgets/idle_lock_overlay.dart').readAsStringSync();
+
+    test('every role maps to a colour, none falls through', () {
+      // ⚠️ `admin` is the yard's SDDC/DDC, whose sign-in is GOLD — it used to
+      // fall through to the light-blue default, so locking a yard
+      // administrator's screen showed a portal colour that was not theirs.
+      for (final role in const [
+        'ict',
+        'appeal',
+        'executive',
+        'disposal',
+        'valuation',
+        'admin',
+      ]) {
+        expect(src, contains("'$role'"), reason: '$role has no accent');
+      }
+    });
+
+    test('officer still has a default to fall back to', () {
+      // The one role with no colour of its own; the default is for it, not a
+      // gap left by accident.
+      expect(src, contains('accentLightBlue'));
+      expect(src, contains('// officer, and anything unmapped'));
+    });
+  });
+
+  group('the lock screen does not band', () {
+    final src = File('lib/screens/lock/idle_lock_screen.dart').readAsStringSync();
+
+    test('the glow falls off over eight stops, not two', () {
+      // ⚠️ Two stops fall linearly, and a display has 256 levels per channel
+      // — on near-black the wide dim outer half gets far too few and each
+      // level covers enough pixels to read as a ring. Drifting, those rings
+      // look like waves.
+      expect(src, contains('for (var i = 0; i < 8; i++)'));
+      expect(src, contains('math.pow(1 - i / 7, 2)'));
+    });
+
+    test('one blur covers both glows', () {
+      // The filter is the expensive part and it is the same filter.
+      expect(src, contains('ui.ImageFilter.blur('));
+      expect('ImageFiltered('.allMatches(src).length, 1);
+    });
+
+    test('opacity was raised to survive the blur', () {
+      // A blur spreads the same light over more pixels; at the old 0.16/0.22
+      // the glows all but vanished behind it.
+      expect(src, contains('opacity: 0.24'));
+      expect(src, contains('opacity: 0.32'));
+    });
   });
 }

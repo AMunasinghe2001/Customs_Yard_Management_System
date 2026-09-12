@@ -3713,3 +3713,122 @@ as a security regression**. They now ask the *rule* about given values
 (`debugIsLoopback`), not the machine's current config.
 
 Full suite: **1763 passing**, 2 skipped, 20 pre-existing failures (unchanged).
+
+---
+
+## The ICT sign-up error was the bootstrap, not a bug
+
+⚠️ **Creating the FIRST account through the app is impossible by design.**
+`profiles` has two INSERT policies — `yard_profiles_insert` allows only your
+own row (`id = auth.uid()`), and `profiles_ict_write` requires you to already
+*be* ICT. And `auth.sign_up` deliberately does **not** adopt the new session
+(so ICT stays signed in while provisioning others), which means `auth.uid()`
+is NULL during the profile write. Reproduced directly as `yard_app`:
+`new row violates row-level security policy for table "profiles"`.
+
+The app maps `42501` to *"This account is not permitted to create that
+profile"* — accurate, but it reads like a portal mix-up rather than "there is
+no ICT account yet".
+
+The second error, *"No verification code was sent"*, is a consequence: OTP
+codes live in memory and are **consumed on use**, so the failed first attempt
+spent the code shown on screen.
+
+⚠️ **A trigger already creates the profile row.** `on_auth_user_created →
+handle_new_user` inserts into `profiles` as soon as the auth user exists, so
+the app's own write is an UPDATE, not an INSERT. Verified that the app's
+upsert shape succeeds when signed in as ICT.
+
+Resolved: the operator created the ICT account directly (pgAdmin), and
+`yard_app`'s password was set. Verified on 10.10.71.15 — `yard_app` connects,
+`auth_user_is_ict()` returns **true** for that account, and the full
+`sign_up` + profile upsert path works from it. Server left holding exactly one
+profile; every probe account removed.
+
+---
+
+## 🔴 One e-mail could TAKE OVER an existing account
+
+⚠️ **Found in production use, and it is privilege escalation through a
+sign-up form.** An ICT account was created with one e-mail; a Central Disposal
+account was then created with the SAME e-mail and appeared to succeed. It had
+not created anything — `auth.sign_up` correctly refused the duplicate, the app
+caught `user_already_exists`, **signed in as the existing account**, and
+upserted the new role over it. One e-mail, one id: the ICT account *became* a
+Disposal account and ICT ceased to exist. Confirmed on the server — a single
+`auth.users` row, created 15:15 and updated 15:32.
+
+Anyone knowing an officer's address and password could re-point their account
+at whichever portal they chose, and the officer would find themselves locked
+out of their own directorate.
+
+⚠️ The branch itself is legitimate — an account whose `auth.users` row was
+created but whose profile write then failed is repaired by signing in and
+re-writing the profile. It is only valid **when the role being written is the
+role already there**. It now reads the existing role first, refuses a
+different one with a message naming the reason, and signs out before throwing
+so a refused takeover does not leave a live session behind.
+
+The two admin-driven paths (ICT creating an officer, ICT creating a
+directorate account) already refused outright; only the directorate
+self-signup had the hole.
+
+Recovery: the account was restored to `role='ict'` with its username and job
+role; `auth_user_is_ict()` returns true again and the password is untouched.
+
+### Three more tests were reading the live `.env`
+`app_env_test` pinned `PG_USER=postgres`, `PG_SSL=false` and
+`postgres@localhost:5432` as literals, so pointing the `.env` at the real
+server reported a **configuration change as a test failure**. They now compare
+against the file itself, or assert the shape of the string. With these fixed
+the long-standing failure count drops from **20 to 18** — two of that baseline
+were this same coupling.
+
+Full suite: **1769 passing**, 2 skipped, 18 pre-existing failures.
+
+### Hovering a portal tile greyed it out instead of colouring it
+The home page's portal cards and the Yard Access tiles both washed out on
+hover: the white went dull and the team colour came through as a muddy
+smear rather than the portal's own colour.
+
+⚠️ **The cause was a combination, not one value.** A hovered card filled
+itself with a RadialGradient of **translucent** white (0.55 / 0.32) and sat
+that over a **`BackdropFilter`** blurring the page behind it. So the card's
+own fill was see-through onto a blurred background: the white lost its
+brightness, and `accent.withOpacity(0.28)` over that read as grey. Neither
+half is wrong alone — a translucent white over a *solid* ground is fine, and
+a backdrop blur under an *opaque* fill is merely wasted — which is why this
+survived review as "liquid glass" styling.
+
+The fix, in both files: **no BackdropFilter**, and an **opaque** fill tinted
+towards the accent with `Color.lerp(Colors.white, accent, 0.18)` — tinting
+white keeps the hue *and* the brightness, where layering a transparent
+accent could only ever darken. The icon circle and the "Create Account"
+fill had the same translucent-white bug and are opaque now too. Removing the
+filter also drops a `saveLayer` per hovered card.
+
+The same code had been copied into both screens, so
+[portal_hover_stays_bright_test.dart](test/portal_hover_stays_bright_test.dart)
+asserts on **both** — at source level, since the defect is a combination of
+two widgets that no non-golden widget test can observe. ⚠️ It matches
+`BackdropFilter(`, the constructor call, not the bare word: the comments left
+in both files name the filter to explain why it went, and the first version
+of the test failed on its own explanation.
+
+### …and hovering also made the page jump
+Same two screens, reported right after the colour fix: hovering a portal
+card nudged the **logo and the heading above the row** up and down, and on
+the Yard Access tiles the title/subtitle jittered.
+
+⚠️ **A `Border` paints INSIDE the box.** Both cards grew theirs on hover
+(`width: _hovered ? 1.6 : 1`), so the content area shrank by 0.6px on every
+side, the card's own contents reflowed, and everything laid out above them
+moved with it. The border width is now **constant at 1.6** and only its
+COLOUR changes.
+
+⚠️ Two things that look like the same bug and are NOT, both deliberately
+kept: the hover **`BoxShadow`** (`spreadRadius`) paints *outside* the box,
+and the icon's **`AnimatedScale(1.08)`** is a transform that keeps its
+layout size. Neither can move a sibling — removing them would cost the
+animation for nothing. The rule the test encodes is narrower than "nothing
+changes on hover": **colour may change, laid-out SIZE may not.**

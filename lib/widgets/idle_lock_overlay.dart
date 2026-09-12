@@ -75,12 +75,21 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
     final role = profile?.role;
     _loginRoute = _routeForRole[role] ?? '/';
     lastLockedPortal = _loginRoute;
+    // ⚠️ Every role, matched to the colour its OWN portal uses.
+    //
+    // `admin` is the yard's SDDC/DDC, whose sign-in is gold — it used to fall
+    // through to the light blue default, so locking a yard administrator's
+    // screen showed them a portal colour that was not theirs. The three in
+    // the map above carry a compile-time constant; these three read the live
+    // theme, which is why they cannot sit in a `const` map beside them.
+    final colors = Theme.of(context).extension<AppColors>();
     _accent = _accentForRole[role] ??
-        (role == 'disposal'
-            ? Theme.of(context).extension<AppColors>()?.successGreen
-            : role == 'valuation'
-                ? Theme.of(context).extension<AppColors>()?.primaryGold
-                : Theme.of(context).extension<AppColors>()?.accentLightBlue);
+        switch (role) {
+          'disposal' => colors?.successGreen,
+          'valuation' => colors?.primaryGold,
+          'admin' => colors?.primaryGold,
+          _ => colors?.accentLightBlue, // officer, and anything unmapped
+        };
 
     // ⚠️ Read the router BEFORE signing out, and navigate BEFORE it too.
     //

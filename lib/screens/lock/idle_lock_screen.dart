@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -96,24 +97,44 @@ class _IdleLockScreenState extends State<IdleLockScreen>
                     animation: _drift,
                     builder: (context, _) {
                       final t = _drift.value * 2 * math.pi;
-                      return Stack(children: [
-                        _glow(
-                          alignment: Alignment(
-                              0.55 * math.cos(t), 0.45 * math.sin(t)),
-                          color: accent,
-                          size: 620,
-                          opacity: 0.16,
-                        ),
-                        _glow(
-                          // Counter-rotating and offset, so the two never
-                          // overlap the same way twice.
-                          alignment: Alignment(-0.6 * math.cos(t * 0.7 + 1.2),
-                              -0.5 * math.sin(t * 0.7 + 1.2)),
-                          color: const Color(0xFF2B3A8F),
-                          size: 720,
-                          opacity: 0.22,
-                        ),
-                      ]);
+                      // ⚠️ One blur over BOTH glows.
+                      //
+                      // The softened falloff removed the hard rings, but a
+                      // gradient still quantises to the display's 256 levels
+                      // per channel and the remaining steps drift across the
+                      // screen as faint contour lines — waves. A blur smears
+                      // each step into its neighbours, which removes them
+                      // rather than making them finer.
+                      //
+                      // One ImageFiltered for the pair, not one each: the
+                      // filter is the expensive part and it is the same
+                      // filter.
+                      //
+                      // Opacity is raised to compensate — a blur spreads the
+                      // same light over more pixels, so at the old values the
+                      // glows all but vanished.
+                      return ImageFiltered(
+                        imageFilter:
+                            ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                        child: Stack(children: [
+                          _glow(
+                            alignment: Alignment(
+                                0.55 * math.cos(t), 0.45 * math.sin(t)),
+                            color: accent,
+                            size: 620,
+                            opacity: 0.24,
+                          ),
+                          _glow(
+                            // Counter-rotating and offset, so the two never
+                            // overlap the same way twice.
+                            alignment: Alignment(-0.6 * math.cos(t * 0.7 + 1.2),
+                                -0.5 * math.sin(t * 0.7 + 1.2)),
+                            color: const Color(0xFF2B3A8F),
+                            size: 720,
+                            opacity: 0.32,
+                          ),
+                        ]),
+                      );
                     },
                   ),
 
@@ -255,8 +276,21 @@ class _IdleLockScreenState extends State<IdleLockScreen>
           height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
+            // ⚠️ EIGHT stops on a squared falloff, not two on a straight
+            // line. Two stops fall linearly, and a display has only 256
+            // levels per channel to spend — on near-black the wide dim outer
+            // half gets far too few, so each level covers enough pixels to
+            // read as a RING. Drifting, those rings look like waves.
+            //
+            // `(1-x)^2` concentrates the change near the centre, which is
+            // both how light actually falls off and where the banding is
+            // least visible.
             gradient: RadialGradient(
-              colors: [color.withOpacity(opacity), color.withOpacity(0)],
+              colors: [
+                for (var i = 0; i < 8; i++)
+                  color.withOpacity(opacity * math.pow(1 - i / 7, 2)),
+              ],
+              stops: [for (var i = 0; i < 8; i++) i / 7],
             ),
           ),
         ),

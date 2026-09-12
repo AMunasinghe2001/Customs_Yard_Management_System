@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -289,11 +288,41 @@ class _DriftingGlowsState extends State<DriftingGlows>
               // distance, so they never stack into one bright patch -- and the
               // CENTRE is left alone, because that is where the seal and the
               // cards are.
-              for (final g in <({Color colour, double dx, double dy, double size, double from})>[
-                (colour: AppTheme.appealPurple, dx: 0.30, dy: 0.10, size: 340, from: 0.10),
-                (colour: AppTheme.executiveTeal, dx: -0.28, dy: 0.14, size: 320, from: 0.72),
-                (colour: c.successGreen, dx: 0.22, dy: -0.18, size: 300, from: 0.55),
-                (colour: AppTheme.ictCyan, dx: -0.24, dy: -0.12, size: 300, from: 0.28),
+              for (final g in <({
+                Color colour,
+                double dx,
+                double dy,
+                double size,
+                double from
+              })>[
+                (
+                  colour: AppTheme.appealPurple,
+                  dx: 0.30,
+                  dy: 0.10,
+                  size: 340,
+                  from: 0.10
+                ),
+                (
+                  colour: AppTheme.executiveTeal,
+                  dx: -0.28,
+                  dy: 0.14,
+                  size: 320,
+                  from: 0.72
+                ),
+                (
+                  colour: c.successGreen,
+                  dx: 0.22,
+                  dy: -0.18,
+                  size: 300,
+                  from: 0.55
+                ),
+                (
+                  colour: AppTheme.ictCyan,
+                  dx: -0.24,
+                  dy: -0.12,
+                  size: 300,
+                  from: 0.28
+                ),
               ])
                 Positioned(
                   left: w * g.from + t * (w * g.dx) - g.size / 2,
@@ -384,173 +413,181 @@ class _RoleCardState extends State<_RoleCard> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            // Frost the page's glow through the card on hover → liquid glass.
-            filter: ui.ImageFilter.blur(
-                sigmaX: _hovered ? 18 : 0, sigmaY: _hovered ? 18 : 0),
-            child: Container(
-              decoration: BoxDecoration(
-                // Hover: a soft accent glow behind the icon that dissolves into
-                // translucent white on both sides (liquid-glass). Idle: neutral.
-                gradient: _hovered
-                    ? RadialGradient(
-                        center: const Alignment(0, -0.6),
-                        radius: 1.25,
-                        colors: [
-                          widget.accentColor.withOpacity(0.32),
-                          Colors.white.withOpacity(0.55),
-                          Colors.white.withOpacity(0.32),
-                        ],
-                      )
-                    : LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          context.colors.cardDark,
-                          context.colors.surfaceDark
-                        ],
-                      ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  // Team-colour border on hover (not white).
-                  color: _hovered
-                      ? widget.accentColor.withOpacity(0.75)
-                      : context.colors.borderColor,
-                  width: _hovered ? 1.6 : 1,
-                ),
+          // ⚠️ No BackdropFilter here any more. It frosted the page's glow
+          // through the card, which is exactly what greyed the hover state —
+          // and behind the opaque fill below it would now blur nothing at all.
+          child: Container(
+            decoration: BoxDecoration(
+              // Hover: a soft accent tint behind the icon dissolving into
+              // white. Idle: neutral.
+              //
+              // ⚠️ The whites are OPAQUE. They were 0.55 and 0.32,
+              // which let the blurred page show through and turned the card
+              // dull — the accent read as a muddy wash rather than the team
+              // colour over white. Tinting white towards the accent keeps the
+              // hue and keeps the card bright.
+              gradient: _hovered
+                  ? RadialGradient(
+                      center: const Alignment(0, -0.6),
+                      radius: 1.25,
+                      colors: [
+                        Color.lerp(Colors.white, widget.accentColor, 0.18)!,
+                        Color.lerp(Colors.white, widget.accentColor, 0.05)!,
+                        Colors.white,
+                      ],
+                    )
+                  : LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        context.colors.cardDark,
+                        context.colors.surfaceDark
+                      ],
+                    ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                // Team-colour border on hover (not white).
+                color: _hovered
+                    ? widget.accentColor.withOpacity(0.75)
+                    : context.colors.borderColor,
+                // ⚠️ The WIDTH IS CONSTANT. It grew 1 -> 1.6 on hover, and a
+                // Border paints INSIDE the box: the content area shrank by 0.6px on
+                // every side, so the card's own contents -- and the logo and heading
+                // laid out above them -- visibly jumped as the pointer crossed a card.
+                // Only the colour changes now.
+                width: 1.6,
               ),
-              // The whole card is a target: clicking anywhere that is not one
-              // of the two buttons goes to this portal's sign-in page.
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => widget.onLogin(context),
-                  borderRadius: BorderRadius.circular(20),
-                  splashColor: widget.accentColor.withOpacity(0.12),
-                  highlightColor: widget.accentColor.withOpacity(0.06),
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Column(mainAxisSize: MainAxisSize.max, children: [
-                      AnimatedScale(
-                        scale: _hovered ? 1.08 : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            // Idle: soft accent tint. Hover (accent-filled card): a frosted
-                            // white circle so the white icon still reads.
-                            color: _hovered
-                                ? Colors.white.withOpacity(0.5)
-                                : widget.accentColor.withOpacity(0.15),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                                color: _hovered
-                                    ? Colors.white.withOpacity(0.7)
-                                    : widget.accentColor.withOpacity(0.4)),
-                          ),
-                          child: Icon(widget.icon,
-                              color: widget.accentColor, size: 34),
+            ),
+            // The whole card is a target: clicking anywhere that is not one
+            // of the two buttons goes to this portal's sign-in page.
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => widget.onLogin(context),
+                borderRadius: BorderRadius.circular(20),
+                splashColor: widget.accentColor.withOpacity(0.12),
+                highlightColor: widget.accentColor.withOpacity(0.06),
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(mainAxisSize: MainAxisSize.max, children: [
+                    AnimatedScale(
+                      scale: _hovered ? 1.08 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          // Idle: soft accent tint. Hover: the SAME tint a
+                          // shade stronger, opaque — a translucent white
+                          // circle sat over the tinted card and went grey.
+                          color: _hovered
+                              ? Color.lerp(
+                                  Colors.white, widget.accentColor, 0.22)!
+                              : widget.accentColor.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: widget.accentColor
+                                  .withOpacity(_hovered ? 0.55 : 0.4)),
                         ),
+                        child: Icon(widget.icon,
+                            color: widget.accentColor, size: 34),
                       ),
-                      const Gap(16),
-                      SizedBox(
-                        height: 56,
-                        child: Center(
-                          child: Text(widget.title,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              style: TextStyle(
-                                  color: widget.accentColor,
-                                  fontSize: 19,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w800)),
-                        ),
-                      ),
-                      const Gap(8),
-                      SizedBox(
-                        height: 58,
-                        child: Text(widget.subtitle,
+                    ),
+                    const Gap(16),
+                    SizedBox(
+                      height: 56,
+                      child: Center(
+                        child: Text(widget.title,
                             textAlign: TextAlign.center,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
                             style: TextStyle(
-                                color: _hovered
-                                    ? const Color(0xFF475569)
-                                    : context.colors.textSecondary,
-                                fontSize: 13,
-                                height: 1.5)),
+                                color: widget.accentColor,
+                                fontSize: 19,
+                                height: 1.2,
+                                fontWeight: FontWeight.w800)),
                       ),
-                      const Spacer(),
-                      const Gap(20),
-                      // Primary action — white label on the saturated accent so it reads
-                      // clearly on every card colour (the previous navy-on-accent was hard
-                      // to see, especially on the blue/green cards).
+                    ),
+                    const Gap(8),
+                    SizedBox(
+                      height: 58,
+                      child: Text(widget.subtitle,
+                          textAlign: TextAlign.center,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: _hovered
+                                  ? const Color(0xFF475569)
+                                  : context.colors.textSecondary,
+                              fontSize: 13,
+                              height: 1.5)),
+                    ),
+                    const Spacer(),
+                    const Gap(20),
+                    // Primary action — white label on the saturated accent so it reads
+                    // clearly on every card colour (the previous navy-on-accent was hard
+                    // to see, especially on the blue/green cards).
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.accentColor,
+                          foregroundColor: onAccent,
+                          elevation: _hovered ? 3 : 0,
+                          shadowColor: widget.accentColor.withOpacity(0.5),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () => widget.onLogin(context),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('Sign In',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: onAccent)),
+                            const Gap(8),
+                            Icon(Icons.arrow_forward_rounded,
+                                size: 18, color: onAccent),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (widget.showSignup && widget.onSignup != null) ...[
+                      const Gap(10),
                       SizedBox(
                         width: double.infinity,
-                        height: 46,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.accentColor,
-                            foregroundColor: onAccent,
-                            elevation: _hovered ? 3 : 0,
-                            shadowColor: widget.accentColor.withOpacity(0.5),
+                        height: 42,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: widget.accentColor,
+                            backgroundColor: _hovered ? Colors.white : null,
+                            side: BorderSide(
+                                color: widget.accentColor.withOpacity(0.6),
+                                width: 1.4),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: () => widget.onLogin(context),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text('Sign In',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                      color: onAccent)),
-                              const Gap(8),
-                              Icon(Icons.arrow_forward_rounded,
-                                  size: 18, color: onAccent),
-                            ],
+                          onPressed: () => widget.onSignup!(context),
+                          // ⚠️ Kept to ONE line. The label wrapped inside the fixed 42px
+                          // box, so the second line was clipped and the button read
+                          // "Create" with a sliced-off row under it. FittedBox shrinks
+                          // the text on a narrow card instead of wrapping it.
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Create Account',
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.visible,
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: widget.accentColor)),
                           ),
                         ),
                       ),
-                      if (widget.showSignup && widget.onSignup != null) ...[
-                        const Gap(10),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 42,
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: widget.accentColor,
-                              backgroundColor: _hovered
-                                  ? Colors.white.withOpacity(0.35)
-                                  : null,
-                              side: BorderSide(
-                                  color: widget.accentColor.withOpacity(0.6),
-                                  width: 1.4),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: () => widget.onSignup!(context),
-                            // ⚠️ Kept to ONE line. The label wrapped inside the fixed 42px
-                            // box, so the second line was clipped and the button read
-                            // "Create" with a sliced-off row under it. FittedBox shrinks
-                            // the text on a narrow card instead of wrapping it.
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text('Create Account',
-                                  maxLines: 1,
-                                  softWrap: false,
-                                  overflow: TextOverflow.visible,
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: widget.accentColor)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ]),
-                  ),
+                    ],
+                  ]),
                 ),
               ),
             ),
