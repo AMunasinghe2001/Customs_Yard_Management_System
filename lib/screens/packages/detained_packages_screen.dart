@@ -23,6 +23,7 @@ import '../../widgets/disposal_page_header.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
+import '../../widgets/send_disposal_request_button.dart';
 
 final detainedPackageSearchProvider = StateProvider<String>((ref) => '');
 final detainedPackageDateRangeProvider =
@@ -254,34 +255,13 @@ class _DetainedPackagesScreenState
                       // or an appeal decision is in. Opens the same bulk
                       // dialog the Forfeited page uses — detained goods appear
                       // in it as `source='detain'` rows.
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.local_shipping_rounded, size: 16),
-                        label: const Text('Send Disposal Request'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: actionable > 0
-                              ? context.colors.primaryGold
-                              : context.colors.textMuted.withOpacity(0.2),
-                          foregroundColor: actionable > 0
-                              ? Colors.white
-                              : context.colors.textMuted,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 14),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          elevation: actionable > 0 ? 2 : 0,
-                        ),
-                        onPressed: actionable > 0
-                            ? () => showAppDialog(
-                                  context: context,
-                                  builder: (ctx) => DisposalRequestDialog(
-                                    onSubmitted: () {
-                                      ref.invalidate(livePackagesProvider);
-                                      ref.invalidate(
-                                          requestableForfeitedPackagesProvider);
-                                    },
-                                  ),
-                                )
-                            : null,
+                      SendDisposalRequestButton(
+                        actionable: actionable,
+                        onSubmitted: () {
+                          ref.invalidate(livePackagesProvider);
+                          ref.invalidate(
+                              requestableForfeitedPackagesProvider);
+                        },
                       ),
                     ],
                   );

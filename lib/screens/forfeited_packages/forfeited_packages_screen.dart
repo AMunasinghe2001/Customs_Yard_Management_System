@@ -21,6 +21,7 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
+import '../../widgets/send_disposal_request_button.dart';
 
 class _StatChip extends StatelessWidget {
   final String label;
@@ -197,34 +198,13 @@ class _ForfeitedPackagesScreenState
                           label: 'Actionable',
                           value: actionableCount.toString(),
                           color: context.colors.successGreen),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.local_shipping_rounded, size: 16),
-                        label: const Text('Send Disposal Request'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: actionableCount > 0
-                              ? context.colors.primaryGold
-                              : context.colors.textMuted.withOpacity(0.2),
-                          foregroundColor: actionableCount > 0
-                              ? Colors.white
-                              : context.colors.textMuted,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 14),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          elevation: actionableCount > 0 ? 2 : 0,
-                        ),
-                        onPressed: actionableCount > 0
-                            ? () => showAppDialog(
-                                  context: context,
-                                  builder: (ctx) => DisposalRequestDialog(
-                                    onSubmitted: () {
-                                      ref.invalidate(forfeitedPackagesProvider);
-                                      ref.invalidate(
-                                          requestableForfeitedPackagesProvider);
-                                    },
-                                  ),
-                                )
-                            : null,
+                      SendDisposalRequestButton(
+                        actionable: actionableCount,
+                        onSubmitted: () {
+                          ref.invalidate(forfeitedPackagesProvider);
+                          ref.invalidate(
+                              requestableForfeitedPackagesProvider);
+                        },
                       ),
                     ],
                   );

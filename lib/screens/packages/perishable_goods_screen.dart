@@ -27,6 +27,7 @@ import '../executive/unsold_shared.dart';
 import '../../widgets/destruction_status_pill.dart';
 import '../disposal/disposal_shared.dart';
 import '../../widgets/date_filter_button.dart';
+import '../../widgets/send_disposal_request_button.dart';
 
 /// One perishable item, with the package it belongs to.
 class PerishableRow {
@@ -341,38 +342,14 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     orElse: () => const SizedBox(),
                   ),
                   async.maybeWhen(
-                    data: (rows) => ElevatedButton.icon(
-                      icon: const Icon(Icons.local_shipping_rounded, size: 16),
-                      label: const Text('Send Disposal Request'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: rows.total > 0
-                            ? context.colors.primaryGold
-                            : context.colors.textMuted.withOpacity(0.2),
-                        foregroundColor: rows.total > 0
-                            ? Colors.white
-                            : context.colors.textMuted,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                        elevation: rows.total > 0 ? 2 : 0,
-                      ),
-                      // The same dialog every other page sends through, so a
-                      // perishable request is an ordinary request from here on.
-                      onPressed: rows.total == 0
-                          ? null
-                          : () => showDialog(
-                                context: context,
-                                builder: (_) => DisposalRequestDialog(
-                                  onSubmitted: () {
-                                    ref.invalidate(livePackagesProvider);
-                                    ref.invalidate(perishablePageProvider);
-                                    ref.invalidate(sentPerishableKeysProvider);
-                                    ref.invalidate(
-                                        requestableForfeitedPackagesProvider);
-                                  },
-                                ),
-                              ),
+                    data: (rows) => SendDisposalRequestButton(
+                      actionable: rows.total,
+                      onSubmitted: () {
+                        ref.invalidate(livePackagesProvider);
+                        ref.invalidate(perishablePageProvider);
+                        ref.invalidate(sentPerishableKeysProvider);
+                        ref.invalidate(requestableForfeitedPackagesProvider);
+                      },
                     ),
                     orElse: () => const SizedBox(),
                   ),

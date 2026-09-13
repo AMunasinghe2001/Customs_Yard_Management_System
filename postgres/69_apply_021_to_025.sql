@@ -8,6 +8,7 @@
 --    023  password history: a password may not be reused
 --    018  RE-APPLIED, because 023 overwrites the guard it installs
 --    024  lets "forgot password" work again -- 018's guard broke it
+--    025  only a yard SDDC/DDC may raise a disposal request
 --
 --  ⚠️ Why 018 must come last. Migration 018 wraps auth.change_password so a
 --  session may only change ITS OWN password: it renames the real body to
@@ -56,6 +57,9 @@
 -- creates. Run before it and the reset would be wired to the guarded
 -- function it is trying to avoid.
 \i migrations/024_reset_may_set_a_password_without_a_session.sql
+\echo ''
+\echo '=== 025 only yard admin sends disposal requests ================='
+\i migrations/025_only_yard_admin_sends_disposal_requests.sql
 \echo ''
 
 -- ── Prove the end state, rather than trusting the order ─────────────────────
@@ -115,8 +119,19 @@ begin
       'fail with "You may only change your own password" (024 not applied)';
   end if;
 
+  -- ⚠️ And a yard officer must not be able to raise a disposal request.
+  if not exists (select 1 from pg_policies
+                  where tablename = 'disposal_requests'
+                    and policyname = 'disposal_requests_admin_only_write'
+                    and permissive = 'RESTRICTIVE') then
+    raise exception
+      'disposal_requests has no RESTRICTIVE admin-only write policy -- a yard '
+      'officer can still send a disposal request (025 not applied)';
+  end if;
+
   raise notice 'OK: caller guard + reuse check layered, dormancy on the '
-               'sign-in clock, history table present';
+               'sign-in clock, history table present, disposal requests '
+               'admin-only';
 end $$;
 
 -- What the dormancy rule would do right now, so nobody is surprised.
