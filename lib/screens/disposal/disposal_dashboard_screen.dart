@@ -2171,81 +2171,78 @@ class _RecordCostsButton extends ConsumerWidget {
   final _DestroyedRow row;
   const _RecordCostsButton({required this.row});
 
-  static bool _opening = false;
+  // ⚠️ No in-flight guard here. One was held across `await showAppDialog`,
+  // which does not return until the dialog is DISMISSED — so while a Costs
+  // popup was open, no Costs button on the table responded at all. The
+  // double-tap it was meant to stop is a symptom of a stalled frame
+  // swallowing the first click; fix the stall, not the button.
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
-    if (_opening) return;
-    _opening = true;
+    final all = ref.read(srFinancialsProvider).valueOrNull;
+    var sr = all
+        ?.where((f) => f.srNumber.trim() == row.package.srNumber.trim())
+        .firstOrNull;
 
-    try {
-      final all = ref.read(srFinancialsProvider).valueOrNull;
-      var sr = all
-          ?.where((f) => f.srNumber.trim() == row.package.srNumber.trim())
-          .firstOrNull;
+    if (sr == null) {
+      final expenses = ref.read(financialExpensesProvider).valueOrNull ??
+          await ref
+              .read(disposalServiceProvider)
+              .getFinancialExpenses()
+              .catchError((_) => <FinancialExpenseModel>[]);
 
-      if (sr == null) {
-        final expenses = ref.read(financialExpensesProvider).valueOrNull ??
-            await ref
-                .read(disposalServiceProvider)
-                .getFinancialExpenses()
-                .catchError((_) => <FinancialExpenseModel>[]);
-
-        final srExpenses = expenses
-            .where((e) => e.srNumber?.trim() == row.package.srNumber.trim())
-            .toList();
-        double destruction = 0, advertising = 0, labour = 0, transport = 0, auction = 0;
-        for (final e in srExpenses) {
-          switch (e.kind) {
-            case 'destruction_expense':
-              destruction += e.amount;
-              break;
-            case 'advertising_expense':
-              advertising += e.amount;
-              break;
-            case 'labour_expense':
-              labour += e.amount;
-              break;
-            case 'transport_expense':
-              transport += e.amount;
-              break;
-            case 'auction_expense':
-              auction += e.amount;
-              break;
-          }
+      final srExpenses = expenses
+          .where((e) => e.srNumber?.trim() == row.package.srNumber.trim())
+          .toList();
+      double destruction = 0, advertising = 0, labour = 0, transport = 0, auction = 0;
+      for (final e in srExpenses) {
+        switch (e.kind) {
+          case 'destruction_expense':
+            destruction += e.amount;
+            break;
+          case 'advertising_expense':
+            advertising += e.amount;
+            break;
+          case 'labour_expense':
+            labour += e.amount;
+            break;
+          case 'transport_expense':
+            transport += e.amount;
+            break;
+          case 'auction_expense':
+            auction += e.amount;
+            break;
         }
-
-        final yard = yardOfSrNumber(row.package.srNumber);
-        final itemId = row.item?.id ?? row.package.items.firstOrNull?.id ?? '';
-        sr = SrFinancials(
-          srNumber: row.package.srNumber,
-          yard: yard,
-          date: row.package.createdAt,
-          destroyingDeposit: row.package.destroyingDeposit ?? 0.0,
-          goods: [
-            GoodsFinancials(
-              itemId: itemId,
-              srNumber: row.package.srNumber,
-              goodsName: row.itemName,
-              yard: yard,
-              quantity: row.item?.quantity ?? row.entry?.itemCount ?? 1,
-              destructionExpense: destruction,
-              advertisingExpense: advertising,
-              labourExpense: labour,
-              transportExpense: transport,
-              auctionExpense: auction,
-            ),
-          ],
-        );
       }
 
-      if (!context.mounted) return;
-      await showAppDialog(
-        context: context,
-        builder: (_) => RecordExpenseDialog(sr: sr!, forDestruction: true),
+      final yard = yardOfSrNumber(row.package.srNumber);
+      final itemId = row.item?.id ?? row.package.items.firstOrNull?.id ?? '';
+      sr = SrFinancials(
+        srNumber: row.package.srNumber,
+        yard: yard,
+        date: row.package.createdAt,
+        destroyingDeposit: row.package.destroyingDeposit ?? 0.0,
+        goods: [
+          GoodsFinancials(
+            itemId: itemId,
+            srNumber: row.package.srNumber,
+            goodsName: row.itemName,
+            yard: yard,
+            quantity: row.item?.quantity ?? row.entry?.itemCount ?? 1,
+            destructionExpense: destruction,
+            advertisingExpense: advertising,
+            labourExpense: labour,
+            transportExpense: transport,
+            auctionExpense: auction,
+          ),
+        ],
       );
-    } finally {
-      _opening = false;
     }
+
+    if (!context.mounted) return;
+    await showAppDialog(
+      context: context,
+      builder: (_) => RecordExpenseDialog(sr: sr!, forDestruction: true),
+    );
   }
 
   @override

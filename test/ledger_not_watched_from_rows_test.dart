@@ -83,9 +83,18 @@ void main() {
       expect(btn, contains('onPressed: () => _open(context, ref)'));
     });
 
-    test('a failure to load says so instead of opening an empty dialog', () {
-      expect(btn, contains('showErrorSnack'));
-      expect(btn, contains('No cost record found for'));
+    test('a failure to load never opens an empty dialog', () {
+      // ⚠️ The guarantee, not the mechanism. This used to demand a
+      // showErrorSnack and a "No cost record found" message, because the
+      // handler bailed out when the ledger had no row for the SR. It no
+      // longer bails: a missing row is BUILT from the expense records, so
+      // the dialog always opens with real figures and there is nothing to
+      // apologise for. What must stay true is that `sr` is never null by the
+      // time the dialog is asked for.
+      expect(btn, contains('sr = SrFinancials('),
+          reason: 'a missing ledger row must be reconstructed, not skipped');
+      expect(btn, contains('.catchError((_) => <FinancialExpenseModel>[])'),
+          reason: 'a failed expense fetch must degrade, not throw');
     });
 
     test('it checks the context is still mounted after the await', () {

@@ -2177,6 +2177,19 @@ class ForfeitedPackageModel {
     return appealDecisionNote;
   }
 
+  /// Per-item decisions carry their own timestamp in [itemAppealDecisions].
+  /// Legacy, package-level decisions use [appealDecidedAt].
+  DateTime? appealDecidedAtForItem(String? id) {
+    if (id != null) {
+      final entry = itemAppealDecisions[id];
+      if (entry is Map) {
+        final decidedAt = parseDbDate(entry['decided_at']);
+        if (decidedAt != null) return decidedAt;
+      }
+    }
+    return appealDecidedAt;
+  }
+
   bool hasAppealDecisionForItem(String? id) =>
       appealDecisionForItem(id) != null;
 

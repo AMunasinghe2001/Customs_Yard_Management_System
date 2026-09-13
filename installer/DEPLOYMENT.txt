@@ -1,0 +1,80 @@
+SRI LANKA CUSTOMS — SR MANAGEMENT SYSTEM
+After installing: connect this machine to the database
+
+
+1. THE APP WILL NOT START WITHOUT THIS STEP
+
+The installer deliberately ships NO database settings. They name the server
+and carry the application password, and they differ from office to office —
+putting one inside the setup file would hand a live credential to every copy
+of it and point every branch at the same server.
+
+Started without them, the app shows "Cannot reach the database" and stops.
+That is the guard working, not a fault.
+
+
+2. WHAT TO DO
+
+Create a file named exactly
+
+    .env
+
+in the folder this app was installed into — beside cus_yard_management.exe.
+By default that is:
+
+    C:\Program Files\SL Customs\SR Management System\
+
+Put these lines in it, with your own office's values:
+
+    PG_HOST=10.10.71.15
+    PG_PORT=5432
+    PG_DATABASE=Customs_SR_DB
+    PG_USER=yard_app
+    PG_PASSWORD=<the password the ICT Directorate gave you>
+    PG_SSL=true
+
+Then start the app from the Start Menu or the desktop shortcut.
+
+
+3. NOTES ON EACH SETTING
+
+PG_HOST      The database server. Ask the ICT Directorate.
+
+PG_USER      Must be yard_app. The app refuses to run as the postgres
+             administrator: that account can read past every yard boundary,
+             and the whole point of yard_app is that it cannot.
+
+PG_PASSWORD  Never the postgres administrator password. If this is left as
+             the built-in default the app still starts but prints a security
+             warning, because that password is guessable.
+
+PG_SSL       true wherever the server offers TLS — always, for anything
+             reached over the internet or between buildings.
+
+
+4. IF WINDOWS WARNS ABOUT THE INSTALLER
+
+"Windows protected your PC" appears because this installer is not signed with
+a purchased code-signing certificate. It is not a virus warning.
+
+Choose "More info", then "Run anyway".
+
+To remove the warning permanently the Department must buy a code-signing
+certificate in its own name and the installer must be signed with it.
+
+
+5. UPGRADING
+
+Run the newer setup file over the top. It replaces the program and keeps your
+.env, so the connection settings survive the upgrade.
+
+
+6. UNINSTALLING
+
+Settings > Apps > SR Management System > Uninstall.
+
+This removes the program, the .env and the diagnostic log from this machine.
+It does NOT touch the database — every SR record lives on the server.
+
+
+ICT Directorate, Sri Lanka Customs.

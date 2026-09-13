@@ -1387,6 +1387,9 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final String? footerActionHint;
   final VoidCallback? onFooterAction;
   final Color? headerAccentColor;
+  final bool appealHold;
+  final String? appealHoldNote;
+  final DateTime? appealHeldAt;
 
   // Appeal Directorate decision banner. When [appealDecisionLabel] is set, a
   // prominent banner is shown at the top of the body telling the owning yard
@@ -1396,6 +1399,8 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // 'OTHER'). When set, the Final Disposition dialog enables ONLY the matching
   // action — the yard must proceed exactly as the Appeal Directorate decided.
   final String? appealDecisionCode;
+  final String? appealDecisionNote;
+  final DateTime? appealDecidedAt;
 
   // Final-disposition gating (Forfeited screen). The footer "Final Disposition"
   // button is shown ONLY when [allowFinalDisposition] is true — i.e. the appeal
@@ -1450,8 +1455,13 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.footerActionHint,
     this.onFooterAction,
     this.headerAccentColor,
+    this.appealHold = false,
+    this.appealHoldNote,
+    this.appealHeldAt,
     this.appealDecisionLabel,
     this.appealDecisionCode,
+    this.appealDecisionNote,
+    this.appealDecidedAt,
     this.allowFinalDisposition = true,
     this.onSaleOrDestroyRequest,
     this.forceFinalDisposition = false,
@@ -2131,6 +2141,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
   @override
   Widget build(BuildContext context) {
     final p = widget.package;
+    final hasAppealDecision =
+        widget.appealDecisionLabel?.trim().isNotEmpty ?? false;
+    final showAppealStatus = widget.appealHold || hasAppealDecision;
+    final appealIsHold = widget.appealHold;
+    final appealAccent = appealIsHold
+        ? context.colors.warningAmber
+        : context.colors.accentLightBlue;
+    final appealDate =
+        appealIsHold ? widget.appealHeldAt : widget.appealDecidedAt;
+    final appealNote = (appealIsHold
+            ? widget.appealHoldNote
+            : widget.appealDecisionNote)
+        ?.trim();
     // ⚠️ NOT "Unknown Officer". Most of these entries were bulk-loaded when
     // the register was migrated, so no officer was ever recorded against them
     // -- there is nobody to name, and nothing has gone wrong. "Unknown"

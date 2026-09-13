@@ -371,16 +371,18 @@ class AuthService {
     // Check the portal BEFORE spending a code. Read the role while the
     // session is still alive — RLS needs it — then sign out either way.
     String? role;
+    bool? isActive;
     if (requireRole != null) {
       final uid = res.user?.id ?? supabase.auth.currentUser?.id;
       if (uid != null) {
         try {
           final row = await supabase
               .from('profiles')
-              .select('role')
+              .select('role, is_active')
               .eq('id', uid)
               .single();
           role = row['role'] as String?;
+          isActive = row['is_active'] as bool?;
         } catch (_) {
           // Unreadable profile: fall through and let the post-OTP check
           // decide, rather than locking someone out on a transient error.
@@ -388,6 +390,14 @@ class AuthService {
       }
     }
     await supabase.auth.signOut();
+    // This check used to happen only in finishOtpLogin.  An inactive account
+    // therefore received a code, then the final check called AuthService's
+    // signOut(), which rebuilds the ProviderScope and dumps the login screen
+    // at the home page before it can show its error.  Reject it before the
+    // code is issued, while this is still an ordinary, disposable auth probe.
+    if (isActive == false) {
+      throw Exception('account_deactivated');
+    }
     if (requireRole != null && role != null && role != requireRole) {
       throw Exception('wrong_portal');
     }
@@ -414,7 +424,12 @@ class AuthService {
     final profile = ProfileModel.fromJson(profileData);
 
     if (!profile.isActive) {
-      await signOut();
+      // An OTP attempt has not reached a dashboard or filled any data
+      // providers.  Do not use AuthService.signOut() here: its cache reset
+      // replaces the router and loses the on-screen deactivation message.
+      // The portal can now keep the user here and explain the refusal.
+      AppSession.clear();
+      await supabase.auth.signOut();
       throw Exception('account_deactivated');
     }
     if (profile.isExpired) {

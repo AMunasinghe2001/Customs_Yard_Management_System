@@ -131,14 +131,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         final profile = ref.read(currentProfileProvider);
         if (profile != null && profile.isPasswordExpired) {
           if (isPublicPage) {
-            // On a public page there is nothing to protect, but the stale
-            // session must not survive to authorise the NEXT navigation.
-            try {
-              await ref.read(authServiceProvider).signOut();
-            } catch (_) {
-              // The profile is cleared either way; the server expires it.
-            }
-            ref.read(currentProfileProvider.notifier).state = null;
+            // OTP verification has already created a session when its login
+            // screen discovers an expired password and switches to the
+            // mandatory password-change stage.  Signing out here races that
+            // stage, rebuilds the ProviderScope and drops the user on '/'
+            // before they can set the new password.  Stay on this public
+            // portal route; its Back control explicitly abandons the live
+            // sign-in, and protected routes below remain blocked.
             return null;
           }
           return '/';

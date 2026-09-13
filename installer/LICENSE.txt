@@ -1,0 +1,100 @@
+SRI LANKA CUSTOMS
+SR MANAGEMENT SYSTEM
+
+TERMS OF USE
+
+Read these terms. You must accept them to install this software.
+
+
+1. WHAT THIS SOFTWARE IS
+
+This is the Seizure Report (SR) Management System of the Sri Lanka Customs
+Department. It records seized, detained, abandoned and forfeited goods, their
+storage, their valuation, their sale or destruction, and the officers who
+acted on each of those.
+
+It is an internal departmental system. It is not licensed, sold or offered to
+the public.
+
+
+2. WHO MAY USE IT
+
+Only officers of the Sri Lanka Customs Department who have been issued an
+account by the ICT Directorate.
+
+Your account is yours alone. You may not share your password, sign in on
+another officer's behalf, or let another person use a session opened with your
+credentials. Every action this system records is recorded against the account
+that performed it, and that record is used.
+
+
+3. WHAT YOU MAY NOT DO
+
+You may not:
+
+  * install or run this software on a computer that is not the Department's,
+    or outside a Customs yard or office, without written authorisation;
+  * copy, distribute, publish or pass on this software or any part of it;
+  * decompile, disassemble or otherwise attempt to derive its source code;
+  * alter it, or connect it to any database other than the Department's;
+  * extract, copy or disclose any data it holds, except as your duties
+    require and your authorisation permits.
+
+
+4. THE DATA IN THIS SYSTEM
+
+Consignee names, goods, valuations, case numbers and officer records are
+official Customs information. Some of it is commercially sensitive and some
+of it identifies private individuals and businesses.
+
+Treat everything you see here as confidential. Do not photograph, screenshot,
+copy to personal storage, or send outside the Department any part of it
+without authorisation. Your obligation continues after you leave the post or
+the Department.
+
+
+5. THIS SYSTEM KEEPS A RECORD
+
+Sign-ins, failed sign-in attempts, account changes, and every change to a
+record are written to an audit trail that cannot be edited or deleted.
+
+That trail is kept for a year and may be examined in any inquiry.
+
+
+6. SECURITY
+
+  * Your password expires every 90 days and must then be changed.
+  * You may not reuse a password you have used before.
+  * The system locks itself after 5 minutes without activity.
+  * An account that is not signed into for 30 days is disabled, and only the
+    ICT Directorate can restore it.
+
+Report a lost, shared or suspected password to the ICT Directorate at once.
+
+
+7. NO WARRANTY
+
+This software is provided as it is. The Department does not warrant that it
+will be free of faults or available without interruption.
+
+It supports the SR register; it does not replace the register, the Customs
+Ordinance, or any officer's own duty to verify what they record. The
+correctness of an entry remains the responsibility of the officer who makes
+it.
+
+
+8. BREACH
+
+Using this software or its data outside these terms may be a disciplinary
+matter, and may be an offence under the Customs Ordinance, the Computer Crimes
+Act No. 24 of 2007, or other written law.
+
+
+9. QUESTIONS
+
+ICT Directorate, Sri Lanka Customs.
+
+
+By choosing "I accept the agreement" you confirm that you have read these
+terms, that you are an authorised officer, and that you agree to be bound by
+them.

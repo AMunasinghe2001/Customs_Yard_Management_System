@@ -96,39 +96,36 @@ void main() {
     });
   });
 
-  group('a second tap never opens a second popup', () {
-    test('Details and Costs share one in-flight guard', () {
-      // ⚠️ A stalled frame swallows the FIRST tap; the officer presses again
-      // — often the OTHER button — and when the thread frees up both taps
-      // land and two dialogs stack. One flag for both buttons means the
-      // second is simply ignored while the first is still on its way.
-      expect(disposal, contains('bool _destroyedPopupOpening = false;'));
-      expect('if (_destroyedPopupOpening) return;'.allMatches(disposal).length,
-          2,
-          reason: 'both the Details and the Costs handler must check it');
+  group('no in-flight guard is ever reintroduced', () {
+    // ⚠️ Two were tried and BOTH killed the page. Each held a flag across
+    // `await showAppDialog(...)`, which does not return until the dialog is
+    // DISMISSED — so the flag stayed set for the popup's whole life, and any
+    // early `return` before the dialog (a `!context.mounted` check, an error
+    // path) left it set for good. Every button on the table then did nothing,
+    // twenty and thirty presses on.
+    //
+    // The double-popup that prompted them is a symptom of a stalled frame
+    // swallowing the first tap. Fix the stall; never trade a working button
+    // for it.
+    test('the Details handler holds no flag', () {
+      expect(handler().contains('_destroyedPopupOpening'), isFalse);
+      expect(handler().contains('} finally {'), isFalse,
+          reason: 'a finally around the dialog await holds it until close');
     });
 
-    test('the guard is released as soon as the popup is up, not on close', () {
-      // ⚠️ The first version held the flag across `await showAppDialog(...)`
-      // — which does not return until the dialog is DISMISSED. So the flag
-      // stayed true for the popup's whole lifetime, and any exit that did
-      // not resolve the future left it true for good: every button on the
-      // page then did nothing, twenty and thirty presses on. The guard only
-      // has to outlive the tap a stalled frame might double-deliver.
-      expect(handler(), contains('addPostFrameCallback'),
-          reason: 'Details must release the guard on the next frame');
-      expect(handler().contains('} finally {'), isFalse,
-          reason: 'a finally around the await holds the guard until close');
-      // Costs awaits the ledger first, so it releases in a finally around
-      // THAT await — and must not extend it around the dialog.
-      final costs = disposal.substring(
-          disposal.indexOf('class _RecordCostsButton'),
-          disposal.indexOf('class _RecordCostsButton') + 2200);
-      final dialogAt = costs.indexOf('await showAppDialog(');
-      final releaseAt = costs.indexOf('_destroyedPopupOpening = false;');
-      expect(releaseAt, greaterThan(-1));
-      expect(releaseAt, lessThan(dialogAt),
-          reason: 'Costs must release the guard BEFORE opening the dialog');
+    test('the Costs handler holds no flag', () {
+      final at = disposal.indexOf('class _RecordCostsButton');
+      expect(at, greaterThan(-1));
+      // ⚠️ Comment lines stripped first. The note explaining WHY there is no
+      // guard names the old `static bool _opening`, and a plain substring
+      // search matched its own documentation.
+      final costs = disposal
+          .substring(at, at + 3000)
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(costs.contains('static bool _opening'), isFalse);
+      expect(costs.contains('if (_opening) return;'), isFalse);
     });
   });
 }
