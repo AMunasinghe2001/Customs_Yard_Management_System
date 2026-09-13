@@ -19,6 +19,18 @@ class AppSession {
   static String? currentDirectorate;
   static String? currentRole;
 
+  /// The yard to STAMP on a record this session creates, or null when the
+  /// session does not belong to a yard.
+  ///
+  /// ⚠️ Not the same as [currentYard], and the difference is the bug this
+  /// exists to fix. `currentYard` falls back to [kDefaultYardCode] because SR
+  /// numbers must always resolve to something — but that fallback was also
+  /// being written onto audit rows, so an ICT or Valuation sign-in was logged
+  /// as happening in Grey Line 1. A directorate is not inside a yard; it
+  /// touches one only through the SR records it reads, and that link is
+  /// carried by the PACKAGE's yard.
+  static String? get stampYard => isYardBound ? currentYard : null;
+
   static void setYard(String? yard) {
     currentYard = (yard == null || yard.isEmpty) ? kDefaultYardCode : yard;
   }

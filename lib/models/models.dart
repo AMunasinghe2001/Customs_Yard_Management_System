@@ -1230,7 +1230,11 @@ class AuditLogModel {
           : DateTime.now(),
       yard: json['yard'] as String?,
       userFullName: profile?['full_name'] as String?,
-      userRole: profile?['role'] as String?,
+      // ⚠️ The role stamped on the ROW, falling back to the joined profile
+      // only for rows written before migration 029 added the column. Reading
+      // the profile first renamed every past action after a promotion: an
+      // officer made SDDC had their whole history relabelled as SDDC work.
+      userRole: (json['actor_role'] as String?) ?? profile?['role'] as String?,
     );
   }
 }

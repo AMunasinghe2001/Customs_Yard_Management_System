@@ -108,7 +108,10 @@ void main() {
       // than its words: the words are a countdown against today's date, so a
       // text match would pass or fail depending on when the suite is run.
       expect(find.byIcon(Icons.lock_clock_rounded), findsNWidgets(4));
-      expect(find.text('Reset access'), findsNWidgets(4));
+      // ⚠️ Three, not four. The inactive account shows Reactivate in that
+      // cell instead — it cannot be sent credentials that would not sign in.
+      expect(find.text('Reset access'), findsNWidgets(3));
+      expect(find.text('Reactivate'), findsOneWidget);
     });
 
     testWidgets('a deactivated account cannot be reissued', (tester) async {
@@ -120,11 +123,20 @@ void main() {
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
 
-      final buttons = tester
-          .widgetList<OutlinedButton>(find.byType(OutlinedButton))
-          .toList();
-      final disabled = buttons.where((b) => b.onPressed == null).length;
-      expect(disabled, 1, reason: 'only the inactive ICT account is disabled');
+      // ⚠️ This counted DISABLED buttons, assuming "cannot be reissued" had
+      // to mean a greyed-out "Reset access". It does not: an inactive account
+      // now offers Reactivate in that cell instead, which is a live button —
+      // so the count went to zero and the test failed while the rule it
+      // protects was intact.
+      //
+      // What matters is that no INACTIVE account offers Reset access. Stated
+      // that way it survives the cell gaining other actions.
+      expect(find.text('Reactivate'), findsOneWidget,
+          reason: 'the inactive account has no way back');
+      // One row is inactive, so one fewer Reset access than there are rows.
+      // Four accounts in the fixture, one of them inactive.
+      expect(find.text('Reset access'), findsNWidgets(3),
+          reason: 'a deactivated account must not be offered its credentials');
     });
 
     testWidgets('an empty list says so instead of showing a bare table',

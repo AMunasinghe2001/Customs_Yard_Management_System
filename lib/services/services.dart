@@ -4411,9 +4411,26 @@ class AuditLogService {
       if (to != null) {
         query = query.lte('created_at', to.toIso8601String());
       }
+      // ⚠️ Routine session traffic is hidden BY DEFAULT, not deleted and not
+      // made unreachable. 690 of the 1046 rows here are sign-ins and
+      // sign-outs; what ICT opens this page for is what somebody CHANGED —
+      // an SR edited, an appeal decided, goods released, a privilege granted
+      // — and those 356 rows were buried under the other 690.
+      //
+      // ⚠️ Hidden, not dropped. Picking "Sign-in / Sign-out" in the Activity
+      // filter brings them straight back, because "who was in the system at
+      // 3pm" is a real question an audit trail has to answer — it is just not
+      // the question the page is opened with.
+      if (entityType == null || entityType.isEmpty) {
+        query = query.not('entity_type', 'eq', 'auth');
+      }
       if (yard != null && yard.isNotEmpty) query = query.eq('yard', yard);
       if (role != null && role.isNotEmpty) {
-        query = query.eq('profiles.role', role);
+        // ⚠️ The role STAMPED on the row, matching what the table displays.
+        // Filtering on profiles.role while showing actor_role would have made
+        // the two disagree: picking "Officer" would hide the very rows the
+        // column labels OFFICER, because the person is an SDDC today.
+        query = query.eq('actor_role', role);
       }
       if (entityType != null && entityType.isNotEmpty) {
         query = query.eq('entity_type', entityType);
@@ -4499,7 +4516,12 @@ class AuditLogService {
     try {
       await supabase.from('audit_logs').insert({
         'user_id': userId,
-        'yard': AppSession.currentYard,
+        // ⚠️ stampYard, not currentYard. currentYard falls back to the
+        // default code so SR numbers always resolve, and that fallback was
+        // being written onto every audit row — so an ICT or Valuation
+        // sign-in was logged as happening in Grey Line 1. A directorate is
+        // not inside a yard (migration 027).
+        'yard': AppSession.stampYard,
         'action': action,
         'entity_type': entityType,
         'entity_id': entityId,

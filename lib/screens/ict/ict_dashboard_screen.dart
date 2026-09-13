@@ -1625,7 +1625,24 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                 columnSpacing: 12,
                                 horizontalMargin: 16,
                                 fixedTopRows: 1,
-                                minWidth: 1120,
+                                // ⚠️ Balanced, not generous. data_table_2
+                                // squeezes the flexible columns to fit and
+                                // only scrolls once it cannot — so too LOW
+                                // crushes the last column (Actions) out of
+                                // sight, and too HIGH forces a scrollbar even
+                                // on a maximised window. 1400 did the latter.
+                                //
+                                // The fixed columns and gaps take 468 (Role
+                                // 100 + Status 112 + Actions 140 + spacing 84
+                                // + margins 32). At 1040 the five flexible
+                                // columns get ~110px each (~132 for the name)
+                                // — tight, and text ellipsises, which is the
+                                // right trade: every column stays visible.
+                                //
+                                // The rail is 258px, so the table has ~858px
+                                // at the 1180px minimum window (a short
+                                // scroll) and ~1044px by 1366 (none at all).
+                                minWidth: 1040,
                                 headingRowHeight: kIctHeadingHeight,
                                 dataRowHeight: kIctRowHeight,
                                 columns: [
@@ -1775,9 +1792,25 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                             onDelete: () =>
                                                 _toggleStaffStatus(staff),
                                             editTooltip: 'Edit Details',
+                                            // ⚠️ A DORMANT account says so.
+                                            // It was switched off by the
+                                            // 30-day sweep rather than by a
+                                            // person, and turning it back on
+                                            // also resets that clock — an
+                                            // unlabelled "Activate Account"
+                                            // gave no hint that ICT is the
+                                            // only office that can do it, or
+                                            // that the account would not
+                                            // simply switch itself off again.
                                             deleteTooltip: staff.isActive
                                                 ? 'Deactivate Account'
-                                                : 'Activate Account',
+                                                : (staff.deactivatedReason ==
+                                                        'dormant'
+                                                    ? 'Reactivate — unused for '
+                                                        '30 days. Restores '
+                                                        'access and restarts '
+                                                        'the dormancy clock.'
+                                                    : 'Activate Account'),
                                             deleteIcon: staff.isActive
                                                 ? Icons.block_rounded
                                                 : Icons.check_circle_outline_rounded,

@@ -145,7 +145,11 @@ void main() {
           greaterThanOrEqualTo(2));
       for (final clause in [
         "eq('yard', yard)",
-        "eq('profiles.role', role)",
+        // ⚠️ actor_role, not profiles.role. The column shows the role stamped
+        // on the ROW (migration 029), so filtering on the joined profile
+        // would make the two disagree — picking "Officer" would hide the very
+        // rows labelled OFFICER, because that person is an SDDC today.
+        "eq('actor_role', role)",
         "eq('entity_type', entityType)",
         'action.ilike.',
       ]) {

@@ -9,6 +9,10 @@
 --    018  RE-APPLIED, because 023 overwrites the guard it installs
 --    024  lets "forgot password" work again -- 018's guard broke it
 --    025  only a yard SDDC/DDC may raise a disposal request
+--    026  dormancy after 30 days, not 90
+--    027  a directorate account carries no yard
+--    028  a failed sign-in records the yard it targeted
+--    029  a log row keeps the role its actor held that day
 --
 --  ⚠️ Why 018 must come last. Migration 018 wraps auth.change_password so a
 --  session may only change ITS OWN password: it renames the real body to
@@ -60,6 +64,18 @@
 \echo ''
 \echo '=== 025 only yard admin sends disposal requests ================='
 \i migrations/025_only_yard_admin_sends_disposal_requests.sql
+\echo ''
+\echo '=== 026 dormancy after 30 days =================================='
+\i migrations/026_dormancy_after_30_days.sql
+\echo ''
+\echo '=== 027 directorates carry no yard ==============================='
+\i migrations/027_directorates_do_not_belong_to_a_yard.sql
+\echo ''
+\echo '=== 028 failed sign-in records the target yard =================='
+\i migrations/028_failed_login_records_the_yard.sql
+\echo ''
+\echo '=== 029 log rows keep the role of the day ========================'
+\i migrations/029_audit_rows_keep_the_role_of_the_day.sql
 \echo ''
 
 -- ── Prove the end state, rather than trusting the order ─────────────────────
@@ -127,6 +143,21 @@ begin
     raise exception
       'disposal_requests has no RESTRICTIVE admin-only write policy -- a yard '
       'officer can still send a disposal request (025 not applied)';
+  end if;
+
+  -- ⚠️ And dormancy must be the 30-day rule, not the old 90.
+  if public.account_dormant_after_days() <> 30 then
+    raise exception
+      'dormancy is still % days -- 026 was not applied',
+      public.account_dormant_after_days();
+  end if;
+
+  -- ⚠️ And no directorate account may claim a yard.
+  if exists (select 1 from public.profiles
+              where role in ('ict','valuation','appeal','disposal','executive')
+                and yard is not null) then
+    raise exception
+      'directorate accounts still carry a yard -- 027 was not applied';
   end if;
 
   raise notice 'OK: caller guard + reuse check layered, dormancy on the '

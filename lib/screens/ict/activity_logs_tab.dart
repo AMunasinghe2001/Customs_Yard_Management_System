@@ -364,10 +364,16 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
 
   // ── Filtering ───────────────────────────────────────────────────────────
 
-  String _prettyEntity(String raw) => raw
-      .split('_')
-      .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
-      .join(' ');
+  String _prettyEntity(String raw) {
+    // ⚠️ 'auth' would render as a bare "Auth", which says nothing about what
+    // it holds. It is the one entity type hidden by default, so its name has
+    // to tell the officer what turning it on will show them.
+    if (raw == 'auth') return 'Sign-in / Sign-out';
+    return raw
+        .split('_')
+        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+        .join(' ');
+  }
 
   String _prettyDetails(AuditLogModel l) {
     final d = l.details;
@@ -531,7 +537,14 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                 return IctSectionCard(
                   icon: Icons.history_rounded,
                   title: 'Audit Trail',
-                  subtitle: 'Every action across all yards and directorates.',
+                  // ⚠️ No longer "Every action". Routine sign-ins and
+                  // sign-outs are hidden by default, so a header promising
+                  // everything would be untrue — and would leave an officer
+                  // believing a quiet account really did nothing that day.
+                  subtitle: _selectedEntity == 'all'
+                      ? 'Record changes across all yards and directorates. '
+                          'Sign-ins are under Activity.'
+                      : 'Filtered view across all yards and directorates.',
                   // The count of everything the filters matched, which is
                   // what the server counted -- not the length of this page.
                   badge: '$total ${total == 1 ? 'action' : 'actions'}',
@@ -595,8 +608,25 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                                         fontWeight: FontWeight.w600))),
                                 DataCell(Center(
                                     child: _RoleChip(role: l.userRole))),
+                                // ⚠️ A DIRECTORATE row shows no yard, whatever
+                                // is stored on it. Until migration 027 the
+                                // profiles.yard default put 'GL1' on every
+                                // directorate account, and those rows were
+                                // logged with it — so the trail still holds
+                                // ~558 entries saying an ICT sign-in happened
+                                // in Grey Line 1.
+                                //
+                                // The rows are NOT rewritten: audit_logs is
+                                // append-only by trigger, and an audit trail
+                                // that can be edited afterwards is worth
+                                // nothing. The stored value stays; the column
+                                // simply declines to repeat a claim the role
+                                // makes impossible.
                                 DataCell(TooltipText(
-                                    l.yard == null || l.yard!.isEmpty
+                                    (l.yard == null ||
+                                            l.yard!.isEmpty ||
+                                            kDirectorateRoles
+                                                .contains(l.userRole))
                                         ? '—'
                                         : yardName(l.yard),
                                     overflow: TextOverflow.ellipsis,

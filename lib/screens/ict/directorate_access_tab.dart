@@ -39,6 +39,94 @@ class DirectorateAccessTab extends ConsumerWidget {
   final Color accent;
   const DirectorateAccessTab({super.key, required this.accent});
 
+  /// Turn a deactivated directorate account back on.
+  ///
+  /// ⚠️ Goes through toggleUserStatus, which routes a reactivation to the
+  /// `reactivate_account` function — that resets the dormancy clock in the
+  /// same statement. Writing `is_active = true` directly would wake the
+  /// account with a 30-day-old last_sign_in_at still on it, and the very next
+  /// sweep would switch it straight back off.
+  Future<void> _confirmReactivate(
+      BuildContext context, WidgetRef ref, ProfileModel account) async {
+    final portal = kDirectorateRoleNames[account.role] ?? account.role;
+    final dormant = account.deactivatedReason == 'dormant';
+
+    final ok = await showIctDialog<bool>(
+      context: context,
+      builder: (ctx) => StyledFormDialog(
+        label: 'REACTIVATE',
+        title: 'Restore access for this account',
+        icon: Icons.check_circle_outline_rounded,
+        headerAccentColor: accent,
+        erp: true,
+        width: 520,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          const Gap(8),
+          StyledDialogPrimaryButton(
+            erp: true,
+            accentColor: accent,
+            labelText: 'Reactivate',
+            icon: Icons.check_circle_outline_rounded,
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Kv(label: 'Portal', value: portal),
+            _Kv(label: 'Account', value: account.fullName),
+            const Gap(14),
+            Text(
+              dormant
+                  ? 'This account was switched off automatically after 30 days '
+                      'without a sign-in. Reactivating restores access and '
+                      'restarts that clock, so it will not be switched off '
+                      'again straight away.'
+                  : 'This account was deactivated by hand. Reactivating '
+                      'restores access immediately.',
+              style: TextStyle(
+                  color: context.colors.textMuted, fontSize: 12, height: 1.5),
+            ),
+            const Gap(10),
+            // ⚠️ Say what this does NOT do. The password is untouched, so an
+            // account whose password has also expired still needs a reset —
+            // two different problems that look the same from the table.
+            Text(
+              'The password is not changed. If it has also expired, use '
+              'Reset access afterwards.',
+              style: TextStyle(
+                  color: context.colors.textMuted,
+                  fontSize: 12,
+                  height: 1.5,
+                  fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await ref
+          .read(ictServiceProvider)
+          .toggleUserStatus(account.id, true, staffName: account.fullName);
+      ref.invalidate(directorateAccountsProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('✅ ${account.fullName} reactivated'),
+          backgroundColor: context.colors.successGreen,
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) showErrorSnack(context, e);
+    }
+  }
+
   Future<void> _confirmReset(
       BuildContext context, WidgetRef ref, ProfileModel account) async {
     final portal = kDirectorateRoleNames[account.role] ?? account.role;
@@ -170,6 +258,15 @@ class DirectorateAccessTab extends ConsumerWidget {
               columnSpacing: 16,
               horizontalMargin: 20,
               fixedTopRows: 1,
+              // ⚠️ Was absent, so the columns were squeezed to whatever width
+              // the window gave and the Access column — now carrying
+              // Reactivate as well as Reset access — was the one that lost
+              // out. This table has only FIVE columns, so it needs far less
+              // than the Staff register: 302 fixed (Status 112 + Access 170 +
+              // margins 40) plus spacing, and ~140px each for the three
+              // flexible ones. 834 covers it, and the table has ~858px even
+              // at the 1180px minimum window — so no scrollbar at any size.
+              minWidth: 834,
               headingRowHeight: kIctHeadingHeight,
               dataRowHeight: kIctRowHeight,
               isHorizontalScrollBarVisible: false,
@@ -209,27 +306,51 @@ class DirectorateAccessTab extends ConsumerWidget {
                     DataCell(TooltipText(a.fullName,
                         overflow: TextOverflow.ellipsis)),
                     DataCell(PasswordAgeCell(profile: a)),
+                    // ⚠️ The shared status, not a hand-rolled Active/Inactive.
+                    // This said only "Inactive" for an account the 30-day
+                    // sweep had switched off, so ICT could not tell a
+                    // deliberate deactivation from a dormant one — and the
+                    // Staff table one tab away was already making that
+                    // distinction.
                     DataCell(Center(
-                      child: IctStatusPill(
-                        label: a.isActive ? 'Active' : 'Inactive',
-                        color: a.isActive
-                            ? context.colors.successGreen
-                            : context.colors.dangerRed,
-                      ),
+                      child: Builder(builder: (context) {
+                        // ⚠️ accountStatusOf for the ANSWER, IctStatusPill for
+                        // the CHROME — the same split the Staff table uses.
+                        // AccountStatusChip draws its own container, so using
+                        // it here would have given this one table a different
+                        // pill from the rest of the console.
+                        final st = accountStatusOf(context, a);
+                        return IctStatusPill(
+                          label: st.label,
+                          color: st.color,
+                          tooltip: st.tooltip,
+                        );
+                      }),
                     )),
                     DataCell(Center(
-                      child: IctGhostButton(
-                        label: 'Reset access',
-                        icon: Icons.key_rounded,
-                        accent: accent,
-                        dense: true,
-                        // A deactivated account cannot sign in at all, so
-                        // reissuing its details would only send credentials
-                        // that do not work.
-                        onPressed: a.isActive
-                            ? () => _confirmReset(context, ref, a)
-                            : null,
-                      ),
+                      child: a.isActive
+                          ? IctGhostButton(
+                              label: 'Reset access',
+                              icon: Icons.key_rounded,
+                              accent: accent,
+                              dense: true,
+                              onPressed: () => _confirmReset(context, ref, a),
+                            )
+                          // ⚠️ A deactivated account had NOTHING here: "Reset
+                          // access" was greyed out (correctly — the
+                          // credentials would not work) and no other action
+                          // was offered, so a directorate account switched off
+                          // by the dormancy sweep was stranded with no way
+                          // back. The Staff table has had a reactivate button
+                          // all along; this table simply never grew one.
+                          : IctGhostButton(
+                              label: 'Reactivate',
+                              icon: Icons.check_circle_outline_rounded,
+                              accent: context.colors.successGreen,
+                              dense: true,
+                              onPressed: () =>
+                                  _confirmReactivate(context, ref, a),
+                            ),
                     )),
                   ],
                 );

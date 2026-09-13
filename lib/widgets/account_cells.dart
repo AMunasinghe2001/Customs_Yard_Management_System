@@ -84,7 +84,11 @@ AccountStatus accountStatusOf(BuildContext context, ProfileModel profile) {
     label,
     color,
     !profile.isActive && profile.deactivatedReason == 'dormant'
-        ? 'Disabled automatically — not signed into for 90 days. Only ICT '
+        // ⚠️ 30, not 90. Dormancy is deliberately shorter than the 90-day
+        // PASSWORD rotation (see the tooltip below, which is still 90): a
+        // stale password is asked to change, an unused account is switched
+        // off. See migration 026.
+        ? 'Disabled automatically — not signed into for 30 days. Only ICT '
             'can reactivate it.'
         : profile.isExpired
             ? 'Auto-deactivated on $expiresStr (8 months after creation)'
