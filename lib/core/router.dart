@@ -82,9 +82,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
 
       if (isLoggedIn) {
-        // Run deep verification (email confirmed, active status)
+        // Run deep verification (profile exists, active status)
         try {
-          await ref.read(authServiceProvider).verifyUserSession();
+          final profile =
+              await ref.read(authServiceProvider).verifyUserSession();
+          if (profile != null && ref.read(currentProfileProvider) == null) {
+            ref.read(currentProfileProvider.notifier).state = profile;
+          }
         } catch (e) {
           AppLog.warn('session verification failed; redirecting to /',
               error: e, tag: 'router');

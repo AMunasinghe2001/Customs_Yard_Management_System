@@ -43,17 +43,11 @@ class AuthService {
     );
   }
 
-  Future<void> verifyUserSession() async {
+  Future<ProfileModel?> verifyUserSession() async {
     final user = supabase.auth.currentUser;
-    if (user == null) return;
+    if (user == null) return null;
 
-    // 1. Check email confirmation
-    if (user.emailConfirmedAt == null) {
-      await signOut();
-      throw Exception('email_not_confirmed');
-    }
-
-    // 2. Check profile and role. Retry transient failures — right after a fresh
+    // Check profile and role. Retry transient failures — right after a fresh
     // login the JWT can still be propagating, so the first profile query may
     // momentarily return nothing/error; retrying avoids a spurious sign-out that
     // bounced the user back to the portal on the first Sign In click.
@@ -78,30 +72,10 @@ class AuthService {
       throw Exception('account_expired');
     }
 
-    // ⚠️ Skipped while the PASSWORD has expired.
-    //
-    // A locked session cannot write its own heartbeat -- migration 018 shuts
-    // it out of everything but its own profile row -- so `last_seen_at`
-    // goes null, and `isExpired` treats null as "long gone". This check
-    // therefore signed the officer out on the very next route redirect,
-    // before they could reach the password-change dialog: the thing that
-    // forces the rotation also made the rotation impossible.
-    //
-    // Nothing is lost by skipping it. A locked session can read nothing and
-    // change nothing except its own password, which is a far tighter
-    // position than the 30-minute idle rule is protecting against.
-    if (!profile.isPasswordExpired &&
-        SessionSecurityPolicy.isExpired(
-          lastActivityAt: profile.lastSeenAt,
-          now: DateTime.now(),
-        )) {
-      await signOut();
-      throw Exception('session_expired');
-    }
-
     AppSession.setYard(profile.yard);
     AppSession.setDirectorate(profile.directorate);
     AppSession.applyYardFilterToRealtime(profile.role);
+    return profile;
   }
 
   /// Retries [action] a few times on transient network failures
