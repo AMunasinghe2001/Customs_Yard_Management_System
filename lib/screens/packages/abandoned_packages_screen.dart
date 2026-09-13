@@ -609,17 +609,45 @@ class _AbandonedPackagesScreenState
                                                 ? appealOutcomes[row.item.id]!
                                                     .decision
                                                 : null,
-                                            // Every row in this table is an
-                                            // actionable abandoned item — force
-                                            // the Final Disposition button.
-                                            forceFinalDisposition: true,
+                                            // ⚠️ NOT unconditionally true. The
+                                            // comment here used to claim every
+                                            // row in this table is actionable,
+                                            // but the table paints an
+                                            // AppealStateChip above — so a row
+                                            // CAN still be inside its 30-day
+                                            // window, and that combination gave
+                                            // an enabled Final Disposition
+                                            // button beside an "Appealing · 12d"
+                                            // chip. Same gate as the chip.
+                                            forceFinalDisposition:
+                                                canActOnHeldGoods(
+                                                    entryDate: row.package
+                                                            .entryDate ??
+                                                        row.package.createdAt,
+                                                    outcome: appealOutcomes[
+                                                        row.item.id]),
+                                            allowFinalDisposition:
+                                                canActOnHeldGoods(
+                                                    entryDate: row.package
+                                                            .entryDate ??
+                                                        row.package.createdAt,
+                                                    outcome: appealOutcomes[
+                                                        row.item.id]),
                                             onSaleOrDestroyRequest:
-                                                (disposition) =>
-                                                    _requestSingleDisposal(
-                                                        row.package,
-                                                        row.item,
-                                                        disposition,
-                                                        entry: row.entry),
+                                                !canActOnHeldGoods(
+                                                        entryDate: row.package
+                                                                .entryDate ??
+                                                            row.package
+                                                                .createdAt,
+                                                        outcome: appealOutcomes[
+                                                            row.item.id])
+                                                    ? null
+                                                    : (disposition) =>
+                                                        _requestSingleDisposal(
+                                                            row.package,
+                                                            row.item,
+                                                            disposition,
+                                                            entry: row.entry),
                                           ),
                                         );
                                       },

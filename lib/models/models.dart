@@ -1964,6 +1964,34 @@ bool isWithinAppealWindow(DateTime? entryDate) {
   return DateTime.now().isBefore(appealDeadlineFrom(entryDate));
 }
 
+/// Whether the yard may act on these goods yet — record a final disposition,
+/// or send a disposal request.
+///
+/// ⚠️ Both actions were gated on "is this row already completed" ALONE, so an
+/// item still inside its 30-day appeal window showed "Appealing · 12d" in the
+/// table and an ENABLED Final Disposition button in its popup. The yard could
+/// decide the fate of goods whose owner still had time to appeal, and could
+/// send them to Central Disposal in the same state.
+///
+/// This is the same rule [AppealStateChip] paints, expressed once so the
+/// button and the chip cannot disagree:
+///
+///   * a RULING releases the goods for action immediately, whatever the
+///     calendar says — the Directorate has spoken;
+///   * an appeal ON HOLD blocks action even after the window closes;
+///   * otherwise the 30 days must have run out.
+bool canActOnHeldGoods({
+  DateTime? entryDate,
+  DateTime? deadline,
+  ItemAppealOutcome? outcome,
+}) {
+  if (outcome?.onHold ?? false) return false;
+  if (outcome?.unblocksAction ?? false) return true;
+  final end = deadline ?? (entryDate == null ? null : appealDeadlineFrom(entryDate));
+  if (end == null) return false;
+  return !DateTime.now().isBefore(end);
+}
+
 /// Whole days left in the appeal window; 0 once it has closed.
 int appealDaysLeft(DateTime? entryDate) {
   if (entryDate == null) return 0;

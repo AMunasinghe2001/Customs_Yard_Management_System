@@ -2468,11 +2468,16 @@ Future<void> _seedFinalOtherOutcomes(Connection conn) async {
     '       we.package_id, we.warehouse_id, we.zone, we.hold_reason, '
     '       we.daily_rate, '
     '       (fp.id is not null and fp.item_appeal_decisions <> ' r"'{}'" '::jsonb) '
-    '         as was_appealed '
+    '         as was_appealed, '
+    // The RULING itself. Without it the outcome below was chosen at random
+    // from every after-appeal phrase, so an item the Directorate told the
+    // yard to SELL could be recorded as "Re-exported per appeal ruling".
+    '       iao.decision as appeal_decision '
     'from public.warehouse_entries we '
     'join public.package_items pi on pi.id = we.package_item_id '
     'join public.packages p on p.id = we.package_id '
     'left join public.forfeited_packages fp on fp.item_id = pi.id '
+    'left join public.item_appeal_outcomes iao on iao.item_id = pi.id '
     'where pi.status = ' r"'Other'" ' '
     '  and coalesce(we.is_returned, false) = false '
     '  and coalesce(p.entry_date, p.created_at) < now() - interval ' r"'30 days'" ' '
@@ -2509,9 +2514,18 @@ Future<void> _seedFinalOtherOutcomes(Connection conn) async {
       finishedAt = now.subtract(Duration(days: 1 + _rng.nextInt(30)));
     }
 
+    // ⚠️ The outcome must AGREE with the ruling. This used to pick any
+    // after-appeal phrase at random, which produced rows the app could only
+    // render as a contradiction: the popup bannered "Proceed with: Sell"
+    // while the row beneath it read "Re-exported per appeal ruling". Five
+    // such rows existed in the seeded data. A ruling is an instruction, so
+    // the recorded outcome is now derived from it.
+    final decision = (r[10] as String?)?.trim().toUpperCase() ?? '';
     final outcome = wasAppealed
-        ? _finalOtherAfterAppeal[_rng.nextInt(_finalOtherAfterAppeal.length)]
+        ? _outcomeForRuling(decision)
         : _finalOtherDirect[_rng.nextInt(_finalOtherDirect.length)];
+    // A SALE or DESTROY ruling is carried out by Central Disposal, not here.
+    if (outcome == null) continue;
 
     await conn.execute(
       r'insert into public.warehouse_entries '
@@ -2548,21 +2562,47 @@ Future<void> _seedFinalOtherOutcomes(Connection conn) async {
       '($afterAppeal after an appeal, $direct directly)');
 }
 
-/// Outcomes recorded once an appeal came back and the yard acted on it.
-const _finalOtherAfterAppeal = [
-  'Released on appeal ruling',
-  'Re-exported per appeal ruling',
-  'Handed to the owner after appeal',
-  'Auctioned per appeal ruling',
-];
+/// The outcome the yard records for a given Appeal Directorate ruling.
+///
+/// ⚠️ One ruling, one phrasing. The yard CARRIES OUT what was decided -- it
+/// does not choose afresh -- so a SALE ruling can only ever be recorded as a
+/// sale. Picking from a flat list of after-appeal phrases at random is what put
+/// "Re-exported per appeal ruling" on an item the Directorate ordered sold.
+/// ⚠️ SALE and DESTROY are deliberately absent, and must stay absent. Those
+/// two are carried out by sending a disposal request to Central Disposal --
+/// the goods end up on Sold Goods or Destroyed Goods under their own
+/// [FINAL:SOLD] / [FINAL:DESTROYED] marker. They are never recorded as an
+/// "Other" outcome, so writing "Destroyed per appeal ruling" into a
+/// [FINAL:OTHER] row produces a state the app itself cannot create: a
+/// destroyed item sitting on the Other Goods page. An earlier repair of this
+/// data did exactly that, and it is how the contradiction was noticed.
+///
+/// Returning null means "this item is not one the yard finishes directly" --
+/// the caller skips it rather than inventing an outcome for it.
+String? _outcomeForRuling(String decision) => switch (decision) {
+      'RE-EXPORT' => 'Re-exported per appeal ruling',
+      'RELEASE' => 'Released on appeal ruling',
+      'SALE' || 'DESTROY' => null,
+      // No ruling recorded against the item even though the package went to
+      // appeal: the yard finished it on its own authority.
+      _ => 'Handed to the owner after appeal',
+    };
 
 /// Outcomes the yard recorded directly, with no appeal ever lodged.
+/// ⚠️ No auction, sale or destruction here. Every entry must be something the
+/// YARD does on its own authority: those three are Central Disposal's, and
+/// goods that go that way leave for Sold Goods / Destroyed Goods under their
+/// own [FINAL:SOLD] / [FINAL:DESTROYED] marker. "Disposed of by public
+/// auction" was in this list and produced rows on Other Goods claiming an
+/// auction that Central Disposal had never run -- in this app a public auction
+/// is where UNSOLD goods go (see the Unsold Goods page), not an outcome a yard
+/// records.
 const _finalOtherDirect = [
   'Transferred to Government Use',
   'Handed over to the Police',
   'Donated to a charity',
   'Returned to the shipping line',
-  'Disposed of by public auction',
+  'Released to the consignee',
 ];
 
 /// Releases a share of the detained goods back to their owners.

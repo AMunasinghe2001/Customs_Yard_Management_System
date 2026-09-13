@@ -775,12 +775,41 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                                 : null,
                                             // Completed [FINAL:OTHER] outcomes
                                             // are read-only (no actions).
-                                            forceFinalDisposition:
-                                                !row.completed,
-                                            allowFinalDisposition:
-                                                !row.completed,
-                                            onSaleOrDestroyRequest:
-                                                row.completed
+                                            //
+                                            // ⚠️ And goods still inside their
+                                            // appeal window are not actionable
+                                            // either. This was `!row.completed`
+                                            // alone, so a row showing
+                                            // "Appealing · 12d" opened a popup
+                                            // with Final Disposition ENABLED —
+                                            // the yard could decide the fate of
+                                            // goods whose owner still had time
+                                            // to appeal.
+                                            forceFinalDisposition: !row
+                                                    .completed &&
+                                                canActOnHeldGoods(
+                                                    entryDate: row.package
+                                                            .entryDate ??
+                                                        row.package.createdAt,
+                                                    outcome: appealOutcomes[
+                                                        row.item.id]),
+                                            allowFinalDisposition: !row
+                                                    .completed &&
+                                                canActOnHeldGoods(
+                                                    entryDate: row.package
+                                                            .entryDate ??
+                                                        row.package.createdAt,
+                                                    outcome: appealOutcomes[
+                                                        row.item.id]),
+                                            onSaleOrDestroyRequest: (row
+                                                        .completed ||
+                                                    !canActOnHeldGoods(
+                                                        entryDate: row.package
+                                                                .entryDate ??
+                                                            row.package
+                                                                .createdAt,
+                                                        outcome: appealOutcomes[
+                                                            row.item.id]))
                                                     ? null
                                                     : (disposition) =>
                                                         _requestSingleDisposal(
