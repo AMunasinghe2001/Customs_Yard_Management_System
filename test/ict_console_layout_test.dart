@@ -179,7 +179,12 @@ void main() {
       // The one decision about what an account's state IS still lives in
       // account_cells.dart, shared with the Admin Panel; only the chrome
       // differs.
-      expect(ict, contains('accountStatusOf(context, staff)'));
+      // ⚠️ Whitespace-insensitive. This pinned the call as a single line and
+      // broke when dart format wrapped it across two — a formatting accident
+      // reported as a missing shared helper. What matters is that the ICT
+      // console asks account_cells for the answer, not how it is wrapped.
+      expect(ict.replaceAll(RegExp(r'\s+'), ''),
+          contains('accountStatusOf(context,staff)'));
       expect(_read('lib/widgets/account_cells.dart'),
           contains('AccountStatus accountStatusOf('));
     });
@@ -273,7 +278,12 @@ void main() {
         () {
       expect(access.contains("ictCol('Username'"), isFalse);
       expect(access, contains("ictCol('Password'"));
-      expect(access, contains('class _PasswordAge'));
+      // ⚠️ The cell moved. It was `class _PasswordAge`, private to this tab;
+      // the Staff Register needed the same answer about yard officers, so it
+      // now lives in widgets/account_cells.dart as PasswordAgeCell and both
+      // tables share it. What this test protects is unchanged — the column
+      // shows the rotation rather than a live credential.
+      expect(access, contains('PasswordAgeCell('));
     });
   });
 

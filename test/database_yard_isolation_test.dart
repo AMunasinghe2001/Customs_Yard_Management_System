@@ -8,8 +8,8 @@ void main() {
   final roleSetup = File('postgres/66_yard_app_role.sql').readAsStringSync();
   final boundary = File('migrations/005_restrict_yard_staff_at_database.sql')
       .readAsStringSync();
-  final profileFix =
-      File('migrations/006_profiles_policy_recursion_fix.sql').readAsStringSync();
+  final profileFix = File('migrations/006_profiles_policy_recursion_fix.sql')
+      .readAsStringSync();
   final adminPolicyFix =
       File('migrations/007_drop_admin_profiles_policy.sql').readAsStringSync();
   final router = File('lib/core/router.dart').readAsStringSync();
@@ -65,7 +65,9 @@ void main() {
     expect(adminPolicyFix,
         isNot(contains('create policy "Admins can manage all profiles"')));
     expect(
-        adminPolicyFix, isNot(contains('create or replace function public.auth_user_is_admin')));
+        adminPolicyFix,
+        isNot(
+            contains('create or replace function public.auth_user_is_admin')));
   });
 
   test('no profiles policy may read profiles inline', () {
@@ -75,8 +77,8 @@ void main() {
     // the recursive policy. What matters is that the drop comes after it, so
     // replaying the file end to end leaves the policy gone.
     final schema = File('postgres/02_schema.sql').readAsStringSync();
-    final lastCreate = schema.lastIndexOf(
-        'CREATE POLICY "Admins can manage all profiles"');
+    final lastCreate =
+        schema.lastIndexOf('CREATE POLICY "Admins can manage all profiles"');
     final lastDrop = schema
         .lastIndexOf('drop policy if exists "Admins can manage all profiles"');
     expect(lastCreate, isNot(-1));

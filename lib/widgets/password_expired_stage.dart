@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
+import '../core/session_reset.dart';
 import '../core/providers.dart';
 import '../core/security_policy.dart';
 import '../core/theme.dart';
@@ -17,14 +18,29 @@ import 'password_strength_field.dart';
 /// modal also reads as an interruption to something else, when in fact it IS
 /// the sign-in — there is nothing behind it to go back to.
 ///
-/// Returns nothing: [onDone] fires once the password has been changed, and
-/// [onSignOut] when the officer backs out.
+/// Two modes, one form. With [expired] false it is the WARNING shown in the
+/// last days before the 90-day limit: the same fields, plus "Skip for now".
+/// With [expired] true the limit has passed, Skip is gone, and the only ways
+/// out are a new password or signing out.
+///
+/// ⚠️ The warning half is not cosmetic. Without it the first an officer hears
+/// of the rotation is the morning they cannot work — the yard portals had
+/// only the hard stop, so yard staff got no notice at all while the four
+/// directorate portals warned for a week.
+///
+/// Returns nothing: [onDone] fires once the password has been changed,
+/// [onSkip] when the officer defers it (warning mode only), and [onSignOut]
+/// when they back out.
 class PasswordExpiredStage extends ConsumerStatefulWidget {
   const PasswordExpiredStage({
     super.key,
     required this.accent,
     required this.onDone,
     required this.onSignOut,
+    required this.signInRoute,
+    this.expired = true,
+    this.daysLeft = 0,
+    this.onSkip,
   });
 
   /// The portal's colour, so the step belongs to the door it appears on.
@@ -35,6 +51,22 @@ class PasswordExpiredStage extends ConsumerStatefulWidget {
 
   /// Called when the officer chooses to sign out instead.
   final VoidCallback onSignOut;
+
+  /// The portal's own sign-in route. ⚠️ Signing out rebuilds the
+  /// ProviderScope, which builds a NEW router starting at its
+  /// initialLocation — the portal picker. Without this the officer sets a new
+  /// password and lands on the home page. See core/session_reset.dart.
+  final String signInRoute;
+
+  /// Whether the 90 days have already passed. False = the warning phase.
+  final bool expired;
+
+  /// Days remaining, shown in the warning. Ignored when [expired].
+  final int daysLeft;
+
+  /// Called when the officer defers the change. ⚠️ Required in warning mode
+  /// and never offered when [expired] — see the note on the button.
+  final VoidCallback? onSkip;
 
   @override
   ConsumerState<PasswordExpiredStage> createState() =>
@@ -79,7 +111,29 @@ class _PasswordExpiredStageState extends ConsumerState<PasswordExpiredStage> {
       // not from auth.uid(). It also drops the connection pool, so the next
       // query re-asks the database and comes back unlocked.
       await ref.read(authServiceProvider).changePassword(next);
+      // ⚠️ End the session and send them back to the sign-in form rather
+      // than straight into the app. Two reasons, and the first is a real
+      // bug: the profile in currentProfileProvider was read BEFORE the
+      // change, so its passwordUpdatedAt is still the old one and
+      // isPasswordExpired stays true. Carrying it into the app meant the
+      // router's expiry guard bounced the officer to '/' -- they changed
+      // their password and landed on the home page.
+      //
+      // Re-reading the profile here would fix that one symptom, but signing
+      // in again is what the officer expects of a password change anyway,
+      // and it proves the new password actually works while they are still
+      // in front of the form that can correct it.
+      // ⚠️ Set BEFORE signing out: signOut() schedules the ProviderScope
+      // rebuild, and the new router reads this as its starting route.
+      pendingLandingRoute = widget.signInRoute;
+      try {
+        await ref.read(authServiceProvider).signOut();
+      } catch (_) {
+        // The profile is cleared either way; the stale session cannot
+        // authorise anything once the provider is null.
+      }
       if (!mounted) return;
+      ref.read(currentProfileProvider.notifier).state = null;
       widget.onDone();
     } catch (e) {
       if (!mounted) return;
@@ -110,26 +164,38 @@ class _PasswordExpiredStageState extends ConsumerState<PasswordExpiredStage> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: colors.warningAmber.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: colors.warningAmber.withOpacity(0.4)),
-          ),
-          child: Row(children: [
-            Icon(Icons.lock_clock_rounded,
-                color: colors.warningAmber, size: 18),
-            const Gap(10),
-            Expanded(
-              child: Text(
-                'Your password has passed its 90-day limit. Until it is '
-                'changed, this account cannot read any records.',
-                style: TextStyle(color: colors.textSecondary, fontSize: 13),
-              ),
+        Builder(builder: (context) {
+          final tone = widget.expired ? colors.dangerRed : colors.warningAmber;
+          final d = widget.daysLeft;
+          return Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: tone.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: tone.withOpacity(0.4)),
             ),
-          ]),
-        ).animate().fadeIn(duration: 300.ms),
+            child: Row(children: [
+              Icon(
+                  widget.expired
+                      ? Icons.lock_clock_rounded
+                      : Icons.warning_amber_rounded,
+                  color: tone,
+                  size: 18),
+              const Gap(10),
+              Expanded(
+                child: Text(
+                  widget.expired
+                      ? 'Your password has passed its 90-day limit. Until it '
+                          'is changed, this account cannot read any records.'
+                      : 'Your password expires in $d '
+                          '${d == 1 ? 'day' : 'days'}. Set a new one now, or '
+                          'skip and change it later.',
+                  style: TextStyle(color: colors.textSecondary, fontSize: 13),
+                ),
+              ),
+            ]),
+          );
+        }).animate().fadeIn(duration: 300.ms),
         const Gap(20),
         if (_error != null) ...[
           Container(
@@ -144,8 +210,7 @@ class _PasswordExpiredStageState extends ConsumerState<PasswordExpiredStage> {
               const Gap(10),
               Expanded(
                 child: Text(_error!,
-                    style:
-                        TextStyle(color: colors.dangerRed, fontSize: 13)),
+                    style: TextStyle(color: colors.dangerRed, fontSize: 13)),
               ),
             ]),
           ),
@@ -163,8 +228,7 @@ class _PasswordExpiredStageState extends ConsumerState<PasswordExpiredStage> {
             labelText: 'New Password',
             prefixIcon: Icon(Icons.lock_outline, color: colors.textMuted),
             suffixIcon: IconButton(
-              icon: Icon(
-                  _obscureNew ? Icons.visibility_off : Icons.visibility,
+              icon: Icon(_obscureNew ? Icons.visibility_off : Icons.visibility,
                   color: colors.textMuted),
               onPressed: () => setState(() => _obscureNew = !_obscureNew),
             ),
@@ -189,8 +253,7 @@ class _PasswordExpiredStageState extends ConsumerState<PasswordExpiredStage> {
             ),
           ),
         ),
-        PasswordMatchBar(
-            password: _newCtrl.text, confirm: _confirmCtrl.text),
+        PasswordMatchBar(password: _newCtrl.text, confirm: _confirmCtrl.text),
         const Gap(24),
         SizedBox(
           height: 54,
@@ -210,13 +273,15 @@ class _PasswordExpiredStageState extends ConsumerState<PasswordExpiredStage> {
           ),
         ),
         const Gap(10),
-        // ⚠️ No "skip". An expired password is the one case where carrying on
-        // is not an option — the database has already shut the session out of
-        // everything but this form.
+        // ⚠️ "Skip for now" appears ONLY in the warning phase. Once expired,
+        // carrying on is not an option to withhold politely — migration 018
+        // has already shut the session out of every record but this form, so
+        // a Skip button would lead to an empty app and look like a fault.
         Center(
           child: TextButton(
-            onPressed: _busy ? null : _signOut,
-            child: Text('Sign out',
+            onPressed:
+                _busy ? null : (widget.expired ? _signOut : widget.onSkip),
+            child: Text(widget.expired ? 'Sign out' : 'Skip for now',
                 style: TextStyle(
                     color: colors.textMuted, fontWeight: FontWeight.w600)),
           ),

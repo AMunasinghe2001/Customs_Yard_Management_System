@@ -112,8 +112,20 @@ void main() {
       // password or signing out.
       final d =
           File('lib/widgets/password_expired_stage.dart').readAsStringSync();
-      expect(d.contains('Skip'), isFalse,
+      // ⚠️ This asserted the file contained no 'Skip' at all. The stage now
+      // serves the WARNING phase too — the last days before the limit, where
+      // deferring is exactly right — so the word is legitimately present and
+      // the absence check would have to be deleted or weakened.
+      //
+      // Tightened instead of relaxed: what matters was never the word but
+      // that the skip is UNREACHABLE once expired. Assert the condition
+      // itself, which is a stronger claim than the old spelling test — it
+      // would still fail if someone offered the skip unconditionally.
+      expect(d, contains('widget.expired ? _signOut : widget.onSkip'),
           reason: 'an expired password cannot be postponed');
+      // And a caller who forgets the flag must get the strict mode.
+      expect(d, contains('this.expired = true'),
+          reason: 'omitting `expired:` would silently allow a skip');
       expect(d, contains('Update Password & Sign In'));
     });
 

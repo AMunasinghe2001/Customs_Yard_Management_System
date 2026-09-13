@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
+import '../../widgets/account_cells.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_form_dialog.dart';
@@ -97,7 +97,8 @@ class DirectorateAccessTab extends ConsumerWidget {
                 border: Border.all(
                     color: context.colors.warningAmber.withOpacity(0.35)),
               ),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Icon(Icons.warning_amber_rounded,
                     size: 18, color: context.colors.warningAmber),
                 const Gap(10),
@@ -207,7 +208,7 @@ class DirectorateAccessTab extends ConsumerWidget {
                             fontWeight: FontWeight.w700))),
                     DataCell(TooltipText(a.fullName,
                         overflow: TextOverflow.ellipsis)),
-                    DataCell(_PasswordAge(profile: a)),
+                    DataCell(PasswordAgeCell(profile: a)),
                     DataCell(Center(
                       child: IctStatusPill(
                         label: a.isActive ? 'Active' : 'Inactive',
@@ -237,51 +238,6 @@ class DirectorateAccessTab extends ConsumerWidget {
           ),
         ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn(),
       ),
-    );
-  }
-}
-
-/// How long this account's password has left of its 90-day rotation, and the
-/// date it turns over.
-///
-/// Replaces the username column. ICT resets an account because its holder
-/// cannot get in, and the commonest reason is that the password has rotated —
-/// so this is the column that answers the question the page is open for,
-/// without printing a live credential on the screen.
-class _PasswordAge extends StatelessWidget {
-  const _PasswordAge({required this.profile});
-  final ProfileModel profile;
-
-  @override
-  Widget build(BuildContext context) {
-    final days = profile.daysUntilPasswordExpiry;
-    final on = profile.passwordUpdatedAt ?? profile.createdAt;
-    final due = on.add(
-        const Duration(days: ProfileModel.passwordMaxAgeDays));
-    final dueStr = DateFormat('dd MMM yyyy').format(due);
-
-    final (String label, Color color) = profile.isPasswordExpired
-        ? ('Expired $dueStr', context.colors.dangerRed)
-        : profile.isPasswordExpiringSoon
-            ? ('Resets in $days ${days == 1 ? 'day' : 'days'}',
-                context.colors.warningAmber)
-            : ('Resets in $days days', context.colors.textSecondary);
-
-    return Tooltip(
-      message: profile.isPasswordExpired
-          ? 'Password expired on $dueStr — the holder cannot sign in.'
-          : 'Password rotates on $dueStr (90 days from the last change).',
-      child: Row(children: [
-        Icon(Icons.lock_clock_rounded, size: 14, color: color),
-        const Gap(7),
-        Flexible(
-          child: Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: color, fontSize: 12, fontWeight: FontWeight.w600)),
-        ),
-      ]),
     );
   }
 }

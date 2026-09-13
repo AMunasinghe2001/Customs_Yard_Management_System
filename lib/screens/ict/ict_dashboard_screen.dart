@@ -1625,7 +1625,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                 columnSpacing: 12,
                                 horizontalMargin: 16,
                                 fixedTopRows: 1,
-                                minWidth: 960,
+                                minWidth: 1120,
                                 headingRowHeight: kIctHeadingHeight,
                                 dataRowHeight: kIctRowHeight,
                                 columns: [
@@ -1636,6 +1636,12 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                       size: ColumnSize.S, fixedWidth: 100),
                                   ictCol('Assigned Yard', size: ColumnSize.M),
                                   ictCol('Contact', size: ColumnSize.M),
+                                  // ⚠️ The same column Directorate Access
+                                  // carries. Yard officers rotate on the same
+                                  // 90 days, and ICT had no way to see who was
+                                  // near the limit until they were locked out
+                                  // and rang to say so.
+                                  ictCol('Password', size: ColumnSize.M),
                                   ictCol('Status',
                                       size: ColumnSize.S,
                                       fixedWidth: kIctPillWidth + 24),
@@ -1749,6 +1755,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                           ),
                                         ),
                                       ),
+                                      // Password age — shared with the
+                                      // Directorate Access table.
+                                      DataCell(PasswordAgeCell(profile: staff)),
                                       // Status
                                       DataCell(IctStatusPill(
                                         label: status.label,

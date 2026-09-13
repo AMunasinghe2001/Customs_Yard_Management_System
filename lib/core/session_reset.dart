@@ -21,6 +21,24 @@ import 'package:flutter/scheduler.dart';
 /// construction, not by bookkeeping.
 final ValueNotifier<int> sessionEpoch = ValueNotifier<int>(0);
 
+/// Where the app should open after the next session reset.
+///
+/// ⚠️ Rebuilding the ProviderScope builds a NEW router, and a new router
+/// starts at its `initialLocation` — which is '/', the portal picker. That is
+/// right for an ordinary sign-out, and wrong for a password change: the
+/// officer set a new password on their portal's sign-in page, the reset threw
+/// the router away, and they arrived at the home page having apparently done
+/// nothing. Set this to the route the reset should land on; the router reads
+/// it once and clears it.
+String? pendingLandingRoute;
+
+/// Takes the landing route, leaving nothing behind for the next reset.
+String takeLandingRoute() {
+  final route = pendingLandingRoute ?? '/';
+  pendingLandingRoute = null;
+  return route;
+}
+
 /// Ends the current session's cache. Call from sign-out, never from a failed
 /// sign-in attempt (those never established a session, and resetting under
 /// them would discard the error message the user needs to read).

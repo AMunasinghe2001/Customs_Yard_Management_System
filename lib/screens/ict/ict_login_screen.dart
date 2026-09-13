@@ -15,6 +15,8 @@ import '../../models/models.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
+import '../../services/otp_service.dart';
+import '../../core/session_reset.dart';
 
 /// Two-step login for the ICT Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -42,7 +44,8 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
   String _resolvedEmail = '';
   String? _error, _success;
 
-  static const int _otpWindowSeconds = 120;
+  static int get _otpWindowSeconds =>
+      GmailOtpService.codeLifetime.inSeconds;
   static const int _maxResends = 2;
   Timer? _countdownTimer;
   Timer? _lockTimer;
@@ -342,9 +345,35 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
     });
     try {
       await ref.read(authServiceProvider).changePassword(newPass);
-      if (_pendingProfile != null) {
-        await _finishLogin(_pendingProfile!);
+      // ⚠️ Back to the sign-in form rather than straight into the console.
+      // _pendingProfile was read BEFORE the change, so its
+      // password_updated_at is the old one and isPasswordExpired is still
+      // true -- carrying it in meant the router's expiry guard bounced the
+      // officer to the home page. Signing in again is also what a password
+      // change should feel like, and proves the new password works while
+      // the form that can correct it is still on screen.
+      // ⚠️ Set BEFORE signing out: signOut() schedules the ProviderScope
+      // rebuild, and the NEW router reads this as its starting route. Without
+      // it the officer lands on the portal picker having just set a password.
+      pendingLandingRoute = '/ict/login';
+      try {
+        await ref.read(authServiceProvider).signOut();
+      } catch (_) {
+        // The provider is cleared either way.
       }
+      if (!mounted) return;
+      ref.read(currentProfileProvider.notifier).state = null;
+      _countdownTimer?.cancel();
+      setState(() {
+        _passwordStage = false;
+        _pendingProfile = null;
+        _otpStage = false;
+        _passwordCtrl.text = '';
+        _newPassCtrl.text = '';
+        _confirmPassCtrl.text = '';
+        _error = null;
+        _success = 'Password updated. Sign in with your new password.';
+      });
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -752,8 +781,7 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
 
                             // ── Step 3: Password Change (if expired) ────────────────
                             if (_passwordStage) ...[
-                              PasswordRequirements(
-                                  password: _newPassCtrl.text),
+                              PasswordRequirements(password: _newPassCtrl.text),
                               const Gap(10),
                               TextFormField(
                                 controller: _newPassCtrl,

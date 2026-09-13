@@ -319,13 +319,22 @@ class AuthService {
     required String otp,
     required String newPassword,
   }) async {
-    GmailOtpService.instance.verifyCode(email.trim(), otp.trim());
+    // ⚠️ Check the code WITHOUT spending it. The password can still be
+    // refused after this line -- too short, or one used before -- and
+    // consuming the code first meant a rejected password also destroyed the
+    // code. The next press then reported "No verification code was sent",
+    // which sent the officer back to re-enter a code that no longer existed,
+    // complaining about the wrong thing entirely.
+    GmailOtpService.instance.verifyCode(email.trim(), otp.trim(),
+        consume: false);
     await _withNetworkRetry(
       () => supabase.rpc('reset_password_for_identifier', params: {
         'p_identifier': identifier.trim(),
         'p_password': newPassword,
       }),
     );
+    // Spent only now the reset has actually happened.
+    GmailOtpService.instance.consumeCode(email.trim());
   }
 
   /// Change the currently signed-in user's password.
@@ -3441,9 +3450,21 @@ class AdminService {
   }
 
   Future<void> toggleUserStatus(String profileId, bool isActive) async {
-    await supabase
-        .from('profiles')
-        .update({'is_active': isActive}).eq('id', profileId);
+    if (isActive) {
+      // ⚠️ Turning an account back ON goes through reactivate_account, not a
+      // plain is_active write. A dormant account still has a 90-day-old
+      // last_sign_in_at, so flipping the flag alone would wake it and the
+      // next dormancy sweep would switch it straight back off. The function
+      // resets that clock and clears the reason in the same statement, and
+      // it refuses anyone who is not ICT (migrations 021 and 022).
+      await supabase.rpc('reactivate_account', params: {'p_id': profileId});
+    } else {
+      await supabase.from('profiles').update({
+        'is_active': false,
+        'deactivated_reason': 'manual',
+        'deactivated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', profileId);
+    }
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(

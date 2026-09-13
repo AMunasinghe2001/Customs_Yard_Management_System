@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:postgres/postgres.dart';
 
 import '../app_env.dart';
+import 'pg_query.dart';
 
 /// Where the office server's PostgreSQL lives.
 ///
@@ -574,9 +575,9 @@ class PgDatabase {
       // RLS is the boundary between every yard.  A superuser or BYPASSRLS
       // role ignores it, so reject that configuration before any screen can
       // query data. `yard_app` is intentionally neither and starts normally.
-      final identity = await pool.execute(
-          'select rolsuper, rolbypassrls from pg_roles '
-          'where rolname = current_user');
+      final identity =
+          await pool.execute('select rolsuper, rolbypassrls from pg_roles '
+              'where rolname = current_user');
       final dbRole = identity.isEmpty ? null : identity.first.toColumnMap();
       if (dbRole == null ||
           dbRole['rolsuper'] == true ||
@@ -627,7 +628,17 @@ class PgDatabase {
     } on PgException catch (e) {
       // A server-side error (bad SQL, constraint violation) is the caller's to
       // handle — reconnecting would not change the outcome.
-      if (!_looksLikeDroppedConnection(e)) rethrow;
+      //
+      // ⚠️ A deliberate `raise exception` in a function is the schema talking
+      // to a PERSON — "You have used this password before". Rethrowing the
+      // driver's own exception put `Severity.error 22023: ` in front of that
+      // sentence on the sign-in screen. Unwrapped HERE, in _run, because both
+      // query() and execute() pass through it: the same message was cleaned
+      // for rpc() calls and still raw for the direct `select auth.…` that
+      // changes a password.
+      if (!_looksLikeDroppedConnection(e)) {
+        throw Exception(describeDatabaseError(e));
+      }
       await close();
       final pool = await _open();
       return await pool.execute(Sql.named(sql), parameters: parameters ?? {});

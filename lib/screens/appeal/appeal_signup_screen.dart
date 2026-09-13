@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../widgets/password_strength_field.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../services/otp_service.dart';
 import '../../core/providers.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -35,7 +36,8 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
   bool _otpSent = false;
   String? _error, _success;
 
-  static const int _otpWindowSeconds = 120;
+  static int get _otpWindowSeconds =>
+      GmailOtpService.codeLifetime.inSeconds;
   static const int _maxResends = 2;
   Timer? _countdownTimer;
   Timer? _lockTimer;

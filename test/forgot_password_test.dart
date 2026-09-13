@@ -130,7 +130,17 @@ void main() {
         () {
       final fn = src.substring(src.indexOf('Future<void> _save('));
       final body = fn.substring(0, fn.indexOf('\n  }'));
-      expect(body, contains("if (_error!.contains('code')) _step = _Step.verify;"));
+      // ⚠️ This pinned `_error!.contains('code')`, which was too loose to do
+      // what the test NAME promises: it also matched "No verification code
+      // was sent" and any PASSWORD message containing the word, so a
+      // rejected password threw the officer back to the code screen to fix
+      // something that was not wrong. The retreat is now conditional on the
+      // specific code complaints, which is the behaviour this always meant.
+      expect(body, contains('_step = _Step.verify'));
+      expect(body, contains("about.contains('invalid code')"));
+      expect(body.contains("_error!.contains('code')"), isFalse,
+          reason: 'the loose match is back; a password error will bounce the '
+              'officer to the code screen');
     });
 
     test('the confirm field has to match', () {

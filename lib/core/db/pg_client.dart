@@ -71,6 +71,10 @@ class PgClient {
     });
 
     final sql = 'select * from ${_qualify(function)}($argSql)';
+    // ⚠️ The driver's `Severity.error 22023: ` prefix is stripped in
+    // PgDatabase._run, which both query() and execute() go through — not
+    // here, where it only covered RPCs and left a direct
+    // `select auth.change_password(...)` still showing the raw string.
     final rows = await PgDatabase.instance.query(sql, parameters: bound);
 
     if (rows.isEmpty) return null;
@@ -96,7 +100,8 @@ class PgClient {
     }
   }
 
-  static final RegExp _identifierPattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_$]{0,62}$');
+  static final RegExp _identifierPattern =
+      RegExp(r'^[A-Za-z_][A-Za-z0-9_$]{0,62}$');
 
   /// Schema-qualifies and quotes a function name.
   ///

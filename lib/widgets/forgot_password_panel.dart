@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
 import '../core/providers.dart';
+import '../services/otp_service.dart';
 import '../core/theme.dart';
 import 'password_strength_field.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -73,7 +74,13 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
 
   /// The code is short-lived, and the countdown says so rather than leaving
   /// the officer to discover it by failing.
-  static const int _codeLifetimeSeconds = 120;
+  ///
+  /// ⚠️ Read from the service that issues the code, not written here. This
+  /// was a literal 120 while the server allowed 300 and the e-mail said five
+  /// minutes: the screen expired the code three minutes before the server
+  /// did, so a code the officer had just been told was good stopped being
+  /// accepted by the form that asked for it.
+  static int get _codeLifetimeSeconds => GmailOtpService.codeLifetime.inSeconds;
   int _secondsLeft = 0;
   Timer? _ticker;
 
@@ -119,7 +126,17 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
     }
     // The server returns the policy's own wording (password_policy_violation),
     // so pass it through rather than restating a rule that can drift.
-    if (s.contains('password must') || s.contains('password contains')) {
+    //
+    // ⚠️ The list of prefixes kept missing new messages. The reuse refusals
+    // added in migration 023 ("You have used this password before…", "This is
+    // your current password…") matched none of them and fell through to
+    // "Something went wrong", which told the officer nothing and looked like
+    // a fault in the app rather than an answer about their password.
+    //
+    // Anything the database says ABOUT THE PASSWORD is now passed through: it
+    // is written for the person reading it, and a generic apology is strictly
+    // worse than the sentence it replaces.
+    if (s.contains('password')) {
       return e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
     }
     return 'Something went wrong. Please try again.';
@@ -204,9 +221,17 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
       setState(() {
         _busy = false;
         _error = _friendly(e);
-        // A bad code sends them back a step with the password kept, so only
-        // the code has to be retyped.
-        if (_error!.contains('code')) _step = _Step.verify;
+        // ⚠️ Only a complaint about the CODE goes back a step, and the
+        // match has to be precise. `contains('code')` also caught "No
+        // verification code was sent" and every password message with the
+        // word in it, so a rejected PASSWORD bounced the officer to the OTP
+        // screen to fix something that was not wrong.
+        final about = _error!.toLowerCase();
+        final aboutTheCode = about.contains('invalid code') ||
+            about.contains('code has expired') ||
+            about.contains('too many attempts') ||
+            about.contains('no verification code');
+        if (aboutTheCode) _step = _Step.verify;
       });
     }
   }
@@ -215,12 +240,21 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
   Widget build(BuildContext context) {
     final accent = widget.accent;
     final (String label, String title, IconData icon) = switch (_step) {
-      _Step.identify => ('FORGOT PASSWORD', 'Reset your password',
-          Icons.lock_reset_rounded),
-      _Step.verify => ('FORGOT PASSWORD', 'Check your email',
-          Icons.mark_email_read_rounded),
-      _Step.reset => ('FORGOT PASSWORD', 'Choose a new password',
-          Icons.password_rounded),
+      _Step.identify => (
+          'FORGOT PASSWORD',
+          'Reset your password',
+          Icons.lock_reset_rounded
+        ),
+      _Step.verify => (
+          'FORGOT PASSWORD',
+          'Check your email',
+          Icons.mark_email_read_rounded
+        ),
+      _Step.reset => (
+          'FORGOT PASSWORD',
+          'Choose a new password',
+          Icons.password_rounded
+        ),
     };
 
     // ⚠️ Laid out INLINE, in the sign-in panel -- not in a dialog over it.
@@ -476,8 +510,7 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
             return null;
           },
         ),
-        PasswordMatchBar(
-            password: _passCtrl.text, confirm: _confirmCtrl.text),
+        PasswordMatchBar(password: _passCtrl.text, confirm: _confirmCtrl.text),
       ];
 }
 

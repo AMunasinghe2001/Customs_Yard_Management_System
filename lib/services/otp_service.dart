@@ -6,6 +6,7 @@ import 'package:mailer/smtp_server.dart';
 import 'package:mailer/mailer.dart';
 
 import '../core/otp_config.dart';
+import 'package:flutter/foundation.dart';
 
 class _OtpEntry {
   final String code;
@@ -92,14 +93,24 @@ Future<void> _sendInIsolate(_MailJob job) async {
 /// draws the screen -- so every frame stopped, the spinner froze, and the
 /// wait an officer reported was twenty to thirty seconds rather than four.
 /// The work is identical; it simply no longer holds the UI.
-Future<void> _sendOffThread(_MailJob job) => Isolate.run(() => _sendInIsolate(job));
+Future<void> _sendOffThread(_MailJob job) =>
+    Isolate.run(() => _sendInIsolate(job));
 
 class GmailOtpService {
   GmailOtpService._();
   static final GmailOtpService instance = GmailOtpService._();
 
   final Map<String, _OtpEntry> _codes = {};
-  static const Duration _ttl = Duration(minutes: 5);
+
+  /// How long a code stays valid. ⚠️ THE one source of truth: the e-mail
+  /// text, every on-screen countdown and the server-side check all read this.
+  ///
+  /// They did not. The countdown was a literal `120` copied into twelve
+  /// screens while this said five minutes, so the e-mail promised five, the
+  /// screen expired at two, and the code went on working for three minutes
+  /// after the UI said it had not.
+  static const Duration codeLifetime = Duration(minutes: 5);
+  static const Duration _ttl = codeLifetime;
   static const int _maxAttempts = 5;
 
   String _generate() => (100000 + Random.secure().nextInt(900000)).toString();
@@ -173,10 +184,8 @@ class GmailOtpService {
     _codes[key] = _OtpEntry(code, DateTime.now().add(_ttl), 0);
 
     final c = _copy[purpose]!;
-    final html = _shell(
-        heading: c.heading,
-        recipientName: recipientName,
-        body: '''
+    final html =
+        _shell(heading: c.heading, recipientName: recipientName, body: '''
   <p style="margin:0 0 6px">${c.lead}</p>
   <p style="font-size:30px;font-weight:bold;letter-spacing:8px;color:#111;
             margin:14px 0">$code</p>
@@ -282,12 +291,25 @@ class GmailOtpService {
   }
 
   /// Verify [code] for [email]. Throws Exception(message) on any failure;
-  /// returns normally (and consumes the code) on success.
-  void verifyCode(String email, String code) {
+  /// returns normally on success.
+  ///
+  /// ⚠️ By default this CONSUMES the code, which is right when verifying is
+  /// the last thing that can fail. It is wrong when more work follows: the
+  /// password reset verified the code, then failed on the new password (too
+  /// short, or one used before) -- and the code was already gone. Pressing
+  /// the button again reported "No verification code was sent", so the
+  /// officer was told the code was missing when the real complaint was about
+  /// the password, and was bounced back to re-enter a code that no longer
+  /// existed.
+  ///
+  /// Pass [consume] false to check without spending it, then call
+  /// [consumeCode] once the whole operation has succeeded.
+  void verifyCode(String email, String code, {bool consume = true}) {
     final key = _norm(email);
     final entry = _codes[key];
     if (entry == null) {
-      throw Exception('No verification code was sent. Please request a new one.');
+      throw Exception(
+          'No verification code was sent. Please request a new one.');
     }
     if (DateTime.now().isAfter(entry.expiresAt)) {
       _codes.remove(key);
@@ -301,6 +323,20 @@ class GmailOtpService {
       entry.attempts++;
       throw Exception('Invalid code. Please try again.');
     }
-    _codes.remove(key);
+    if (consume) _codes.remove(key);
+  }
+
+  /// Spend a code that [verifyCode] already accepted. Safe to call when the
+  /// code is gone -- a completed reset should not fail on its own cleanup.
+  void consumeCode(String email) => _codes.remove(_norm(email));
+
+  /// Issue a code for [email] WITHOUT sending an e-mail. Tests only: the
+  /// consume/retain behaviour cannot be exercised otherwise without a live
+  /// SMTP round trip.
+  @visibleForTesting
+  String debugSeedCode(String email) {
+    final code = _generate();
+    _codes[_norm(email)] = _OtpEntry(code, DateTime.now().add(_ttl), 0);
+    return code;
   }
 }

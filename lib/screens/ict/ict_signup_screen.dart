@@ -12,6 +12,7 @@ import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
+import '../../services/otp_service.dart';
 
 /// Creates institutional ICT Directorate accounts.
 /// Follows the exact directorate registration pattern (matching Disposal / Valuation).
@@ -33,7 +34,8 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
   bool _otpSent = false;
   String? _error, _success;
 
-  static const int _otpWindowSeconds = 120;
+  static int get _otpWindowSeconds =>
+      GmailOtpService.codeLifetime.inSeconds;
   static const int _maxResends = 2;
   Timer? _countdownTimer;
   Timer? _lockTimer;

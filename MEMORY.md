@@ -3832,3 +3832,190 @@ and the icon's **`AnimatedScale(1.08)`** is a transform that keeps its
 layout size. Neither can move a sibling — removing them would cost the
 animation for nothing. The rule the test encodes is narrower than "nothing
 changes on hover": **colour may change, laid-out SIZE may not.**
+
+### Yard portals never warned about the 90-day password limit
+The four directorate portals had always entered their password stage on
+`isPasswordExpired || isPasswordExpiringSoon`, warning for the last 7 days
+with a day count and a "Skip for now". Both yard portals
+([login_screen.dart](lib/screens/login/login_screen.dart), SC/DSC/ASC, and
+[admin_login_screen.dart](lib/screens/admin/admin_login_screen.dart),
+SDDC/DDC) gated on `isPasswordExpired` **alone** — so a yard officer's first
+notice of the rotation was the morning it locked them out, and migration 018
+makes an expired session read *nothing at all*.
+
+Rather than copy the directorates' ~150-line inline `_buildPasswordStage`
+into two more files, the warning half was added to the shared
+[password_expired_stage.dart](lib/widgets/password_expired_stage.dart):
+`expired` (**defaults to true** — a caller that forgets the flag gets the
+strict behaviour, never a skippable expiry), `daysLeft`, `onSkip`.
+
+⚠️ **Skip is drawn only while the password still works.** Once expired,
+migration 018 has already shut the session out of every record, so a skip
+would land the officer in an empty app that looks broken. ⚠️ `onSignOut`
+reads `isPasswordExpired` **before** the `setState` that clears the profile
+it depends on.
+
+### Dormant accounts are disabled after 90 days
+[021](migrations/021_dormant_accounts_are_disabled.sql). An account unused
+for 90 days (same period as the password rotation) is switched off
+automatically. **On first application this disabled 5 real accounts** —
+Onela Randuni, Anushanga Kaushan, and the Valuation / Disposal / Appeal
+directorate accounts, all last seen March–June 2026.
+
+- ⚠️ **Reuses `is_active`**, not a second flag: every sign-in path already
+  refuses an inactive profile and ICT already has the toggle, so
+  reactivation worked on day one and there is one answer to "can this
+  account sign in", not two that can disagree.
+- ⚠️ **`coalesce(last_seen_at, created_at)`** — `last_seen_at` is null for a
+  provisioned-but-never-used account, and reading null as "not dormant"
+  would have exempted exactly the accounts the rule is for.
+- ⚠️ **The sweep lives inside `auth.sign_in`, before the password check.**
+  In the Dart client it would bind only people using the app; after the
+  check it would grant one more sign-in. It also needs no scheduler —
+  pg_cron is not installed, and a rule depending on an absent extension
+  silently never runs. **`postgres/04_auth.sql` re-creates `sign_in` without
+  it** — same hazard already recorded for `change_password`/018.
+- ⚠️ **`reactivate_account` resets `last_seen_at`.** Without that the woken
+  account is still 90 days stale and the next sweep disables it again —
+  which is why `toggleUserStatus` now calls the RPC instead of writing the
+  flag.
+- `deactivated_reason` ('dormant' vs 'manual') drives a **DORMANT** amber
+  chip distinct from **INACTIVE** red: waking a dormant account is routine,
+  re-enabling a deliberate deactivation undoes somebody's decision.
+- ⚠️ `copyWithOnline` must carry `deactivatedReason`, or every presence
+  update would reset a dormant account to reading as manual.
+
+`_PasswordAge` moved from `directorate_access_tab.dart` into
+[account_cells.dart](lib/widgets/account_cells.dart) as **`PasswordAgeCell`**
+and is now in both account tables — the Staff Register gained the Password
+column ICT previously only had for directorates.
+
+### Changing an expired password landed the officer on the HOME page
+Reported on both yard portals, and present in all seven.
+
+⚠️ **The profile in `currentProfileProvider` was read BEFORE the change**, so
+its `password_updated_at` was still the old one and `isPasswordExpired`
+stayed true. Walking that profile into the app meant the router's expiry
+guard ([router.dart](lib/core/router.dart)) refused the destination and
+redirected to `/` — the officer set a new password and arrived at the portal
+picker, as if nothing had happened.
+
+⚠️ The five directorate portals **re-read** the profile
+(`getCurrentProfile()`) right after the change, which is why only the yard
+pair showed the bug; ICT used `_pendingProfile` with no re-read at all and
+had it in the same form as the yards.
+
+The fix, everywhere, is what the user asked for and is better than a
+re-read: **end the session and return to that portal's own sign-in form**, so
+the officer signs in with the new password the ordinary way. It also proves
+the new password works while the form that can correct it is still on
+screen. Seven screens plus the shared
+[password_expired_stage.dart](lib/widgets/password_expired_stage.dart).
+
+⚠️ [password_change_returns_to_sign_in_test.dart](test/password_change_returns_to_sign_in_test.dart)
+reads the **shared stage** for the two yard portals and the screen file for
+the other five — the yard pair never calls `changePassword` themselves, so
+asserting against their own source looked like a failure when the fix was
+present.
+
+### `SECURITY: PG_PASSWORD is unset` is not a parsing bug
+Worth not re-investigating: the `.env` has a leading space on every key
+(` PG_HOST=…`) and **dotenv parses those fine** — verified directly against
+the package. The warning comes from `usingDefaultPassword`
+([pg_connection.dart](lib/core/db/pg_connection.dart)), which fires because
+the configured `PG_PASSWORD` genuinely *is* `postgres`, the compiled-in
+default. Working as designed.
+
+### ⚠️ Migration 021 read the WRONG COLUMN and disabled live accounts
+[022](migrations/022_dormancy_reads_the_right_clock.sql) corrects it. This is
+the most important note in this section.
+
+`profiles.last_seen_at` is a **presence heartbeat, not a record of last
+use**. `signOut()` and `setUserOffline()` both set it to **NULL on purpose**
+([services.dart](lib/services/services.dart)) — the online list is judged by
+a fresh heartbeat, so a lingering value would keep somebody showing as
+"online" for ~90s after they left. Nulling it is correct for what that
+column is for.
+
+So 021's `coalesce(last_seen_at, created_at)` meant **any account whose
+holder signed out tidily** fell back to `created_at` and was disabled the
+moment the account was over 90 days old. Verified live: 6 of 11 accounts had
+a null heartbeat despite signing in that day, and the user's own SDDC account
+read as dormant minutes after they used it.
+
+**`auth.users.last_sign_in_at` is the right clock** — `auth.sign_in` writes
+it and nothing clears it. 022 switches the check, the sweep and
+`reactivate_account` (which reset the *unread* column, so waking an account
+would not have survived the next sweep), and re-enables every account 021
+disabled whose real clock says it is not dormant — leaving `manual`
+deactivations alone, because those were somebody's decision.
+
+### Password reuse is blocked, not just the current password
+[023](migrations/023_password_history_blocks_reuse.sql). `change_password`
+already refused the *current* password, but alternating between two defeated
+the rotation entirely. `auth.password_history` keeps the last
+`password_history_depth()` (5) bcrypt hashes per account.
+
+- ⚠️ **bcrypt salts per row**, so the candidate cannot be hashed once and
+  looked up — each stored hash must be `crypt()`ed with its own salt in
+  turn. A plain equality test would silently pass everything.
+- ⚠️ The outgoing hash is inserted **before** `auth.users` is updated, or the
+  password just replaced could be reused immediately.
+- ⚠️ **023 overwrote migration 018's wrapper**, dropping the "you may only
+  change your own password" guard — `018 must be re-applied after 023`, which
+  re-wraps the new body as `change_password_unchecked`. Verified both guards
+  are live and layered.
+
+### Database refusals reached the UI wearing the driver's clothes
+The sign-in screen showed `Severity.error 22023: New password must be
+different…`. A `raise exception` is how the schema talks to a **person**, and
+the postgres driver's `toString()` wraps it in a severity enum and SQLSTATE.
+`describeDatabaseError` in [pg_query.dart](lib/core/db/pg_query.dart) strips
+that, applied once in `PgClient.rpc` so every caller benefits. ⚠️ An
+**unrecognised** error is passed through unchanged — inventing a friendly
+message for a failure we do not recognise hides the detail that explains it.
+
+### ⚠️ The ProviderScope reset throws the router away — that is why "go to the
+### sign-in page" kept landing on HOME
+The single most confusing bug of this run, and the navigation was never the
+cause. `signOut()` calls `clearCachedSessionData()`, which bumps
+`sessionEpoch` and rebuilds the whole **ProviderScope**
+([session_reset.dart](lib/core/session_reset.dart)) — a deliberate security
+measure, because ~100 non-autoDispose providers would otherwise show one
+officer's rows to the next. Rebuilding the scope builds a **new GoRouter**,
+and a new router starts at its `initialLocation`, which was the literal `'/'`.
+So a portal's own `context.go('/login')` was discarded a frame later and the
+officer arrived at the portal picker.
+
+Fix: **`pendingLandingRoute`** + `takeLandingRoute()`. The router reads it
+once as its `initialLocation` and it clears itself, so an ordinary sign-out
+still goes home. ⚠️ It must be set **before** `signOut()` — that call
+*schedules* the rebuild. All seven portals name their own sign-in route; the
+two yard portals pass it to the shared stage as `signInRoute`.
+
+### One-time codes: three separate faults
+- ⚠️ **The e-mail promised 5 minutes, the screen expired at 2.** `_ttl` was
+  `Duration(minutes: 5)` and the e-mail text derived from it, but every
+  countdown was a literal `120` copied into **twelve** files. Now
+  `GmailOtpService.codeLifetime` is the one source and all of them read it.
+- ⚠️ **A rejected password destroyed the code.** `verifyCode` consumed on
+  success, but `finishPasswordReset` verified *then* saved — so a password
+  refused by the database (too short, used before) spent the code anyway. The
+  next press said "No verification code was sent". `verifyCode(..., consume:
+  false)` + `consumeCode()` after the reset actually succeeds.
+- ⚠️ **`_error!.contains('code')` was too loose**, matching "No verification
+  **code** was sent" and password messages containing the word, so a rejected
+  PASSWORD bounced the officer to the OTP screen. Now matches the specific
+  code complaints.
+
+### ⚠️ Do not `dart format` whole directories
+This cost two rounds of false regressions. Many tests in this suite assert on
+**source text**; reflowing a file they read breaks the match while the code
+behaves identically. A one-character edit that pushes a line past 80 chars
+makes the formatter rewrap it — and formatting a directory rewraps files you
+never touched. Format only the exact files you edited, and when a "regression"
+appears in a file you did not functionally change, compare
+**whitespace-stripped token hashes** against HEAD before believing it:
+`git show HEAD:<f> | tr -d '[:space:]' | md5sum` vs the same on the working
+copy. `git diff -w` is NOT sufficient — it ignores whitespace within a line
+but still reports tokens moved between lines.

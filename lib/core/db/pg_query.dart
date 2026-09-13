@@ -31,7 +31,8 @@ class _Filter {
 
 @immutable
 class _Order {
-  const _Order(this.column, {required this.ascending, required this.nullsFirst});
+  const _Order(this.column,
+      {required this.ascending, required this.nullsFirst});
   final String column;
   final bool ascending;
   final bool nullsFirst;
@@ -424,8 +425,8 @@ class PgQuery implements Future<dynamic> {
   }
 
   /// `child.fk = parent.pk` (or the reverse), for a given pair of aliases.
-  String _joinOn(PgForeignKey fk, bool toOne, String parentAlias,
-          String childAlias) =>
+  String _joinOn(
+          PgForeignKey fk, bool toOne, String parentAlias, String childAlias) =>
       toOne
           // parent.col = child.pk
           ? '$childAlias.${_quoteIdent(fk.targetColumn)} = '
@@ -526,7 +527,8 @@ class PgQuery implements Future<dynamic> {
         // Only treat it as an embed when the select actually names one, so a
         // column that genuinely contains a dot is left alone.
         final field = _fields.firstWhere(
-          (x) => x.isEmbed && (x.outputName == embedName || x.name == embedName),
+          (x) =>
+              x.isEmbed && (x.outputName == embedName || x.name == embedName),
           orElse: () => PgField(name: ''),
         );
         if (field.name.isNotEmpty) {
@@ -610,7 +612,8 @@ class PgQuery implements Future<dynamic> {
       return (sql, params);
     }
 
-    final cols = _selectList(table, alias, _fields, params, c).join(',\n       ');
+    final cols =
+        _selectList(table, alias, _fields, params, c).join(',\n       ');
     final sql = 'select $cols\n'
         '  from ${_quoteRel(table)} $alias'
         '$whereSql$orderSql$limitSql$offsetSql';
@@ -627,9 +630,7 @@ class PgQuery implements Future<dynamic> {
     // in a RETURNING clause would need the row to exist first. The mutation
     // returns its own columns; a call site that selects embeds after a write
     // re-reads, which is what the Supabase client did over HTTP anyway.
-    final returning = _returning
-        ? ' returning ${_returningList()}'
-        : '';
+    final returning = _returning ? ' returning ${_returningList()}' : '';
 
     switch (_mutation) {
       case 'insert':
@@ -657,10 +658,8 @@ class PgQuery implements Future<dynamic> {
         }
         final conflict = _mutation == 'upsert'
             ? ' on conflict (${_onConflict.map(_quoteIdent).join(', ')}) '
-                'do update set ${colList.where((k) => !_onConflict.contains(k))
-                    .map((k) => '${_quoteIdent(k)} = '
-                        'excluded.${_quoteIdent(k)}')
-                    .join(', ')}'
+                'do update set ${colList.where((k) => !_onConflict.contains(k)).map((k) => '${_quoteIdent(k)} = '
+                    'excluded.${_quoteIdent(k)}').join(', ')}'
             : '';
         final sql = 'insert into ${_quoteRel(table)} '
             '(${colList.map(_quoteIdent).join(', ')}) '
@@ -720,9 +719,7 @@ class PgQuery implements Future<dynamic> {
     final rows = await PgDatabase.instance.query(sql, parameters: params);
 
     if (_countOnly) {
-      return rows.isEmpty
-        ? 0
-        : (int.tryParse('${rows.first['count']}') ?? 0);
+      return rows.isEmpty ? 0 : (int.tryParse('${rows.first['count']}') ?? 0);
     }
 
     if (_single) {
@@ -800,4 +797,34 @@ class PgQuery implements Future<dynamic> {
 class _Counter {
   int _n = 0;
   int next() => _n++;
+}
+
+/// The sentence a database error was actually trying to say.
+///
+/// ⚠️ A `raise exception` inside a PL/pgSQL function is how the schema talks
+/// to a PERSON -- "You have used this password before", "Only the ICT
+/// Directorate can reactivate an account". The postgres driver's toString()
+/// wraps that in `Severity.error <sqlstate>: `, and that whole string was
+/// being shown on the sign-in screen, prefix and error code included.
+///
+/// This strips the dressing and returns the message. Anything that does not
+/// match the driver's shape is passed through unchanged, so an unexpected
+/// failure still says what it said rather than being flattened into a
+/// friendly lie.
+String describeDatabaseError(Object error) {
+  var text = error.toString();
+
+  // `Exception: ` from a rethrow, then the driver's own prefix. The severity
+  // word varies (error, fatal, panic) and the SQLSTATE is five alphanumerics.
+  text = text.replaceFirst(RegExp(r'^Exception:\s*'), '');
+  final m = RegExp(r'^Severity\.\w+\s+[A-Za-z0-9]{5}:\s*(.+)$', dotAll: true)
+      .firstMatch(text);
+  if (m != null) return m.group(1)!.trim();
+
+  // Some driver versions print the message without a code.
+  final plain =
+      RegExp(r'^Severity\.\w+:\s*(.+)$', dotAll: true).firstMatch(text);
+  if (plain != null) return plain.group(1)!.trim();
+
+  return text.trim();
 }

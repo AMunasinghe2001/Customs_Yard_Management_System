@@ -13,9 +13,11 @@ import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../services/otp_service.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
+import '../../core/session_reset.dart';
 
 /// Two-step login for the Disposal Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in.
@@ -54,7 +56,8 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   final _confirmPassCtrl = TextEditingController();
   bool _obscureNew = true, _obscureConfirm = true;
 
-  static const int _otpWindowSeconds = 120;
+  static int get _otpWindowSeconds =>
+      GmailOtpService.codeLifetime.inSeconds;
   static const int _maxResends = 2;
   Timer? _countdownTimer;
   Timer? _lockTimer;
@@ -297,12 +300,34 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     });
     try {
       await ref.read(authServiceProvider).changePassword(newPass);
-      // Re-read the profile so the refreshed password_updated_at is in hand.
-      final refreshed = await ref.read(authServiceProvider).getCurrentProfile();
-      final profile = refreshed ?? _pendingProfile!;
-      // If "remember me" is on, keep the saved password in step with the new one.
-      _passwordCtrl.text = newPass;
-      await _finishLogin(profile);
+      // ⚠️ Back to the sign-in form rather than straight into the app. The
+      // session that collected the change is ended here, so the officer
+      // signs in with the new password the ordinary way -- which is what a
+      // password change should feel like, and proves the new password works
+      // while the form that can correct it is still on screen.
+      // ⚠️ Set BEFORE signing out: signOut() schedules the ProviderScope
+      // rebuild, and the NEW router reads this as its starting route. Without
+      // it the officer lands on the portal picker having just set a password.
+      pendingLandingRoute = '/disposal/login';
+      try {
+        await ref.read(authServiceProvider).signOut();
+      } catch (_) {
+        // The provider is cleared either way.
+      }
+      if (!mounted) return;
+      ref.read(currentProfileProvider.notifier).state = null;
+      _countdownTimer?.cancel();
+      setState(() {
+        _passwordStage = false;
+        _passwordExpired = false;
+        _pendingProfile = null;
+        _otpStage = false;
+        _passwordCtrl.text = '';
+        _newPassCtrl.text = '';
+        _confirmPassCtrl.text = '';
+        _error = null;
+        _success = 'Password updated. Sign in with your new password.';
+      });
     } catch (e) {
       setState(() => _error = _friendlyError(e.toString()));
     } finally {

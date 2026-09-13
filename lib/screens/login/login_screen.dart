@@ -99,7 +99,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // every page would come back empty. This portal had no password stage
       // at all, and three yard officers are already past 90 days — without
       // this they would sign in to an empty app with no way to fix it.
-      if (profile.isPasswordExpired) {
+      // ⚠️ EXPIRING SOON enters the same stage, with Skip offered. The four
+      // directorate portals have warned for the last 7 days all along; the
+      // yard portals had only the hard stop, so yard staff learned of the
+      // rotation on the morning it locked them out.
+      if (profile.isPasswordExpired || profile.isPasswordExpiringSoon) {
         ref.read(currentProfileProvider.notifier).state = profile;
         if (!mounted) return;
         setState(() => _expiredProfile = profile);
@@ -275,8 +279,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 if (_expiredProfile != null) ...[
                                   PasswordExpiredStage(
                                     accent: context.colors.primaryGold,
-                                    onDone: () async {
-                                      _passwordCtrl.text = '';
+                                    signInRoute: '/login',
+                                    expired: _expiredProfile!.isPasswordExpired,
+                                    daysLeft: _expiredProfile!
+                                        .daysUntilPasswordExpiry,
+                                    // Deferring finishes the sign-in exactly
+                                    // as a normal one does — the password is
+                                    // still valid today, so nothing else
+                                    // about the session differs.
+                                    onSkip: () async {
                                       await _saveCredentials();
                                       if (!mounted) return;
                                       final p = _expiredProfile!;
@@ -289,178 +300,204 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                           'Logged in successfully as ${p.fullName}');
                                       context.go('/dashboard');
                                     },
+                                    // ⚠️ Back to THIS form, not into the app.
+                                    // The stage has signed the session out,
+                                    // so the officer signs in with the new
+                                    // password the ordinary way — which is
+                                    // what a password change should feel
+                                    // like, and proves the new password
+                                    // works while the form is still in front
+                                    // of them.
+                                    onDone: () {
+                                      setState(() {
+                                        _expiredProfile = null;
+                                        _passwordCtrl.text = '';
+                                      });
+                                      context.showSuccess(
+                                          'Password updated. Sign in with your new password.');
+                                    },
                                     onSignOut: () {
+                                      // ⚠️ Read BEFORE the setState below
+                                      // clears the profile this depends on.
+                                      final wasExpired =
+                                          _expiredProfile!.isPasswordExpired;
                                       setState(() {
                                         _expiredProfile = null;
                                         _passwordCtrl.text = '';
                                       });
                                       ref
-                                          .read(loginErrorProvider.notifier)
-                                          .state =
-                                          'Your password has expired. Set a new one to sign in.';
+                                              .read(loginErrorProvider.notifier)
+                                              .state =
+                                          wasExpired
+                                              ? 'Your password has expired. Set a new one to sign in.'
+                                              : 'Sign in again when you are ready to set a new password.';
                                     },
                                   ),
                                 ] else ...[
-                                if (error != null) ...[
-                                  Container(
-                                    padding: const EdgeInsets.all(14),
-                                    decoration: BoxDecoration(
-                                      color: context.colors.dangerRed
-                                          .withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                          color: context.colors.dangerRed
-                                              .withOpacity(0.4)),
+                                  if (error != null) ...[
+                                    Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: context.colors.dangerRed
+                                            .withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                            color: context.colors.dangerRed
+                                                .withOpacity(0.4)),
+                                      ),
+                                      child: Row(children: [
+                                        Icon(Icons.error_outline,
+                                            color: context.colors.dangerRed,
+                                            size: 18),
+                                        const Gap(10),
+                                        Expanded(
+                                            child: Text(error,
+                                                style: TextStyle(
+                                                    color: context
+                                                        .colors.dangerRed,
+                                                    fontSize: 13))),
+                                      ]),
                                     ),
-                                    child: Row(children: [
-                                      Icon(Icons.error_outline,
-                                          color: context.colors.dangerRed,
-                                          size: 18),
-                                      const Gap(10),
-                                      Expanded(
-                                          child: Text(error,
+                                    const Gap(20),
+                                  ],
+                                  TextFormField(
+                                    controller: _emailCtrl,
+                                    // Enter submits, so the form can be completed from the
+                                    // keyboard without reaching for the mouse.
+                                    onFieldSubmitted: (_) => _signIn(),
+                                    decoration: InputDecoration(
+                                      labelText: 'Username or Email',
+                                      prefixIcon: Icon(Icons.person_outline,
+                                          color: context.colors.textMuted),
+                                    ),
+                                    keyboardType: TextInputType.text,
+                                    validator: (v) => v == null || v.isEmpty
+                                        ? 'Username or email required'
+                                        : null,
+                                  )
+                                      .animate()
+                                      .slideX(
+                                          begin: 0.1,
+                                          duration: 400.ms,
+                                          delay: 200.ms)
+                                      .fadeIn(),
+                                  const Gap(16),
+                                  TextFormField(
+                                    controller: _passwordCtrl,
+                                    decoration: InputDecoration(
+                                      labelText: 'Password',
+                                      prefixIcon: Icon(Icons.lock_outline,
+                                          color: context.colors.textMuted),
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                            _obscurePassword
+                                                ? Icons.visibility_off
+                                                : Icons.visibility,
+                                            color: context.colors.textMuted),
+                                        onPressed: () => setState(() =>
+                                            _obscurePassword =
+                                                !_obscurePassword),
+                                      ),
+                                    ),
+                                    obscureText: _obscurePassword,
+                                    validator: (v) => v == null || v.isEmpty
+                                        ? 'Password required'
+                                        : null,
+                                    onFieldSubmitted: (_) => _signIn(),
+                                  )
+                                      .animate()
+                                      .slideX(
+                                          begin: 0.1,
+                                          duration: 400.ms,
+                                          delay: 300.ms)
+                                      .fadeIn(),
+                                  const Gap(12),
+                                  Row(children: [
+                                    SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: Checkbox(
+                                        value: _rememberMe,
+                                        activeColor:
+                                            context.colors.accentLightBlue,
+                                        onChanged: (v) => setState(
+                                            () => _rememberMe = v ?? false),
+                                      ),
+                                    ),
+                                    const Gap(8),
+                                    Text('Remember me',
+                                        style: TextStyle(
+                                            color: context.colors.textSecondary,
+                                            fontSize: 13)),
+                                    const Spacer(),
+                                    // Beside Remember-me: both are things an officer
+                                    // reaches for at a sign-in that will not go through.
+                                    TextButton(
+                                      onPressed: _openForgotPassword,
+                                      style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap),
+                                      child: Text('Forgot password?',
+                                          style: TextStyle(
+                                              color: context
+                                                  .colors.accentLightBlue,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600)),
+                                    ),
+                                  ]).animate().fadeIn(delay: 350.ms),
+                                  const Gap(24),
+                                  SizedBox(
+                                          height: 54,
+                                          child: ElevatedButton(
+                                            onPressed:
+                                                isLoading ? null : _signIn,
+                                            child: isLoading
+                                                ? SizedBox(
+                                                    width: 22,
+                                                    height: 22,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            color: context
+                                                                .colors
+                                                                .primaryNavy))
+                                                : const Text('Sign In',
+                                                    style: TextStyle(
+                                                        fontSize: 16)),
+                                          ))
+                                      .animate()
+                                      .slideY(
+                                          begin: 0.3,
+                                          duration: 400.ms,
+                                          delay: 400.ms)
+                                      .fadeIn(),
+                                  const Gap(24),
+                                  Divider(
+                                      color: context.colors.borderColor
+                                          .withOpacity(0.5)),
+                                  const Gap(16),
+                                  Center(
+                                      child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                        Icon(Icons.info_outline_rounded,
+                                            size: 15,
+                                            color: context.colors.textMuted),
+                                        const Gap(6),
+                                        Flexible(
+                                          child: Text(
+                                              'Yard staff accounts are provisioned by the ICT Directorate.',
+                                              textAlign: TextAlign.center,
                                               style: TextStyle(
                                                   color:
-                                                      context.colors.dangerRed,
-                                                  fontSize: 13))),
-                                    ]),
-                                  ),
-                                  const Gap(20),
-                                ],
-                                TextFormField(
-                                  controller: _emailCtrl,
-                                  // Enter submits, so the form can be completed from the
-                                  // keyboard without reaching for the mouse.
-                                  onFieldSubmitted: (_) => _signIn(),
-                                  decoration: InputDecoration(
-                                    labelText: 'Username or Email',
-                                    prefixIcon: Icon(Icons.person_outline,
-                                        color: context.colors.textMuted),
-                                  ),
-                                  keyboardType: TextInputType.text,
-                                  validator: (v) => v == null || v.isEmpty
-                                      ? 'Username or email required'
-                                      : null,
-                                )
-                                    .animate()
-                                    .slideX(
-                                        begin: 0.1,
-                                        duration: 400.ms,
-                                        delay: 200.ms)
-                                    .fadeIn(),
-                                const Gap(16),
-                                TextFormField(
-                                  controller: _passwordCtrl,
-                                  decoration: InputDecoration(
-                                    labelText: 'Password',
-                                    prefixIcon: Icon(Icons.lock_outline,
-                                        color: context.colors.textMuted),
-                                    suffixIcon: IconButton(
-                                      icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off
-                                              : Icons.visibility,
-                                          color: context.colors.textMuted),
-                                      onPressed: () => setState(() =>
-                                          _obscurePassword = !_obscurePassword),
-                                    ),
-                                  ),
-                                  obscureText: _obscurePassword,
-                                  validator: (v) => v == null || v.isEmpty
-                                      ? 'Password required'
-                                      : null,
-                                  onFieldSubmitted: (_) => _signIn(),
-                                )
-                                    .animate()
-                                    .slideX(
-                                        begin: 0.1,
-                                        duration: 400.ms,
-                                        delay: 300.ms)
-                                    .fadeIn(),
-                                const Gap(12),
-                                Row(children: [
-                                  SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: Checkbox(
-                                      value: _rememberMe,
-                                      activeColor:
-                                          context.colors.accentLightBlue,
-                                      onChanged: (v) => setState(
-                                          () => _rememberMe = v ?? false),
-                                    ),
-                                  ),
-                                  const Gap(8),
-                                  Text('Remember me',
-                                      style: TextStyle(
-                                          color: context.colors.textSecondary,
-                                          fontSize: 13)),
-                                  const Spacer(),
-                                  // Beside Remember-me: both are things an officer
-                                  // reaches for at a sign-in that will not go through.
-                                  TextButton(
-                                    onPressed: _openForgotPassword,
-                                    style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8),
-                                        minimumSize: Size.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap),
-                                    child: Text('Forgot password?',
-                                        style: TextStyle(
-                                            color:
-                                                context.colors.accentLightBlue,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600)),
-                                  ),
-                                ]).animate().fadeIn(delay: 350.ms),
-                                const Gap(24),
-                                SizedBox(
-                                        height: 54,
-                                        child: ElevatedButton(
-                                          onPressed: isLoading ? null : _signIn,
-                                          child: isLoading
-                                              ? SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                          color: context.colors
-                                                              .primaryNavy))
-                                              : const Text('Sign In',
-                                                  style:
-                                                      TextStyle(fontSize: 16)),
-                                        ))
-                                    .animate()
-                                    .slideY(
-                                        begin: 0.3,
-                                        duration: 400.ms,
-                                        delay: 400.ms)
-                                    .fadeIn(),
-                                const Gap(24),
-                                Divider(
-                                    color: context.colors.borderColor
-                                        .withOpacity(0.5)),
-                                const Gap(16),
-                                Center(
-                                    child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                      Icon(Icons.info_outline_rounded,
-                                          size: 15,
-                                          color: context.colors.textMuted),
-                                      const Gap(6),
-                                      Flexible(
-                                        child: Text(
-                                            'Yard staff accounts are provisioned by the ICT Directorate.',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                                color: context.colors.textMuted,
-                                                fontSize: 13)),
-                                      ),
-                                    ])).animate().fadeIn(delay: 600.ms),
+                                                      context.colors.textMuted,
+                                                  fontSize: 13)),
+                                        ),
+                                      ])).animate().fadeIn(delay: 600.ms),
                                 ],
                               ],
                             )),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 
 import '../core/theme.dart';
@@ -64,8 +65,13 @@ AccountStatus accountStatusOf(BuildContext context, ProfileModel profile) {
   final String label;
   final Color color;
   if (!profile.isActive) {
-    label = 'INACTIVE';
-    color = context.colors.dangerRed;
+    // ⚠️ DORMANT reads differently from INACTIVE on purpose. Both mean the
+    // account cannot sign in, but one is a clock running out and the other
+    // is somebody's decision — and the person deciding whether to switch it
+    // back on needs to know which.
+    final dormant = profile.deactivatedReason == 'dormant';
+    label = dormant ? 'DORMANT' : 'INACTIVE';
+    color = dormant ? context.colors.warningAmber : context.colors.dangerRed;
   } else if (profile.isExpired) {
     label = 'EXPIRED';
     color = context.colors.dangerRed;
@@ -77,9 +83,12 @@ AccountStatus accountStatusOf(BuildContext context, ProfileModel profile) {
   return AccountStatus(
     label,
     color,
-    profile.isExpired
-        ? 'Auto-deactivated on $expiresStr (8 months after creation)'
-        : 'Auto-deactivates on $expiresStr (8 months after creation)',
+    !profile.isActive && profile.deactivatedReason == 'dormant'
+        ? 'Disabled automatically — not signed into for 90 days. Only ICT '
+            'can reactivate it.'
+        : profile.isExpired
+            ? 'Auto-deactivated on $expiresStr (8 months after creation)'
+            : 'Auto-deactivates on $expiresStr (8 months after creation)',
   );
 }
 
@@ -173,5 +182,56 @@ class RowActionButtons extends StatelessWidget {
         button(deleteIcon, context.colors.dangerRed, deleteTooltip, onDelete!),
       ],
     ]);
+  }
+}
+
+/// How long this account's password has left of its 90-day rotation, and the
+/// date it turns over.
+///
+/// ⚠️ Shared by BOTH account tables. It began private to the
+/// Directorate Access tab; the Staff Register needed the same answer
+/// about yard officers, and a second copy would have been a second
+/// place for the wording and the 90-day arithmetic to drift.
+///
+/// On Directorate Access it replaces the username column. ICT resets an account because its holder
+/// cannot get in, and the commonest reason is that the password has rotated —
+/// so this is the column that answers the question the page is open for,
+/// without printing a live credential on the screen.
+class PasswordAgeCell extends StatelessWidget {
+  const PasswordAgeCell({super.key, required this.profile});
+  final ProfileModel profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = profile.daysUntilPasswordExpiry;
+    final on = profile.passwordUpdatedAt ?? profile.createdAt;
+    final due = on.add(const Duration(days: ProfileModel.passwordMaxAgeDays));
+    final dueStr = DateFormat('dd MMM yyyy').format(due);
+
+    final (String label, Color color) = profile.isPasswordExpired
+        ? ('Expired $dueStr', context.colors.dangerRed)
+        : profile.isPasswordExpiringSoon
+            ? (
+                'Resets in $days ${days == 1 ? 'day' : 'days'}',
+                context.colors.warningAmber
+              )
+            : ('Resets in $days days', context.colors.textSecondary);
+
+    return Tooltip(
+      message: profile.isPasswordExpired
+          ? 'Password expired on $dueStr — the holder cannot sign in.'
+          : 'Password rotates on $dueStr (90 days from the last change).',
+      child: Row(children: [
+        Icon(Icons.lock_clock_rounded, size: 14, color: color),
+        const Gap(7),
+        Flexible(
+          child: Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
   }
 }

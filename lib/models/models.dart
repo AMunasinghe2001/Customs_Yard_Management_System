@@ -608,8 +608,7 @@ class WarehouseEntryModel {
       returnNotes: json['return_notes'] as String?,
       dailyRate: parseDbNum(json['daily_rate']) ?? 0,
       otherDelivered: json['other_delivered'] as bool? ?? false,
-      accumulatedCharge:
-          parseDbNum(json['accumulated_storage_charge']) ?? 0,
+      accumulatedCharge: parseDbNum(json['accumulated_storage_charge']) ?? 0,
       srNumber: package?['sr_number'] as String?,
       consigneeName: package?['consignee_name'] as String?,
       packageStatus: package?['status'] as String?,
@@ -831,6 +830,14 @@ class ProfileModel {
   final DateTime createdAt;
   final DateTime? passwordUpdatedAt;
 
+  /// Why [isActive] is false: 'dormant' (switched off automatically after the
+  /// unused period) or 'manual' (ICT's decision). Null while active.
+  ///
+  /// ⚠️ The two are not interchangeable. Waking a dormant account is routine;
+  /// re-enabling one ICT turned off deliberately undoes somebody's decision,
+  /// and without this the button looks identical in both cases.
+  final String? deactivatedReason;
+
   const ProfileModel({
     required this.id,
     required this.fullName,
@@ -848,6 +855,7 @@ class ProfileModel {
     this.lastSeenAt,
     required this.createdAt,
     this.passwordUpdatedAt,
+    this.deactivatedReason,
   });
 
   factory ProfileModel.fromJson(Map<String, dynamic> json) {
@@ -868,6 +876,7 @@ class ProfileModel {
       lastSeenAt: parseDbDate(json['last_seen_at']),
       createdAt: parseDbDateRequired(json['created_at']),
       passwordUpdatedAt: parseDbDate(json['password_updated_at']),
+      deactivatedReason: json['deactivated_reason'] as String?,
     );
   }
 
@@ -1009,6 +1018,10 @@ class ProfileModel {
       lastSeenAt: seenAt,
       createdAt: createdAt,
       passwordUpdatedAt: passwordUpdatedAt,
+      // ⚠️ Copied like every other field. Omitting it would silently reset
+      // the reason to null on each presence update, and a dormant account
+      // would start reading as a manual deactivation.
+      deactivatedReason: deactivatedReason,
     );
   }
 }
@@ -1784,10 +1797,9 @@ class SrLedgerRow {
       auctionExpense;
 
   /// Costs beyond what the deposit covered. Zero when the deposit was enough.
-  double get deficit =>
-      (depositSpent - destroyingDeposit) > 0
-          ? depositSpent - destroyingDeposit
-          : 0;
+  double get deficit => (depositSpent - destroyingDeposit) > 0
+      ? depositSpent - destroyingDeposit
+      : 0;
 
   double get totalIncome =>
       srCharges + destroyingDeposit + saleProceeds + taxes;
@@ -2728,7 +2740,6 @@ class YardModel {
       );
 }
 
-
 /// True when the signed-in Top Management Directorate officer holds [code].
 ///
 /// The post lives in `profiles.job_role`, but accounts created before the
@@ -2995,7 +3006,6 @@ class TenderSaleModel {
     return now.isAfter(start) ? now.difference(start) : null;
   }
 
-
   /// De-duplicated items: same (forfeited_package_id, fp.item_id) combination
   /// may appear as multiple TSI rows when the per-item RPC created extra entries.
   /// Prefer the sold row; if equal, keep the latest soldAt.
@@ -3027,8 +3037,7 @@ class TenderSaleModel {
   /// only the sold ones said such a sale was still outstanding, so the yard's
   /// "since bidding started" clock kept climbing on a sale that had been
   /// closed for days.
-  int get decidedCount =>
-      dedupedItems.where((i) => i.sold || i.unsold).length;
+  int get decidedCount => dedupedItems.where((i) => i.sold || i.unsold).length;
 
   /// Every item has an outcome, so nothing on this sale is awaiting a
   /// decision. An empty sale is NOT decided — there is nothing to decide.
@@ -3216,7 +3225,6 @@ class DestructionModel {
     if (moment == null) return false;
     return DateTime.now().isAfter(moment);
   }
-
 
   factory DestructionModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['destruction_items'] as List? ?? const [];

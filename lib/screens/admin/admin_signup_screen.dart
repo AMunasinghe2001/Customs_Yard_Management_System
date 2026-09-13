@@ -9,6 +9,7 @@ import '../../widgets/password_strength_field.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/directorate_yard_picker.dart';
 import '../../services/services.dart';
+import '../../services/otp_service.dart';
 import '../../core/providers.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
@@ -38,7 +39,8 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
   String? _error, _success;
 
   // ── OTP timer / resend throttling ──────────────────────────────
-  static const int _otpWindowSeconds = 120; // 2 minutes
+  static int get _otpWindowSeconds =>
+      GmailOtpService.codeLifetime.inSeconds;
   static const int _maxResends = 2; // resend allowed twice
   Timer? _countdownTimer;
   Timer? _lockTimer;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'session_reset.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/home/yard_access_screen.dart';
 import '../screens/login/login_screen.dart';
@@ -48,7 +49,12 @@ import 'app_log.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: '/',
+    // ⚠️ Not always '/'. A session reset rebuilds this router, and a
+    // password change wants to land back on the portal's own sign-in page
+    // rather than the portal picker. takeLandingRoute() returns '/' unless
+    // something deliberately asked otherwise, and clears itself so the next
+    // reset starts from the default again.
+    initialLocation: takeLandingRoute(),
     redirect: (context, state) async {
       final user = supabase.auth.currentUser;
       final isLoggedIn = user != null;
@@ -157,10 +163,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
       GoRoute(
           path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),
-      GoRoute(
-          path: '/ict/login', builder: (_, __) => const IctLoginScreen()),
-      GoRoute(
-          path: '/ict/signup', builder: (_, __) => const IctSignupScreen()),
+      GoRoute(path: '/ict/login', builder: (_, __) => const IctLoginScreen()),
+      GoRoute(path: '/ict/signup', builder: (_, __) => const IctSignupScreen()),
       GoRoute(
           path: '/ict',
           pageBuilder: (_, state) => NoTransitionPage(
