@@ -14,6 +14,7 @@
 --    028  a failed sign-in records the yard it targeted
 --    029  a log row keeps the role its actor held that day
 --    030  the committee round takes no bids
+--    031  one committee round, only after the value is submitted
 --
 --  ⚠️ Why 018 must come last. Migration 018 wraps auth.change_password so a
 --  session may only change ITS OWN password: it renames the real body to
@@ -80,6 +81,9 @@
 \echo ''
 \echo '=== 030 the committee round takes no bids ========================'
 \i migrations/030_the_committee_round_takes_no_bids.sql
+\echo ''
+\echo '=== 031 one committee round, value first ========================='
+\i migrations/031_one_committee_round_and_a_value_before_it.sql
 \echo ''
 
 -- ── Prove the end state, rather than trusting the order ─────────────────────

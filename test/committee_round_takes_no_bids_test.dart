@@ -68,4 +68,86 @@ void main() {
       expect(sql, contains('where x.rn = 2'));
     });
   });
+
+  group('the committee round happens once, and only after a value', () {
+    final sql = File(
+            'migrations/031_one_committee_round_and_a_value_before_it.sql')
+        .readAsStringSync();
+
+    test('a fifth round needs a SUBMITTED committee value', () {
+      // ⚠️ postgres/38 let any EXISTING committee re-open the pool, valued
+      // or not. So the committee round could run before the committee had
+      // priced anything, and the Committee Value cell then offered "Enter
+      // Value" for a round already over. OA/07/2025 sat in exactly that
+      // state.
+      expect(sql, contains('tc.submitted_value is not null'));
+      expect(sql, contains('Top Management has not yet submitted one'));
+    });
+
+    test('a sixth round is refused outright', () {
+      // Once a committee existed there was no cap at all.
+      expect(sql, contains('if v_rounds >= 5 then'));
+      expect(sql, contains('A sixth'));
+    });
+
+    test('it is a trigger, so a stale screen cannot get past it', () {
+      expect(sql, contains('before insert on public.tender_sale_items'));
+    });
+
+    test('the migration proves both refusals', () {
+      expect(sql, contains('a SIXTH round was accepted'));
+      expect(sql, contains('a 5th round ran before the committee had valued'));
+    });
+  });
+
+  group('Top Management is not offered a dead button', () {
+    final tab =
+        File('lib/screens/executive/tender_committee_tab.dart').readAsStringSync();
+
+    test('Enter Value is withheld once the round has run', () {
+      // A value entered after the committee round is over would have nothing
+      // to attach to.
+      expect(tab, contains('info.tenderCount > kMaxBidTenderRounds + 1'));
+      expect(tab, contains("'Round already run'"));
+    });
+  });
+
+  group('the seed proves the invariant instead of assuming it', () {
+    test('it throws if a fifth round has no submitted value', () {
+      final seed = File('tool/seed_test_data.dart').readAsStringSync();
+      expect(seed, contains('having count(*) >= 5'));
+      expect(seed, contains('The seed has broken the tender route'));
+    });
+  });
+
+  group('rewriting the view kept every column the app reads', () {
+    final sql = File(
+            'migrations/031_one_committee_round_and_a_value_before_it.sql')
+        .readAsStringSync();
+    final services = File('lib/services/services.dart').readAsStringSync();
+
+    test('the columns the service selects are all still defined', () {
+      // ⚠️ The first draft of 031 copied the view from postgres/38's SOURCE
+      // file, not from the live database. A later migration had added
+      // `valued` (and `latest_unsold`) since 38 was written, so the rewrite
+      // silently dropped them and the Unsold Tenders page fell over with
+      // "column t.valued does not exist". A view is a contract with every
+      // caller; rebuild it from what is live, and check what the app asks
+      // for is still there.
+      final sel = RegExp(r"from\('unsold_retender_pool'\)[\s\S]{0,200}?select\('([^']+)'\)")
+          .allMatches(services)
+          .map((m) => m.group(1)!)
+          .expand((cols) => cols.split(',').map((c) => c.trim()))
+          .toSet();
+      expect(sel, isNotEmpty, reason: 'the service no longer reads the pool?');
+      for (final col in sel) {
+        expect(sql, contains(' as $col'),
+            reason: 'the app selects "$col" but the view no longer defines it');
+      }
+    });
+
+    test('latest_unsold is back in the WHERE clause', () {
+      expect(sql, contains('and l.latest_unsold'));
+    });
+  });
 }

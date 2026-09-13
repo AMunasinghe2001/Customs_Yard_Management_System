@@ -1055,6 +1055,21 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
     final profile = ref.watch(currentProfileProvider);
     final isAdg = _isAdg(profile);
 
+    // 1b ── The committee round has ALREADY RUN. There is nothing left to
+    // value: the round the value would have priced is over.
+    //
+    // ⚠️ CED/GL1/OA/07/2025 sat at five rounds with a committee appointed
+    // AFTER its fifth round and no value, and this cell offered "Enter
+    // Value" as if the round were still to come. A value entered here would
+    // have nothing to attach to. Migration 031 now stops that fifth round
+    // running before the value exists, so this state cannot recur -- but
+    // the one row that already has it must not be handed a dead button.
+    if (info.tenderCount > kMaxBidTenderRounds + 1 &&
+        c.committeeValue == null) {
+      return _waitingChip(context, 'Round already run',
+          Icons.block_rounded, context.colors.dangerRed);
+    }
+
     // 2 ── Committee appointed but has not priced the goods yet.
     if (c.committeeValue == null) {
       // Only the ADG enters the committee's figure; the DG sees the state.

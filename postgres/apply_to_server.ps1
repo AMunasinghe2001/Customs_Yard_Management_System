@@ -35,7 +35,7 @@ if (-not $psql) {
   exit 1
 }
 
-if (-not (Test-Path 'postgres\69_apply_021_to_030.sql')) {
+if (-not (Test-Path 'postgres\69_apply_021_to_031.sql')) {
   Write-Host 'Run this from the project root (D:\Company\Cus_Yard_Management).' `
              -ForegroundColor Red
   exit 1
@@ -72,7 +72,7 @@ $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
 $ErrorActionPreference = 'Continue'
 try {
   & $psql -h $PgHost -p $Port -U $User -d $Database `
-          -v ON_ERROR_STOP=1 -f 'postgres\69_apply_021_to_030.sql' 2>&1 |
+          -v ON_ERROR_STOP=1 -f 'postgres\69_apply_021_to_031.sql' 2>&1 |
     ForEach-Object { "$_" }
   $code = $LASTEXITCODE
 } finally {

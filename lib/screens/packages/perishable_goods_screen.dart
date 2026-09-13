@@ -28,6 +28,7 @@ import '../../widgets/destruction_status_pill.dart';
 import '../disposal/disposal_shared.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/send_disposal_request_button.dart';
+import '../../widgets/app_dialog.dart';
 
 /// One perishable item, with the package it belongs to.
 class PerishableRow {
@@ -627,7 +628,16 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                                   .read(forfeitedByItemProvider(
                                                       r.package.id))
                                                   .valueOrNull?[r.item.id];
-                                              showDialog(
+                                              // ⚠️ showAppDialog, not the raw
+                                              // showDialog. The shared helper
+                                              // is what puts the dark blurred
+                                              // barrier behind every other
+                                              // popup in the app; this was
+                                              // the ONE call site that had
+                                              // slipped past it, so this
+                                              // dialog alone opened over a
+                                              // plain, unblurred page.
+                                              showAppDialog(
                                               context: context,
                                               builder: (_) =>
                                                   PackageDetailsDialog(

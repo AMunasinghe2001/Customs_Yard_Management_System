@@ -1544,6 +1544,31 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
   print('    $committeeRounds re-tendered at the committee price and still '
       'unsold');
   print('    $settled given a final outcome${spread.isEmpty ? '' : ' ($spread)'}');
+
+  // ⚠️ Prove the invariant the whole tender route rests on, rather than
+  // trusting the code above to have kept it. A package may have a FIFTH
+  // round only when Top Management has SUBMITTED a committee value, and
+  // never a sixth. CED/GL1/OA/07/2025 once sat at five rounds with no such
+  // value -- seeded before the rule existed -- and the app then offered
+  // "Enter Value" for a round that had already run. Migration 031 refuses
+  // the insert at the database now; this check makes the seed itself say so
+  // if it ever tries.
+  final broken = await conn.execute(r'''
+    select count(*)
+      from (select tsi.forfeited_package_id fp, count(*) n
+              from public.tender_sale_items tsi
+             group by 1 having count(*) >= 5) x
+     where x.n > 5
+        or not exists (select 1 from public.tender_committees tc
+                        where tc.forfeited_package_id = x.fp
+                          and tc.submitted_value is not null)
+  ''');
+  final n = (broken.first.first as int?) ?? 0;
+  if (n > 0) {
+    throw StateError(
+        '$n package(s) have a fifth round with no submitted committee value, '
+        'or more than five rounds. The seed has broken the tender route.');
+  }
 }
 
 /// A re-valuation that prices the NEXT round.

@@ -5390,15 +5390,39 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final sales = info.sales;
     return StyledFormDialog(
-      label: 'Tender Sale History',
+      // ⚠️ Matched to the Record Bids dialog, which opens from the same row
+      // and lists the same rounds: same width, and the same label wording.
+      // At 540 against its 480 the two arrived as visibly different windows
+      // for the same package, and the label said "Tender Sale History" in one
+      // place and "Tender History" in the other.
+      label: 'Tender History',
       title: info.forfeited.srNumber,
       headerAccentColor: context.colors.successGreen,
       icon: Icons.history_rounded,
-      width: 540,
-      child: StyledFormSection(
-        title: 'Tendered ${info.tenderCount} time(s)',
-        icon: Icons.gavel_rounded,
+      width: 480,
+      // ⚠️ The cards stand on their own, as they do in the Record Bids
+      // dialog. Wrapping them in an outer StyledFormSection put a second
+      // bordered box around the list, so this dialog read as cards-inside-a-
+      // panel while the other read as a plain column of cards — the same
+      // rounds, presented as two different kinds of thing. The count moves
+      // into the column as a plain line instead.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(children: [
+              Icon(Icons.gavel_rounded,
+                  size: 15, color: context.colors.textMuted),
+              const Gap(8),
+              Text('Tendered ${info.tenderCount} time(s)',
+                  style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13)),
+            ]),
+          ),
           for (int i = 0; i < sales.length; i++)
             _saleCard(context, sales[i], i == 0),
         ],
@@ -5411,11 +5435,20 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
     );
   }
 
+  /// One tender round in the history dialog.
+  ///
+  /// ⚠️ Built to match `_pastRoundCard` in the Record Bids dialog. The two sit
+  /// one click apart on the same page and describe the same rounds, but this
+  /// one used `cardDark` with a gold border and a 0.5-opacity highlight while
+  /// the other used `surfaceDark` with a plain border — so the same tender
+  /// looked like two different kinds of record depending on which button
+  /// opened it. Same fill, same border, same margin, same 12px radius.
   Widget _saleCard(BuildContext context, dynamic t, bool isLatest) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: context.colors.cardDark,
+        color: context.colors.surfaceDark,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
             color: isLatest
@@ -6408,12 +6441,26 @@ class _EnterBidsDialogState extends ConsumerState<EnterBidsDialog> {
   ///
   /// Committee valued also locks: once the committee has priced the goods the
   /// bids are evidence for a decision already taken and must not change.
+  /// True when the CURRENT round is the Top Management committee round.
+  ///
+  /// ⚠️ Rounds 1-4 (the Valuation Tender plus Tenders 1-3) go out to bidders.
+  /// The committee round does not: the committee sets a value, and if the
+  /// goods still do not move they fall straight through to Unsold Goods.
+  /// There is nobody to take an offer from, so there is nothing to record.
+  bool get _currentRoundIsCommittee =>
+      _rounds.length > kMaxBidTenderRounds + 1;
+
   bool get _currentRoundLocked {
     // ⚠️ A read-only viewer sees the SAME locked shape an officer sees once
     // the round has been priced: the bids as chips, no entry fields, no save.
     // Reusing the lock rather than adding a second hiding rule means the two
     // cannot drift into showing different things.
     if (widget.readOnly) return true;
+    // ⚠️ And the committee round is never open for entry. Migration 030
+    // refuses such a bid at the database, so leaving the form here would let
+    // an officer type an amount, press Save and be handed a raw error for
+    // doing what the screen invited.
+    if (_currentRoundIsCommittee) return true;
     if (_revals[''] != null) return true;
     final c = ref
         .read(tenderCommitteesProvider)
@@ -6472,6 +6519,14 @@ class _EnterBidsDialogState extends ConsumerState<EnterBidsDialog> {
     final message = widget.readOnly
         ? 'Bids are recorded by Central Disposal. This is the history for '
           'this package: what each round was valued at, and what was bid.'
+        // ⚠️ Checked BEFORE the other two. This round has no bids because it
+        // was never open to any — saying "the valuation was set from these
+        // bids" would describe bids that do not exist, and "can no longer be
+        // changed" implies there was once something to change.
+        : _currentRoundIsCommittee
+        ? 'This is the Top Management Directorate committee round. It does '
+          'not go out to bidders — the committee sets the value, and if the '
+          'goods still do not sell they pass to Unsold Goods.'
         : isCommitteeLock
         ? 'The Top Management Directorate committee has valued this package, '
           'so the bids can no longer be changed.'
@@ -6583,9 +6638,13 @@ class _EnterBidsDialogState extends ConsumerState<EnterBidsDialog> {
                 // bids, so changing them afterwards would invalidate it.
                 StyledFormSection(
                   gap: 0,
-                  title: _currentRoundLocked
-                      ? '${_roundLabel(_current, rounds.length)} · Valued'
-                      : '${_roundLabel(_current, rounds.length)} · Current',
+                  // ⚠️ "Valued" is wrong for the committee round: nothing
+                  // was valued FROM bids there, because none were taken.
+                  title: _currentRoundIsCommittee
+                      ? '${_roundLabel(_current, rounds.length)} · No bidding'
+                      : _currentRoundLocked
+                          ? '${_roundLabel(_current, rounds.length)} · Valued'
+                          : '${_roundLabel(_current, rounds.length)} · Current',
                   icon: Icons.gavel_rounded,
                   children: [
                     // Valuation first (decided before/at tendering) …
@@ -7859,15 +7918,32 @@ class _DestructionSaleHistoryDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final sales = info.destructions;
     return StyledFormDialog(
-      label: 'Destruction Sale History',
+      // Same shape as the other two tender dialogs — it lists the same
+      // rounds through the same _saleCard.
+      label: 'Destruction History',
       title: info.forfeited.srNumber,
       headerAccentColor: context.colors.successGreen,
       icon: Icons.history_rounded,
-      width: 540,
-      child: StyledFormSection(
-        title: 'Attempted ${info.timesAttempted} time(s)',
-        icon: Icons.gavel_rounded,
+      width: 480,
+      // Same flat column as the other two — see the note on the Tender
+      // History dialog.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(children: [
+              Icon(Icons.gavel_rounded,
+                  size: 15, color: context.colors.textMuted),
+              const Gap(8),
+              Text('Attempted ${info.timesAttempted} time(s)',
+                  style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13)),
+            ]),
+          ),
           for (int i = 0; i < sales.length; i++)
             _saleCard(context, sales[i], i == 0),
         ],
@@ -7880,11 +7956,20 @@ class _DestructionSaleHistoryDialog extends StatelessWidget {
     );
   }
 
+  /// One tender round in the history dialog.
+  ///
+  /// ⚠️ Built to match `_pastRoundCard` in the Record Bids dialog. The two sit
+  /// one click apart on the same page and describe the same rounds, but this
+  /// one used `cardDark` with a gold border and a 0.5-opacity highlight while
+  /// the other used `surfaceDark` with a plain border — so the same tender
+  /// looked like two different kinds of record depending on which button
+  /// opened it. Same fill, same border, same margin, same 12px radius.
   Widget _saleCard(BuildContext context, dynamic t, bool isLatest) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: context.colors.cardDark,
+        color: context.colors.surfaceDark,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
             color: isLatest

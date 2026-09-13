@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import '../core/theme.dart';
+import 'dialog_close_button.dart';
 
 /// A polished modal dialog matching the "Update SR Register Entry" form:
 /// a gradient header (gold icon box + small label + big title + close button),
@@ -79,18 +80,27 @@ class StyledFormDialog extends StatelessWidget {
                           bottom:
                               BorderSide(color: context.colors.borderColor)),
                     )
+                  // ⚠️ The SAME recipe as the SR Register Entry popup
+                  // (package_details_dialog.dart), which is the design every
+                  // directorate popup is meant to share: a soft wash of the
+                  // team colour at 15% fading into the card, with the icon
+                  // and label in the accent and the title in the page's own
+                  // text colour.
+                  //
+                  // Two wrong versions preceded this. The original was a
+                  // fixed customsBlue gradient, so every dialog wore the same
+                  // navy whatever portal opened it. The first fix made the
+                  // bar the accent at full strength with white text — the
+                  // right colour, but a heavy saturated slab that matched
+                  // nothing else on the page. The tint is what the rest of
+                  // the app does, and it is what makes Central Disposal's
+                  // green and Top Management's teal read as the same design
+                  // in two colours rather than two designs.
                   : BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: isDark
-                            ? [
-                                context.colors.surfaceDark,
-                                context.colors.cardDark
-                              ]
-                            : [
-                                context.colors.customsBlue,
-                                context.colors.customsBlueDark
-                              ],
-                      ),
+                      gradient: LinearGradient(colors: [
+                        accent.withOpacity(0.15),
+                        context.colors.cardDark,
+                      ]),
                     ),
               child: Row(
                 children: [
@@ -105,6 +115,8 @@ class StyledFormDialog extends StatelessWidget {
                           ? Border.all(color: accent.withOpacity(0.3))
                           : null,
                     ),
+                    // Accent-coloured on the soft tint, as in the SR
+                    // Register Entry popup.
                     child: Icon(icon, color: accent, size: erp ? 18 : 24),
                   ),
                   Gap(erp ? 12 : 16),
@@ -125,13 +137,11 @@ class StyledFormDialog extends StatelessWidget {
                         Text(
                           title,
                           style: TextStyle(
-                            // ⚠️ Not white in ERP mode. Without the gradient
-                            // behind it, white title on a light card is
-                            // unreadable — the flat header has to take its
-                            // colour from the page, not from the old one.
-                            color: erp
-                                ? context.colors.textPrimary
-                                : Colors.white,
+                            // ⚠️ The page's own text colour in BOTH modes. The
+                            // header is a soft tint now, not a dark bar, so a
+                            // white title would be unreadable on a light page
+                            // — the reference popup reads dark-on-tint too.
+                            color: context.colors.textPrimary,
                             fontSize: erp ? 17 : 22,
                             fontWeight: FontWeight.bold,
                           ),
@@ -139,14 +149,17 @@ class StyledFormDialog extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: Icon(Icons.close_rounded,
-                        color: erp
-                            ? context.colors.textSecondary
-                            : Colors.white.withOpacity(0.7)),
-                    splashRadius: 24,
-                  ),
+                  // ⚠️ The shared close button, the same one the SR Register
+                  // Entry popup uses — a white-on-tint IconButton would be
+                  // invisible now the header is light.
+                  erp
+                      ? IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: Icon(Icons.close_rounded,
+                              color: context.colors.textSecondary),
+                          splashRadius: 24,
+                        )
+                      : const DialogCloseButton(prominent: true),
                 ],
               ),
             ),
