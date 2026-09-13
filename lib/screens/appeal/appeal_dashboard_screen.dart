@@ -429,6 +429,11 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
         package: f.packageDetails!,
         storageRate: storageRate,
         headerAccentColor: AppTheme.appealPurple,
+        // ⚠️ The forfeited record itself, so the popup can show the APPEAL:
+        // when it was lodged, the deadline, any hold, and the ruling. Without
+        // it the dialog had no appeal data at all, and this directorate's own
+        // Details button said nothing about the appeal it exists to manage.
+        tenderHistoryFor: f,
         useLegacySummary: true,
         highlightItemId: f.itemId ??
             (f.packageDetails!.items.isNotEmpty

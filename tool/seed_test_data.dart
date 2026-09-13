@@ -2814,7 +2814,16 @@ Future<void> _seedAppealOutcomes(Connection conn) async {
     '       (fp.appeal_deadline > now()) as in_window '
     'from public.forfeited_packages fp '
     'join public.package_items pi on pi.id = fp.item_id '
-    'where fp.item_id is not null order by fp.forfeited_at asc',
+    // ⚠️ Not goods that have ALREADY been destroyed. An appeal cannot rule
+    // "re-export" or "sell" on something that no longer exists, and seven
+    // seeded rows did exactly that — an item marked `destroyed` carrying a
+    // RE-EXPORT ruling, so the Decided Goods table said "Decided · Sell"
+    // while the popup showed a Destruction Status panel. A ruling only makes
+    // sense while the goods are still there to rule on.
+    '''where fp.item_id is not null
+           and lower(coalesce(pi.status, '')) not in
+               ('destroyed', 'supposed to be destroyed')
+         order by fp.forfeited_at asc''',
   );
 
   var decided = 0;

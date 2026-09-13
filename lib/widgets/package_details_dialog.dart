@@ -3205,6 +3205,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               ),
                             ),
                           ),
+                        // ⚠️ The appeal's OWN story, for the Appeal
+                        // Directorate's popup. Its two tables say a package
+                        // is "On Appeal Hold" or "Decided · Sell", and the
+                        // popup then said nothing at all about the appeal —
+                        // not when it was lodged, not when the deadline
+                        // falls, not what was ruled or when.
+                        if (widget.tenderHistoryFor != null)
+                          _AppealHistorySection(
+                            forfeited: widget.tenderHistoryFor!,
+                            itemId: highlightedItem?.id,
+                          ),
                         // Per-round valuation + bids, for unsold packages.
                         // Also sealed: each round carries its own valuation.
                         if (widget.tenderHistoryFor != null &&
@@ -4213,11 +4224,23 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       // Destruction Status panel because a sibling under the
                       // same SR number was pending destruction. One number
                       // covers several goods, and they meet different ends.
-                      if (isDestroyedEntry ||
-                          (highlightedItem != null
-                              ? _statusIsDestruction(highlightedItem.status)
-                              : p.items
-                                  .any((i) => _statusIsDestruction(i.status))))
+                      //
+                      // ⚠️ And an APPEAL RULING overrides the item's status.
+                      // CED/GL1/SR/03/2025 held Latex Gloves whose status
+                      // still read `destroyed` while the Directorate had
+                      // ruled SALE — so a package the Decided Goods table
+                      // labels "Decided · Sell" opened showing DESTRUCTION
+                      // STATUS. Seven rows carry that contradiction. The
+                      // ruling is the later word and the authoritative one:
+                      // the status is what the yard recorded before the
+                      // appeal was heard.
+                      if (!_appealRuledAwayFromDestruction(
+                              widget.tenderHistoryFor, highlightedItem?.id) &&
+                          (isDestroyedEntry ||
+                              (highlightedItem != null
+                                  ? _statusIsDestruction(highlightedItem.status)
+                                  : p.items.any(
+                                      (i) => _statusIsDestruction(i.status)))))
                         _DestructionFinancialsSection(
                           package: p,
                           // ⚠️ The ITEM this popup is about, not just the
@@ -4482,6 +4505,208 @@ bool _hasNonDestructionExpense(SrFinancials sr) =>
     sr.auctionExpense > 0;
 
 /// The expense breakdown for an SR whose costs are not a destruction.
+/// What happened to this package's APPEAL: when it was forfeited, when the
+/// window closes, whether a hold is on it, and what was finally ruled.
+///
+/// ⚠️ The Appeal Directorate's two tables label a package "On Appeal Hold" or
+/// "Decided · Sell", and its Details popup said nothing about the appeal at
+/// all — not the date it was lodged, not the deadline, not the ruling or when
+/// it was made. An officer opening the row could not check the very thing the
+/// page exists for.
+///
+/// A ruling is per ITEM (item_appeal_decisions), so when the popup is about
+/// one item this shows THAT item's ruling. The package-level fields are the
+/// fallback for rows decided before per-item rulings existed.
+/// True when the Appeal Directorate ruled this item to something OTHER than
+/// destruction.
+///
+/// ⚠️ A ruling outranks the item's status. The status is what the yard
+/// recorded when it seized the goods; the ruling is what the Directorate
+/// decided afterwards, and it is the later word. Seven seeded rows carry an
+/// item marked `destroyed` whose ruling is SALE or RELEASE — without this the
+/// popup showed a Destruction Status panel for goods the Decided Goods table
+/// had just labelled "Decided · Sell".
+///
+/// DESTROY and a missing ruling both return false: the first agrees with the
+/// destruction panel, the second leaves the status to decide as before.
+bool _appealRuledAwayFromDestruction(
+    ForfeitedPackageModel? forfeited, String? itemId) {
+  if (forfeited == null || itemId == null) return false;
+  final raw = forfeited.itemAppealDecisions[itemId] as Map<String, dynamic>?;
+  final decision =
+      ((raw?['decision'] as String?) ?? forfeited.appealDecision ?? '')
+          .trim()
+          .toUpperCase();
+  if (decision.isEmpty) return false;
+  return decision != 'DESTROY';
+}
+
+class _AppealHistorySection extends StatelessWidget {
+  final ForfeitedPackageModel forfeited;
+
+  /// The item this popup is about, when it is about one.
+  final String? itemId;
+
+  const _AppealHistorySection({required this.forfeited, this.itemId});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateFormat('yyyy-MM-dd');
+    final f = forfeited;
+
+    // The ruling for THIS item, falling back to the package's own.
+    final raw = itemId == null
+        ? null
+        : f.itemAppealDecisions[itemId] as Map<String, dynamic>?;
+    final decision =
+        (raw?['decision'] as String?) ?? f.appealDecision;
+    final note = (raw?['note'] as String?) ?? f.appealDecisionNote;
+    final decidedAt = raw?['decided_at'] != null
+        ? DateTime.tryParse(raw!['decided_at'].toString())
+        : f.appealDecidedAt;
+
+    final outcome = ItemAppealOutcome(decision: decision, onHold: f.appealHold);
+    final decided = outcome.isDecided;
+
+    // The state line, in the same words the tables use.
+    final (String state, Color colour, IconData icon) = f.appealHold
+        ? (
+            'On Appeal Hold',
+            context.colors.warningAmber,
+            Icons.pan_tool_rounded
+          )
+        : decided
+            ? (
+                'Decided · ${outcome.label ?? decision!}',
+                context.colors.successGreen,
+                Icons.gavel_rounded
+              )
+            : DateTime.now().isBefore(f.appealDeadline)
+                ? (
+                    'In appeal window',
+                    context.colors.accentLightBlue,
+                    Icons.schedule_rounded
+                  )
+                : (
+                    'Window closed, no appeal',
+                    context.colors.textMuted,
+                    Icons.event_busy_rounded
+                  );
+
+    return _DetailSection(
+      title: 'Appeal',
+      icon: Icons.balance_rounded,
+      delay: 340,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          material.Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: colour.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: colour.withOpacity(0.35)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: colour),
+                const Gap(10),
+                Expanded(
+                  child: Text(state,
+                      style: material.TextStyle(
+                          color: colour,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+          const Gap(12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.gavel_rounded,
+                  label: 'Forfeited on',
+                  value: date.format(f.forfeitedAt),
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.event_rounded,
+                  label: 'Appeal deadline',
+                  value: date.format(f.appealDeadline),
+                  // Red only while it still MEANS something: once a ruling is
+                  // in, a passed deadline is history, not a warning.
+                  valueColor: !decided &&
+                          !f.appealHold &&
+                          DateTime.now().isAfter(f.appealDeadline)
+                      ? context.colors.dangerRed
+                      : null,
+                ),
+              ),
+            ],
+          ),
+          if (f.appealHold) ...[
+            const Gap(12),
+            _DetailItem(
+              icon: Icons.pan_tool_rounded,
+              label: 'Hold placed on',
+              value: f.appealHeldAt != null
+                  ? date.format(f.appealHeldAt!)
+                  : '—',
+            ),
+            if ((f.appealHoldNote ?? '').trim().isNotEmpty) ...[
+              const Gap(12),
+              _DetailItem(
+                icon: Icons.sticky_note_2_rounded,
+                label: 'Reason for the hold',
+                value: f.appealHoldNote!.trim(),
+              ),
+            ],
+          ],
+          if (decided) ...[
+            const Gap(12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.check_circle_rounded,
+                    label: 'Ruling',
+                    value: outcome.label ?? decision!,
+                    valueColor: context.colors.successGreen,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.event_available_rounded,
+                    label: 'Decided on',
+                    value: decidedAt != null
+                        ? date.format(decidedAt)
+                        : '—',
+                  ),
+                ),
+              ],
+            ),
+            if ((note ?? '').trim().isNotEmpty) ...[
+              const Gap(12),
+              _DetailItem(
+                icon: Icons.sticky_note_2_rounded,
+                label: 'Directorate’s note',
+                value: note!.trim(),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _DisposalExpenseBreakdown extends StatelessWidget {
   final SrFinancials sr;
   const _DisposalExpenseBreakdown({required this.sr});
