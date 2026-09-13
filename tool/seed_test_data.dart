@@ -2037,7 +2037,18 @@ Future<void> _seedTenderPipeline(Connection conn) async {
         // reads them, then sets a lower reserve. Without them the screen shows
         // a round sitting on "Awaiting Valuation Directorate" with nothing for
         // Valuation to read, and no reason for the re-tender that follows.
-        final bidCount = 1 + _rng.nextInt(3);
+        // ⚠️ NO bids on the committee round. The rounds are: attempt 1 is the
+        // Valuation Tender, attempts 2-4 are Tender 1/2/3 priced from the
+        // previous round's bids, and attempt 5 is the Top Management
+        // committee round — which does not go out to bidders at all. The
+        // committee sets a value; if the goods do not move, they fall
+        // straight through to Unsold Goods.
+        //
+        // Seeding bids there produced a "Committee Tender 1" card showing
+        // bids of Rs. 119,687 and Rs. 96,806 — money nobody could have
+        // offered, because that round was never open to offers.
+        final isCommitteeRound = round > kMaxBidTenderRoundsSeed + 1;
+        final bidCount = isCommitteeRound ? 0 : 1 + _rng.nextInt(3);
         for (var b = 0; b < bidCount; b++) {
           await conn.execute(
             r'insert into public.tender_bids '

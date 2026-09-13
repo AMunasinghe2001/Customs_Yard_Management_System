@@ -13,6 +13,7 @@
 --    027  a directorate account carries no yard
 --    028  a failed sign-in records the yard it targeted
 --    029  a log row keeps the role its actor held that day
+--    030  the committee round takes no bids
 --
 --  ⚠️ Why 018 must come last. Migration 018 wraps auth.change_password so a
 --  session may only change ITS OWN password: it renames the real body to
@@ -76,6 +77,9 @@
 \echo ''
 \echo '=== 029 log rows keep the role of the day ========================'
 \i migrations/029_audit_rows_keep_the_role_of_the_day.sql
+\echo ''
+\echo '=== 030 the committee round takes no bids ========================'
+\i migrations/030_the_committee_round_takes_no_bids.sql
 \echo ''
 
 -- ── Prove the end state, rather than trusting the order ─────────────────────
