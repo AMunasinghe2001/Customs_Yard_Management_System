@@ -2520,12 +2520,20 @@ Future<void> _seedFinalOtherOutcomes(Connection conn) async {
     // while the row beneath it read "Re-exported per appeal ruling". Five
     // such rows existed in the seeded data. A ruling is an instruction, so
     // the recorded outcome is now derived from it.
+    // ⚠️ An item the Appeal Directorate has RULED on is not finished here at
+    // all. The ruling names where the goods go — Released, Re-exported, Sold
+    // or Destroyed Goods — and each of those pages reads its own marker
+    // ([RELEASED], [FINAL:RE-EXPORTED], [FINAL:SOLD], [FINAL:DESTROYED]).
+    // Writing any of them into a [FINAL:OTHER] row puts an item on Other
+    // Goods describing an outcome that page cannot own; I made exactly that
+    // mistake twice while repairing this data, with "Destroyed per appeal
+    // ruling" and then "Released on appeal ruling".
+    //
+    // So only the UNRULED are finished here, on the yard's own authority.
     final decision = (r[10] as String?)?.trim().toUpperCase() ?? '';
-    final outcome = wasAppealed
-        ? _outcomeForRuling(decision)
-        : _finalOtherDirect[_rng.nextInt(_finalOtherDirect.length)];
-    // A SALE or DESTROY ruling is carried out by Central Disposal, not here.
-    if (outcome == null) continue;
+    const ruledElsewhere = {'RELEASE', 'RE-EXPORT', 'SALE', 'DESTROY'};
+    if (ruledElsewhere.contains(decision)) continue;
+    final outcome = _finalOtherDirect[_rng.nextInt(_finalOtherDirect.length)];
 
     await conn.execute(
       r'insert into public.warehouse_entries '
@@ -2579,14 +2587,6 @@ Future<void> _seedFinalOtherOutcomes(Connection conn) async {
 ///
 /// Returning null means "this item is not one the yard finishes directly" --
 /// the caller skips it rather than inventing an outcome for it.
-String? _outcomeForRuling(String decision) => switch (decision) {
-      'RE-EXPORT' => 'Re-exported per appeal ruling',
-      'RELEASE' => 'Released on appeal ruling',
-      'SALE' || 'DESTROY' => null,
-      // No ruling recorded against the item even though the package went to
-      // appeal: the yard finished it on its own authority.
-      _ => 'Handed to the owner after appeal',
-    };
 
 /// Outcomes the yard recorded directly, with no appeal ever lodged.
 /// ⚠️ No auction, sale or destruction here. Every entry must be something the

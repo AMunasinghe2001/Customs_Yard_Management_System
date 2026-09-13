@@ -380,8 +380,15 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                   final actionable = counts.actionable;
                   return DisposalPageHeader(
                     title: 'Other Goods',
-                    subtitle: 'Manage packages with an "Other" status — '
-                        'release, re-export or send for disposal',
+                    // ⚠️ Not "release, re-export or send for disposal". Each
+                    // of those three now has a page of its own — Released,
+                    // Re-exported, Sold / Destroyed Goods — and an item that
+                    // goes any of those ways LEAVES this table under its own
+                    // marker. What is finished here is the yard's own
+                    // authority: handed to the Police, donated, transferred to
+                    // Government use, returned to the shipping line.
+                    subtitle: 'Packages held under an "Other" status — record '
+                        'the outcome the yard settles itself',
                     trailing: [
                       _OtherStatChip(
                           label: 'Total',
@@ -763,13 +770,28 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                             // yard carries out what was
                                             // decided, it does not choose
                                             // afresh.
-                                            appealDecisionLabel:
-                                                appealOutcomes[row.item.id]
+                                            //
+                                            // ⚠️ NOT on a completed row. The
+                                            // banner is an INSTRUCTION — it
+                                            // says what the yard must still
+                                            // carry out — and a finished item
+                                            // has nothing left to carry out.
+                                            // On those rows it read as a
+                                            // contradiction instead: "Proceed
+                                            // with: Release to owner" above
+                                            // goods already recorded as an
+                                            // Other outcome and waiting only
+                                            // to be delivered.
+                                            appealDecisionLabel: row.completed
+                                                ? null
+                                                : appealOutcomes[row.item.id]
                                                     ?.label,
-                                            appealDecisionCode: (appealOutcomes[
-                                                            row.item.id]
-                                                        ?.isDecided ??
-                                                    false)
+                                            appealDecisionCode: (!row
+                                                        .completed &&
+                                                    (appealOutcomes[
+                                                                row.item.id]
+                                                            ?.isDecided ??
+                                                        false))
                                                 ? appealOutcomes[row.item.id]!
                                                     .decision
                                                 : null,

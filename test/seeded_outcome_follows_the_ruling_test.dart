@@ -15,34 +15,37 @@ void main() {
   final seed = File('tool/seed_test_data.dart').readAsStringSync();
 
   group('the seeded outcome is derived from the ruling', () {
-    test('there is a mapping from decision to phrasing', () {
-      expect(seed, contains('_outcomeForRuling('));
-      for (final pair in const [
-        ["'RE-EXPORT'", 'Re-exported per appeal ruling'],
-        ["'RELEASE'", 'Released on appeal ruling'],
-      ]) {
-        expect(seed, contains(pair[0]),
-            reason: 'no branch for the ${pair[0]} ruling');
-        expect(seed, contains(pair[1]));
-      }
+    test('a RULED item is not finished as an "Other" outcome at all', () {
+      // ⚠️ Every named ruling sends the goods to the page that ruling names —
+      // Released, Re-exported, Sold or Destroyed Goods — each under its own
+      // marker ([RELEASED], [FINAL:RE-EXPORTED], [FINAL:SOLD],
+      // [FINAL:DESTROYED]). None is an "Other" outcome.
+      //
+      // I got this wrong twice while repairing this data: first writing
+      // "Destroyed per appeal ruling" into a [FINAL:OTHER] row, then
+      // "Released on appeal ruling". Both produced states the app cannot
+      // create — a destroyed item and a released item sitting on Other Goods,
+      // describing themselves as destroyed and released.
+      expect(seed,
+          contains("const ruledElsewhere = {'RELEASE', 'RE-EXPORT', 'SALE', 'DESTROY'}"),
+          reason: 'a ruled item must be skipped, not given an Other outcome');
+      expect(seed, contains('if (ruledElsewhere.contains(decision)) continue;'));
     });
 
-    test('SALE and DESTROY are never an "Other" outcome', () {
-      // ⚠️ The subtler half of this bug, and one my own first repair got
-      // wrong. SALE and DESTROY are carried out by CENTRAL DISPOSAL: the
-      // goods leave for Sold Goods or Destroyed Goods under their own
-      // [FINAL:SOLD] / [FINAL:DESTROYED] marker. Writing "Destroyed per
-      // appeal ruling" into a [FINAL:OTHER] row put a destroyed item on the
-      // Other Goods page — a state the app itself cannot produce, and how the
-      // contradiction was spotted.
-      expect(seed, contains("'SALE' || 'DESTROY' => null"),
-          reason: 'a SALE/DESTROY ruling must not become an Other outcome');
-      expect(seed.contains("'Destroyed per appeal ruling'"), isFalse,
-          reason: 'destruction is recorded by Central Disposal, not here');
-      expect(seed.contains("'Auctioned per appeal ruling'"), isFalse,
-          reason: 'a sale is recorded by Central Disposal, not here');
-      // And the caller must actually skip those items.
-      expect(seed, contains('if (outcome == null) continue;'));
+    test('no ruling wording is left in the outcome list', () {
+      // ⚠️ Scoped to the LIST, not the whole file: the comments above it
+      // quote these phrases to explain why they are banned, and a blunt
+      // file-wide search fails on its own documentation.
+      final list = seed.substring(seed.indexOf('const _finalOtherDirect = ['));
+      final body = list.substring(0, list.indexOf('];'));
+      for (final banned in const [
+        'per appeal ruling',
+        'on appeal ruling',
+        'after appeal',
+      ]) {
+        expect(body.contains(banned), isFalse,
+            reason: '"$banned" belongs to another page, not Other Goods');
+      }
     });
 
     test('the random after-appeal list is gone entirely', () {
@@ -77,10 +80,5 @@ void main() {
       }
     });
 
-    test('an unruled item is not given a ruling-shaped outcome', () {
-      // A package can reach appeal without every item being ruled on. Those
-      // must not claim a ruling decided them.
-      expect(seed, contains('Handed to the owner after appeal'));
-    });
   });
 }

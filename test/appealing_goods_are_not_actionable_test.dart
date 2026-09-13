@@ -87,4 +87,24 @@ void main() {
       expect(dialog, contains('onTap: pending ? null : onToggle'));
     });
   });
+
+  group('a finished row is not told to proceed', () {
+    final src = File('lib/screens/packages/other_packages_screen.dart')
+        .readAsStringSync();
+
+    test('the appeal banner is hidden once the outcome is recorded', () {
+      // ⚠️ The banner is an INSTRUCTION — "Proceed with: Release to owner"
+      // tells the yard what it must still carry out. On a COMPLETED row there
+      // is nothing left to carry out, so it read as a contradiction: goods
+      // already recorded with an Other outcome, waiting only to be delivered,
+      // captioned with an order to release them.
+      //
+      // Other Goods is the only page that mixes finished and unfinished rows;
+      // Abandoned and Detained carry no `completed` flag at all.
+      expect(src, contains('appealDecisionLabel: row.completed'),
+          reason: 'a finished row still shows an instruction it cannot act on');
+      expect(src, contains('appealDecisionCode: (!row'),
+          reason: 'the decision code must be suppressed with the label');
+    });
+  });
 }
