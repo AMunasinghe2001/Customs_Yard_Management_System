@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 /// `showDialog` with the app's own backdrop: the page behind is dimmed AND
@@ -26,24 +24,24 @@ Future<T?> showAppDialog<T>({
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
-    // showGeneralDialog asserts a label exists whenever the barrier can be
-    // tapped away, and "Dismiss" is what a screen reader should announce.
     barrierLabel:
         barrierLabel ?? (barrierDismissible ? 'Dismiss' : null) ?? 'Dialog',
     barrierColor: barrierColor ?? Colors.black.withOpacity(0.65),
-    transitionDuration: const Duration(milliseconds: 180),
+    transitionDuration: const Duration(milliseconds: 160),
     useRootNavigator: useRootNavigator,
     routeSettings: routeSettings,
     pageBuilder: (ctx, _, __) => builder(ctx),
     transitionBuilder: (ctx, animation, secondaryAnimation, child) {
-      final t = Curves.easeOut.transform(animation.value);
-      return BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 2.5 * t, sigmaY: 2.5 * t),
-        child: Opacity(
-          opacity: t,
-          // A small scale-up, not a slide: a dialog that travels reads as a
-          // page change, and these are all interruptions of one.
-          child: Transform.scale(scale: 0.98 + 0.02 * t, child: child),
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+          child: child,
         ),
       );
     },

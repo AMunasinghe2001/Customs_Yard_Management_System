@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 import 'dart:io' show exit;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
@@ -17,6 +18,7 @@ import 'core/idle_lock.dart';
 import 'widgets/offline_banner.dart';
 import 'widgets/idle_lock_overlay.dart';
 import 'services/services.dart';
+import 'core/frame_watch.dart';
 
 void main() async {
   // Everything runs inside one guarded zone so that an uncaught ASYNC error
@@ -102,6 +104,9 @@ Future<void> _start() async {
   // next user's name — GL1 packages under a GL2 officer. Dropping the
   // container is what guarantees a session starts empty; see
   // core/session_reset.dart.
+  // Logs any frame long enough to swallow a click — see frame_watch.dart.
+  FrameWatch.arm();
+
   runApp(
     ValueListenableBuilder<int>(
       valueListenable: sessionEpoch,

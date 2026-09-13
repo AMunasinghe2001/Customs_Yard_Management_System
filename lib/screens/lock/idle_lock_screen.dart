@@ -2,7 +2,9 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_svg/flutter_svg.dart';
+import '../../widgets/brand_panel.dart';
 
 /// The screensaver shown once the app has been idle for
 /// [kIdleLockTimeout] -- a slow, dark, ambient page with the Customs seal
@@ -33,6 +35,15 @@ class IdleLockScreen extends StatefulWidget {
 
 class _IdleLockScreenState extends State<IdleLockScreen>
     with TickerProviderStateMixin {
+  /// The crest's SVG source, loaded once per process.
+  ///
+  /// ⚠️ Read as a STRING rather than through SvgPicture.asset, because the
+  /// knockout literal has to be rewritten before the renderer sees it — see
+  /// the note at the crest below.
+  static Future<String>? _crestSourceCache;
+  Future<String> get _crestSource => _crestSourceCache ??=
+      rootBundle.loadString('Sri_Lanka_Customs_logo_tinted.svg');
+
   /// The slow drift of the two background glows.
   late final AnimationController _drift = AnimationController(
     vsync: this,
@@ -181,11 +192,31 @@ class _IdleLockScreenState extends State<IdleLockScreen>
                                 ],
                               );
                             },
-                            child: SvgPicture.asset(
-                              'Sri_Lanka_Customs_logo_tinted.svg',
-                              width: 150,
-                              height: 150,
-                              theme: SvgTheme(currentColor: accent),
+                            // ⚠️ The knockout has to be repainted here too.
+                            //
+                            // The ship and the aeroplane in the crest are not
+                            // transparent: they are painted a flat #1a1764
+                            // and only READ as holes while the background
+                            // behind them is that colour (see brand_panel.dart
+                            // — a real transparent knockout does not survive
+                            // flutter_svg). This screen loaded the asset
+                            // straight through SvgPicture.asset, so the navy
+                            // stayed navy against a near-black page and the
+                            // two shapes showed as blue stickers on the seal.
+                            child: FutureBuilder<String>(
+                              future: _crestSource,
+                              builder: (context, snap) {
+                                if (!snap.hasData) {
+                                  return const SizedBox(width: 150, height: 150);
+                                }
+                                return SvgPicture.string(
+                                  crestWithKnockout(
+                                      snap.data!, const Color(0xFF05060F)),
+                                  width: 150,
+                                  height: 150,
+                                  theme: SvgTheme(currentColor: accent),
+                                );
+                              },
                             ),
                           ),
                         ),

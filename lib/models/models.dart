@@ -673,33 +673,72 @@ class WarehouseEntryModel {
     final endDateTime = returnedAt ?? DateTime.now();
     final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
 
-    double totalCharge = 0;
-
-    // Loop through each day from entry to exit/today
-    for (int i = 0; i <= end.difference(start).inDays; i++) {
-      final currentDay = start.add(Duration(days: i));
-      final dayAtMidnight =
-          DateTime(currentDay.year, currentDay.month, currentDay.day);
-
-      // Find the active rate for this specific day
-      // Rates are matched based on the latest effective_from that is NOT AFTER current day
-      double activeRate = 50; // default fallback
-
-      // Rates are expected to be sorted by date ascending from the provider
-      historicalRates.forEach((effectiveFrom, rate) {
-        final effectiveAtMidnight = DateTime(
-            effectiveFrom.year, effectiveFrom.month, effectiveFrom.day);
-        if (!dayAtMidnight.isBefore(effectiveAtMidnight)) {
-          activeRate = rate;
-        }
-      });
-
-      // Daily charge = total packages in the SR * that specific day's rate
-      totalCharge += (totalUnits * activeRate);
-    }
-
-    return totalCharge;
+    return totalUnits * chargeableRateDays(start, end, historicalRates);
   }
+}
+
+/// Sum of the daily rate over every day from [start] to [end] inclusive.
+///
+/// ⚠️ Closed-form over RATE PERIODS, not a loop over days. The old version
+/// walked every single day and, for each one, scanned every rate to find the
+/// one in force — so an entry 506 days old cost 506 × (number of rates)
+/// DateTime constructions, and the ledger runs this for every warehouse entry
+/// of every package. Measured: the ledger's four queries finished in 33ms and
+/// the frame that followed took 1,546ms with build at 1ms — the missing 1.5s
+/// was this arithmetic holding the UI thread. Flutter delivers a click only
+/// BETWEEN frames, so the officer's tap on Details or Costs was simply not
+/// received until it ended; pressed again later, both taps were honoured at
+/// once and two popups opened.
+///
+/// A rate is in force from its effective date until the next rate's, so the
+/// answer is Σ over periods of (days in period ∩ [start, end]) × rate. Same
+/// result to the rupee, in a handful of operations however old the entry.
+///
+/// A day before the first rate takes effect uses the same 50/day fallback the
+/// loop used, so existing figures do not move.
+double chargeableRateDays(
+    DateTime start, DateTime end, Map<DateTime, double> rates) {
+  if (end.isBefore(start)) return 0;
+  const fallback = 50.0;
+
+  // Normalise to midnight and sort ascending once.
+  final periods = rates.entries
+      .map((e) => (DateTime(e.key.year, e.key.month, e.key.day), e.value))
+      .toList()
+    ..sort((a, b) => a.$1.compareTo(b.$1));
+
+  int daysBetween(DateTime a, DateTime b) => b.difference(a).inDays + 1;
+  DateTime dayBefore(DateTime d) => d.subtract(const Duration(days: 1));
+  DateTime dayAfter(DateTime d) => d.add(const Duration(days: 1));
+
+  double total = 0;
+  var cursor = start;
+
+  // Days before the first rate takes effect.
+  if (periods.isEmpty || cursor.isBefore(periods.first.$1)) {
+    final until = periods.isEmpty
+        ? end
+        : (dayBefore(periods.first.$1).isBefore(end)
+            ? dayBefore(periods.first.$1)
+            : end);
+    total += daysBetween(cursor, until) * fallback;
+    cursor = dayAfter(until);
+    if (cursor.isAfter(end)) return total;
+  }
+
+  for (var i = 0; i < periods.length; i++) {
+    final from = periods[i].$1;
+    final rate = periods[i].$2;
+    // This period runs until the day before the next one starts.
+    final to = i + 1 < periods.length ? dayBefore(periods[i + 1].$1) : end;
+    final lo = cursor.isAfter(from) ? cursor : from;
+    final hi = to.isBefore(end) ? to : end;
+    if (hi.isBefore(lo)) continue;
+    total += daysBetween(lo, hi) * rate;
+    cursor = dayAfter(hi);
+    if (cursor.isAfter(end)) break;
+  }
+  return total;
 }
 
 /// One zone inside a warehouse, with its own capacity.

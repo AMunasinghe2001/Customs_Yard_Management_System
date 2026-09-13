@@ -4197,8 +4197,28 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                   .any((i) => _statusIsDestruction(i.status))))
                         _DestructionFinancialsSection(
                           package: p,
+                          // ⚠️ The ITEM this popup is about, not just the
+                          // package. A package can hold one item already
+                          // destroyed and another still pending, and the
+                          // section used to ask "does ANY item say
+                          // destroyed?" — so opening a PENDING row showed
+                          // DESTROYED because a sibling was.
+                          item: highlightedItem,
                           srFinancials: widget.srFinancials,
                         ),
+                      // ⚠️ The OTHER expenses — auction, advertising,
+                      // transport, labour — shown wherever they exist.
+                      //
+                      // The panel above is destruction-only and correctly so.
+                      // But the Disposal Expenses tab lists SRs whose costs
+                      // are an auction fee or a transport charge with no
+                      // destruction at all, and opening Details on one of
+                      // those showed the goods and the storage and then
+                      // simply stopped: the very figures the row was listing
+                      // appeared nowhere in the popup it opened.
+                      if (widget.srFinancials != null &&
+                          _hasNonDestructionExpense(widget.srFinancials!))
+                        _DisposalExpenseBreakdown(sr: widget.srFinancials!),
                       // ⚠️ Disposal expenses belong to DESTRUCTION, and the
                       // `else` that used to be here gave them to everything
                       // that was NOT being destroyed. So a SOLD item showed
@@ -4427,12 +4447,121 @@ bool _statusIsDestruction(String? status) {
       st == 'destroy';
 }
 
+/// Whether this SR carries any expense the Destruction panel does not show.
+///
+/// ⚠️ Destruction is deliberately excluded: it has its own panel with the
+/// deposit, the shortfall and the refund beside it, and repeating the figure
+/// in two places invites the reader to add it twice.
+bool _hasNonDestructionExpense(SrFinancials sr) =>
+    sr.advertisingExpense > 0 ||
+    sr.labourExpense > 0 ||
+    sr.transportExpense > 0 ||
+    sr.auctionExpense > 0;
+
+/// The expense breakdown for an SR whose costs are not a destruction.
+class _DisposalExpenseBreakdown extends StatelessWidget {
+  final SrFinancials sr;
+  const _DisposalExpenseBreakdown({required this.sr});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final rows = <(String, double, IconData)>[
+      ('Advertising', sr.advertisingExpense, Icons.campaign_rounded),
+      ('Labour', sr.labourExpense, Icons.groups_rounded),
+      ('Transport', sr.transportExpense, Icons.local_shipping_rounded),
+      ('Auction', sr.auctionExpense, Icons.gavel_rounded),
+      // Shown only when there IS one, so a non-destruction SR does not carry
+      // an empty destruction line.
+      if (sr.destructionExpense > 0)
+        ('Destruction', sr.destructionExpense,
+            Icons.local_fire_department_rounded),
+    ].where((r) => r.$2 > 0).toList();
+
+    return _DetailSection(
+      title: 'Disposal Expenses',
+      icon: Icons.receipt_long_rounded,
+      delay: 360,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ⚠️ _DetailItem, the same card every other figure in this popup
+          // uses — a bespoke tile here would make one section look like a
+          // different app. Two to a row, matching the destruction panel.
+          for (var i = 0; i < rows.length; i += 2) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: rows[i].$3,
+                    label: rows[i].$1,
+                    value: 'LKR ${money.format(rows[i].$2)}',
+                    valueColor: context.colors.textPrimary,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: i + 1 < rows.length
+                      ? _DetailItem(
+                          icon: rows[i + 1].$3,
+                          label: rows[i + 1].$1,
+                          value: 'LKR ${money.format(rows[i + 1].$2)}',
+                          valueColor: context.colors.textPrimary,
+                        )
+                      : const SizedBox(),
+                ),
+              ],
+            ),
+            const Gap(12),
+          ],
+          const Gap(12),
+          material.Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.colors.surfaceDark,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.colors.borderColor),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.summarize_rounded,
+                    size: 16, color: context.colors.textMuted),
+                const Gap(10),
+                Text('Total spent',
+                    style: material.TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Text('LKR ${money.format(sr.depositSpent)}',
+                    style: material.TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DestructionFinancialsSection extends StatelessWidget {
   final PackageModel package;
+
+  /// The item the popup was opened for, when it was opened for one.
+  ///
+  /// ⚠️ Null only for a whole-package view. Where it is set it DECIDES the
+  /// status: a package with one destroyed item and one pending item is not
+  /// "destroyed", and the row the officer clicked says which they meant.
+  final PackageItem? item;
   final SrFinancials? srFinancials;
 
   const _DestructionFinancialsSection({
     required this.package,
+    this.item,
     this.srFinancials,
   });
 
@@ -4442,16 +4571,31 @@ class _DestructionFinancialsSection extends StatelessWidget {
     final green = context.colors.successGreen;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Determine destroyed status from package items or warehouse entries
-    final isDestroyed = package.status?.toLowerCase() == 'destroyed' ||
-        package.items.any((i) {
-          final st = (i.status ?? '').toLowerCase();
-          return st == 'destroyed';
-        }) ||
-        package.warehouseEntries.any((e) {
-          final n = (e.returnNotes ?? '').trim().toUpperCase();
-          return n.startsWith('[FINAL:DESTROYED');
-        });
+    // ⚠️ THIS item's status when the popup is about one, and only then the
+    // package's. Asking `package.items.any(destroyed)` reported DESTROYED on
+    // a row the table itself was showing as Pending, because a DIFFERENT
+    // item in the same SR had been destroyed.
+    final bool isDestroyed;
+    if (item != null) {
+      final st = (item!.status ?? '').toLowerCase();
+      isDestroyed = st == 'destroyed' ||
+          package.warehouseEntries.any((e) =>
+              e.packageItemId == item!.id &&
+              (e.returnNotes ?? '')
+                  .trim()
+                  .toUpperCase()
+                  .startsWith('[FINAL:DESTROYED'));
+    } else {
+      isDestroyed = package.status?.toLowerCase() == 'destroyed' ||
+          package.items.any((i) {
+            final st = (i.status ?? '').toLowerCase();
+            return st == 'destroyed';
+          }) ||
+          package.warehouseEntries.any((e) {
+            final n = (e.returnNotes ?? '').trim().toUpperCase();
+            return n.startsWith('[FINAL:DESTROYED');
+          });
+    }
 
     return _DetailSection(
       title: 'Destruction Status & Financials',

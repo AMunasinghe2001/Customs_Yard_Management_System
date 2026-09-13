@@ -1654,33 +1654,38 @@ class _DestroyedPackagesTab extends ConsumerStatefulWidget {
 /// moves the cost to the one row that actually needs it, and awaiting it means
 /// the figure is THERE when the popup opens instead of reading "not
 /// available" until the ledger caught up.
+// ⚠️ No WidgetRef parameter any more: the ledger is watched INSIDE the
+// dialog now, so the caller has nothing to read on the way in.
+/// ⚠️ Shared with the Costs button: one popup open at a time on this page,
+/// whichever button asked. A stalled frame swallows the FIRST tap on either;
+/// the officer presses again — often the OTHER button — and when the thread
+/// frees up both taps land and two dialogs stack. One flag for both means the
+/// second tap is simply ignored while the first is still on its way.
 Future<void> _showDestroyedDetails(
   BuildContext context,
-  WidgetRef ref,
   _DestroyedRow r, {
   required Map<DateTime, double> storageRate,
   required Color accent,
 }) async {
-  SrFinancials? sr;
-  try {
-    sr = (await ref.read(srFinancialsProvider.future))
-        .where((f) => f.srNumber.trim() == r.package.srNumber.trim())
-        .firstOrNull;
-  } catch (_) {
-    // The costs section degrades to "not available"; the rest of the popup --
-    // the package, its items, its warehouse history -- does not need this and
-    // should still open.
-  }
-  if (!context.mounted) return;
   await showAppDialog(
     context: context,
-    builder: (_) => PackageDetailsDialog(
-      package: r.package,
-      storageRate: storageRate,
-      headerAccentColor: accent,
-      highlightEntry: r.entry,
-      useLegacySummary: true,
-      srFinancials: sr,
+    builder: (_) => Consumer(
+      builder: (_, dialogRef, __) {
+        final sr = dialogRef
+            .watch(srFinancialsProvider)
+            .valueOrNull
+            ?.where((f) => f.srNumber.trim() == r.package.srNumber.trim())
+            .firstOrNull;
+        return PackageDetailsDialog(
+          package: r.package,
+          storageRate: storageRate,
+          headerAccentColor: accent,
+          highlightItemId: r.item?.id,
+          highlightEntry: r.entry,
+          useLegacySummary: true,
+          srFinancials: sr,
+        );
+      },
     ),
   );
 }
@@ -1951,13 +1956,15 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                     DataCell(DestructionExpenseCell(
                                         srNumber: r.package.srNumber)),
                                     DataCell(Center(
-                                        child: _RecordCostsButton(
-                                            srNumber: r.package.srNumber))),
+                                        child: _RecordCostsButton(row: r))),
                                     DataCell(Center(
-                                      // Read-only here: only the yard confirms
-                                      // a destruction, so no onMark.
                                       child: DestructionStatusPill(
-                                          destroyed: r.isDestroyed),
+                                        destroyed: r.isDestroyed,
+                                        onMark: r.isDestroyed
+                                            ? null
+                                            : () => _confirmMarkDestroyed(
+                                                context, ref, r),
+                                      ),
                                     )),
                                     DataCell(Center(
                                       child: IconButton(
@@ -1965,21 +1972,8 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                             color:
                                                 context.colors.accentLightBlue,
                                             size: 18),
-                                        // ⚠️ The ledger is READ here, on the
-                                        // tap, not watched while the table
-                                        // builds. `.watch` inside the builder
-                                        // still subscribed this row to
-                                        // srFinancialsProvider, so twenty rows
-                                        // held the heaviest query in the app
-                                        // open to fill a field only the popup
-                                        // reads. Awaiting it here also fixes
-                                        // the case the old comment described:
-                                        // the popup no longer shows "not
-                                        // available" merely because the ledger
-                                        // had not finished loading.
                                         onPressed: () =>
-                                            _showDestroyedDetails(
-                                                context, ref, r,
+                                            _showDestroyedDetails(context, r,
                                                 storageRate: storageRate,
                                                 accent: green),
                                       ),
@@ -2011,59 +2005,247 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
 /// Destroyed-tab delivery sub-filter: null = all, true = delivered, false = pending.
 final _destroyedDeliveryFilterProvider = StateProvider<bool?>((ref) => null);
 
+Future<void> _confirmMarkDestroyed(
+    BuildContext context, WidgetRef ref, _DestroyedRow row) async {
+  final itemId = row.item?.id ?? row.entry?.packageItemId;
+  if (itemId == null) {
+    if (context.mounted) {
+      showErrorSnack(context, 'Package item ID is missing');
+    }
+    return;
+  }
+  final qty = row.entry?.itemCount ?? row.item?.quantity ?? 1;
+  DateTime pickedDate = DateTime.now();
+  final notesCtrl = TextEditingController();
+
+  final confirmed = await showAppDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDlgState) => StyledFormDialog(
+        label: 'DESTROY GOODS',
+        title: 'Mark as Destroyed',
+        icon: Icons.local_fire_department_rounded,
+        headerAccentColor: ctx.colors.dangerRed,
+        width: 480,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ctx.colors.primaryGold,
+              foregroundColor: ctx.colors.primaryNavy,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.check_rounded, size: 18),
+            label: const Text('Confirm Destruction',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            StyledFormSection(
+              title: 'Package Information',
+              icon: Icons.inventory_2_rounded,
+              children: [
+                _DestroyedDialogDetailRow(
+                    label: 'SR Number', value: row.package.srNumber),
+                _DestroyedDialogDetailRow(label: 'Goods Name', value: row.itemName),
+                _DestroyedDialogDetailRow(label: 'Quantity', value: '$qty'),
+              ],
+            ),
+            const Gap(14),
+            StyledFormSection(
+              title: 'Destruction Details',
+              icon: Icons.edit_calendar_rounded,
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.calendar_today_rounded,
+                      color: ctx.colors.primaryGold, size: 20),
+                  title: const Text('Destruction Date',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  subtitle:
+                      Text(DateFormat('yyyy-MM-dd').format(pickedDate)),
+                  trailing: OutlinedButton(
+                    onPressed: () async {
+                      final d = await showDatePicker(
+                        context: ctx,
+                        initialDate: pickedDate,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (d != null) {
+                        setDlgState(() => pickedDate = d);
+                      }
+                    },
+                    child: const Text('Change'),
+                  ),
+                ),
+                const Gap(8),
+                TextField(
+                  controller: notesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes / Remarks (Optional)',
+                    hintText:
+                        'Enter destruction certificate # or remarks...',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  if (confirmed == true) {
+    try {
+      await ref.read(warehouseServiceProvider).recordFinalDisposition(
+        packageItemId: itemId,
+        dispositionType: 'DESTROYED',
+        qty: qty,
+        dispositionDate: pickedDate,
+        notes: notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null,
+      );
+      ref.invalidate(livePackagesProvider);
+      ref.invalidate(disposalDestroyedPackagesProvider);
+      ref.invalidate(dispositionPageWithPackagesProvider);
+      ref.invalidate(destructionsChangeTriggerProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${row.itemName} marked as Destroyed.'),
+            backgroundColor: context.colors.successGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showErrorSnack(context, e);
+      }
+    }
+  }
+}
+
+class _DestroyedDialogDetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _DestroyedDialogDetailRow({required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label,
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The record/edit-costs action for one SR's destruction, in its own column.
-///
-/// Opens the same cost form the Expenses tab uses, in its destruction shape:
-/// what is saved here is the SAME `financial_expenses` data that tab reads, so
-/// a figure entered on either screen shows on the other.
-/// ⚠️ This is why the tab was slow, and it is the SECOND time the same
-/// mistake has been made on this page.
-///
-/// It watched `srFinancialsProvider` -- `getAllPackages()` across all
-/// twenty-eight yards plus `getTenderSales()`, which the service's own comment
-/// calls "the heaviest query in the app", rolled up per item and per tax name
-/// -- and then scanned the whole list for ONE SR. Measured against the live
-/// database:
-///
-///     the tab's own page query        24ms
-///     getAllPackages() it dragged in  148ms
-///     getTenderSales() it dragged in   68ms
-///
-/// So a page of twenty rows waited an order of magnitude longer for a button
-/// than for its own data. `DestructionExpenseCell` in the column beside this
-/// one had exactly this bug and was fixed; this one was left behind.
-///
-/// The fix is not a lighter query -- it is not fetching until the officer
-/// clicks. The ledger is only needed to BUILD the dialog, so it is read in the
-/// tap handler.
 class _RecordCostsButton extends ConsumerWidget {
-  final String srNumber;
-  const _RecordCostsButton({required this.srNumber});
+  final _DestroyedRow row;
+  const _RecordCostsButton({required this.row});
+
+  static bool _opening = false;
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
-    // Loading state on the button itself, because this may now be the first
-    // time anything has asked for the ledger.
-    final messenger = ScaffoldMessenger.of(context);
-    late final List<SrFinancials> all;
+    if (_opening) return;
+    _opening = true;
+
     try {
-      all = await ref.read(srFinancialsProvider.future);
-    } catch (e) {
-      if (context.mounted) showErrorSnack(context, e, action: 'Loading costs');
-      return;
+      final all = ref.read(srFinancialsProvider).valueOrNull;
+      var sr = all
+          ?.where((f) => f.srNumber.trim() == row.package.srNumber.trim())
+          .firstOrNull;
+
+      if (sr == null) {
+        final expenses = ref.read(financialExpensesProvider).valueOrNull ??
+            await ref
+                .read(disposalServiceProvider)
+                .getFinancialExpenses()
+                .catchError((_) => <FinancialExpenseModel>[]);
+
+        final srExpenses = expenses
+            .where((e) => e.srNumber?.trim() == row.package.srNumber.trim())
+            .toList();
+        double destruction = 0, advertising = 0, labour = 0, transport = 0, auction = 0;
+        for (final e in srExpenses) {
+          switch (e.kind) {
+            case 'destruction_expense':
+              destruction += e.amount;
+              break;
+            case 'advertising_expense':
+              advertising += e.amount;
+              break;
+            case 'labour_expense':
+              labour += e.amount;
+              break;
+            case 'transport_expense':
+              transport += e.amount;
+              break;
+            case 'auction_expense':
+              auction += e.amount;
+              break;
+          }
+        }
+
+        final yard = yardOfSrNumber(row.package.srNumber);
+        final itemId = row.item?.id ?? row.package.items.firstOrNull?.id ?? '';
+        sr = SrFinancials(
+          srNumber: row.package.srNumber,
+          yard: yard,
+          date: row.package.createdAt,
+          destroyingDeposit: row.package.destroyingDeposit ?? 0.0,
+          goods: [
+            GoodsFinancials(
+              itemId: itemId,
+              srNumber: row.package.srNumber,
+              goodsName: row.itemName,
+              yard: yard,
+              quantity: row.item?.quantity ?? row.entry?.itemCount ?? 1,
+              destructionExpense: destruction,
+              advertisingExpense: advertising,
+              labourExpense: labour,
+              transportExpense: transport,
+              auctionExpense: auction,
+            ),
+          ],
+        );
+      }
+
+      if (!context.mounted) return;
+      await showAppDialog(
+        context: context,
+        builder: (_) => RecordExpenseDialog(sr: sr!, forDestruction: true),
+      );
+    } finally {
+      _opening = false;
     }
-    final sr = all
-        .where((f) => f.srNumber.trim() == srNumber.trim())
-        .firstOrNull;
-    if (!context.mounted) return;
-    if (sr == null) {
-      messenger.showSnackBar(
-          SnackBar(content: Text('No cost record found for $srNumber')));
-      return;
-    }
-    await showAppDialog(
-      context: context,
-      builder: (_) => RecordExpenseDialog(sr: sr, forDestruction: true),
-    );
   }
 
   @override
@@ -2072,10 +2254,6 @@ class _RecordCostsButton extends ConsumerWidget {
       tooltip: 'Record / edit destruction costs',
       icon: Icon(Icons.edit_note_rounded,
           size: 20, color: context.colors.successGreen),
-      // ⚠️ Always enabled. It used to be disabled until the ledger loaded,
-      // which is what forced every row to wait for it -- and an SR on this
-      // table always has a financials row, so the check never actually said
-      // no.
       onPressed: () => _open(context, ref),
     );
   }
@@ -5032,7 +5210,11 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.colors.accentLightBlue;
+    // ⚠️ The Disposal team colour, like every other tab in this console. This
+    // was accentLightBlue, so the Committees tab alone drew its pager and
+    // its member chips in a blue that belongs to no portal — one tab
+    // dressed differently from the eleven beside it.
+    final accent = context.colors.successGreen;
 
     // ⚠️ One PAGE, one query. This tab used to read THREE providers and
     // intersect them in Dart: committeeEligibleProvider (itself a filter over

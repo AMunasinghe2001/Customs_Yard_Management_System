@@ -37,9 +37,17 @@ void main() {
         // exactly what let the last one hide. (The emoji check learned the
         // same lesson.)
         final flat = src.replaceAll(RegExp(r'\s+'), ' ');
-        expect(flat.contains('.watch(srFinancialsProvider)'), isFalse,
+        // ⚠️ `ref.watch` is the one that costs: it subscribes whatever is
+        // BUILDING, and in a table that is every row of every page.
+        //
+        // A watch from inside a DIALOG builder is a different thing and is
+        // allowed — the builder runs only while the popup is open, one
+        // instance, at the moment the officer asked for the figure. The
+        // details popup uses `dialogRef.watch` for exactly that, so it can
+        // appear instantly instead of the button hanging ~2s on the tap.
+        expect(flat.contains('ref.watch(srFinancialsProvider)'), isFalse,
             reason: 'watching the ledger from a row costs ~216ms per page — '
-                'read it in the tap handler instead');
+                'read it in the tap handler, or watch it inside the dialog');
       });
     }
 
@@ -52,7 +60,10 @@ void main() {
       // `.read(...future)` inside an async handler, not `.watch` in build.
       // Whitespace collapsed, since both calls wrap.
       String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
-      expect(flat(dash), contains('await ref.read(srFinancialsProvider.future)'));
+      // ⚠️ The Destroyed popup no longer awaits it before opening — that was
+      // the ~2s dead button. It watches inside the dialog instead, which is
+      // the same "only when asked" guarantee with none of the wait.
+      expect(flat(dash), contains('dialogRef .watch(srFinancialsProvider)'));
       expect(flat(yard), contains('await ref.read( srFinancialsProvider.future)'));
     });
   });
@@ -105,7 +116,13 @@ void main() {
       final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
           .readAsStringSync();
       final fn = dash.substring(dash.indexOf('Future<void> _showDestroyedDetails('));
-      expect(fn.substring(0, 1400), contains('} catch (_) {'));
+      // ⚠️ No try/catch any more, and none is needed. The popup used to
+      // await the ledger BEFORE opening, so a failure there had to be caught
+      // or nothing appeared at all. It now opens first and the figure fills
+      // in after — a failed or slow ledger costs the costs section and
+      // nothing else, which is what the catch was reaching for.
+      expect(fn.substring(0, 1400), contains('valueOrNull'),
+          reason: 'a ledger error must not take the whole popup down');
       // showAppDialog, not showDialog: every popup in the app now opens
       // over the same blurred, dimmed backdrop.
       expect(fn.substring(0, 1400), contains('await showAppDialog('));

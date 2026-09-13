@@ -826,10 +826,19 @@ class PackageService {
             'warehouse_entries(id, package_id, warehouse_id, package_item_id, '
             'item_count, admitted_at, returned_at, is_returned, hold_reason)')
         .order('created_at', ascending: false));
-    return [
-      for (final e in (data as List))
-        PackageModel.fromJson(e as Map<String, dynamic>)
-    ];
+    // ⚠️ Parsed OFF the UI thread. This built 176 PackageModels — each with
+    // its items and warehouse entries — synchronously, and a measured frame
+    // showed the cost exactly: 1546ms total, of which build was 15ms and
+    // raster 5ms. The other ~1.5s was this parse holding the UI thread, and
+    // because Flutter only delivers a click BETWEEN frames, the officer's tap
+    // on Details was not received at all until it finished. That is the
+    // "first click on this page does nothing for two seconds" — the popup
+    // itself was never slow (tap to painted: 15-20ms, every time).
+    //
+    // parsePackages already existed for precisely this and falls back to a
+    // direct parse under kIsolateParseThreshold, so a small result pays
+    // nothing for the isolate.
+    return parsePackages(data as List);
   }
 
   Future<List<PackageModel>> getAllPackages(
