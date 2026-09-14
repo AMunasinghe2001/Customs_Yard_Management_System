@@ -457,7 +457,6 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
             flex: 5,
             child: BrandPanel(
               accent: AppTheme.executiveTeal,
-              deepColor: const Color(0xFF0A0F2C),
               badgeLabel: 'Top Management Directorate',
               badgeIcon: Icons.shield_moon_rounded,
             ),

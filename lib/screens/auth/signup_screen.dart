@@ -89,7 +89,6 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               flex: 5,
               child: const BrandPanel(
                 accent: AppTheme.customsBlueLight,
-                deepColor: AppTheme.primaryNavy,
                 badgeLabel: 'Admin • Create New Account',
                 // No icon: this badge has never had one.
               ),

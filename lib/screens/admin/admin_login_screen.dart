@@ -235,7 +235,6 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             flex: 5,
             child: BrandPanel(
               accent: context.colors.primaryGold,
-              deepColor: const Color(0xFF050411),
               badgeLabel: 'SDDC / DDC Portal',
               badgeIcon: Icons.admin_panel_settings_rounded,
             ),

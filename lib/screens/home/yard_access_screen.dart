@@ -26,7 +26,6 @@ class YardAccessScreen extends ConsumerWidget {
             flex: 5,
             child: BrandPanel(
               accent: context.colors.customsBlue,
-              deepColor: const Color(0xFF060D1F),
               badgeLabel: 'Yard Access',
               badgeIcon: Icons.warehouse_rounded,
             ),

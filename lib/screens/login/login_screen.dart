@@ -231,7 +231,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             flex: 5,
             child: BrandPanel(
               accent: context.colors.accentLightBlue,
-              deepColor: const Color(0xFF050411),
               badgeLabel: 'SC / DSC / ASC Portal',
               badgeIcon: Icons.person_outline_rounded,
             ),

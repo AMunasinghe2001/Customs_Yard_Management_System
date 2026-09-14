@@ -455,7 +455,6 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
             flex: 5,
             child: BrandPanel(
               accent: AppTheme.appealPurple,
-              deepColor: const Color(0xFF0A0F2C),
               badgeLabel: 'Appeal Directorate',
               badgeIcon: Icons.balance_rounded,
             ),

@@ -303,7 +303,6 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
             flex: 5,
             child: BrandPanel(
               accent: AppTheme.executiveTeal,
-              deepColor: const Color(0xFF0A0F2C),
               badgeLabel: 'Top Management • Create Account',
               badgeIcon: Icons.shield_moon_rounded,
             ),

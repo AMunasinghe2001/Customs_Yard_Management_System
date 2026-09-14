@@ -302,7 +302,6 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
             flex: 5,
             child: BrandPanel(
               accent: AppTheme.appealPurple,
-              deepColor: const Color(0xFF0A0F2C),
               badgeLabel: 'Appeal • Create Account',
               badgeIcon: Icons.balance_rounded,
             ),

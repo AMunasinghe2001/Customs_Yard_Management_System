@@ -298,7 +298,6 @@ class _DisposalSignupScreenState extends ConsumerState<DisposalSignupScreen> {
             flex: 5,
             child: BrandPanel(
               accent: context.colors.successGreen,
-              deepColor: const Color(0xFF051A0F),
               badgeLabel: 'Disposal • Create Account',
               badgeIcon: Icons.gavel_rounded,
             ),

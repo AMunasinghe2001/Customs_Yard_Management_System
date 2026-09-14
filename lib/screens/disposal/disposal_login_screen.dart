@@ -475,7 +475,6 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
             flex: 5,
             child: BrandPanel(
               accent: green,
-              deepColor: const Color(0xFF051A0F),
               badgeLabel: 'Central Disposal Directorate',
               badgeIcon: Icons.gavel_rounded,
             ),

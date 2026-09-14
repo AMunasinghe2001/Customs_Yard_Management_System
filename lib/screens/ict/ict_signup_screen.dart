@@ -300,7 +300,6 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
             flex: 5,
             child: BrandPanel(
               accent: accent,
-              deepColor: const Color(0xFF050411),
               badgeLabel: 'ICT • Create Account',
               badgeIcon: Icons.terminal_rounded,
             ),

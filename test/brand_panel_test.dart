@@ -21,7 +21,6 @@ Widget _host(Widget child) => MaterialApp(
 
 BrandPanel _panel() => const BrandPanel(
       accent: Color(0xFF2E7D32),
-      deepColor: Color(0xFF051A0F),
       badgeLabel: 'Central Disposal Directorate',
       badgeIcon: Icons.gavel_rounded,
     );
@@ -41,8 +40,7 @@ void main() {
     // the test harness -- and asserting on a colour passed around the widget
     // tree would prove nothing: a knockout handed along correctly but never
     // written into the SVG looks identical in the tree and wrong on screen.
-    final asset =
-        File('Sri_Lanka_Customs_logo_tinted.svg').readAsStringSync();
+    final asset = File('Sri_Lanka_Customs_logo_tinted.svg').readAsStringSync();
 
     test('the asset really does have a painted-on knockout', () {
       // If this fails the crest was re-exported. Check whether it now has real
@@ -102,8 +100,7 @@ void main() {
     });
   });
 
-  group('the animation is calm enough to sit behind a password field',
-      () {
+  group('the animation is calm enough to sit behind a password field', () {
     testWidgets('one full cycle takes several seconds, not a moment',
         (t) async {
       await t.pumpWidget(_host(_panel()));
@@ -228,8 +225,8 @@ void main() {
         for (final c in t.widgetList<Container>(f)) {
           final d = c.decoration;
           if (d is BoxDecoration && d.shape == BoxShape.circle) {
-            return Size(c.constraints?.maxWidth ?? 0,
-                c.constraints?.maxHeight ?? 0);
+            return Size(
+                c.constraints?.maxWidth ?? 0, c.constraints?.maxHeight ?? 0);
           }
         }
         return Size.zero;

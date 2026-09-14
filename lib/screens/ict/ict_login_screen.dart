@@ -424,7 +424,6 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
             flex: 5,
             child: BrandPanel(
               accent: accent,
-              deepColor: const Color(0xFF050411),
               badgeLabel: 'ICT Directorate Portal',
               badgeIcon: Icons.terminal_rounded,
             ),

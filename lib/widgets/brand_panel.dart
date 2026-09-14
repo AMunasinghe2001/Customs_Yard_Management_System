@@ -7,13 +7,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../core/theme.dart';
-
 /// The colour the crest's ship and plane are painted in the shipped asset.
 ///
 /// Public so a test can assert the swap actually happened, rather than trusting
 /// that a colour handed correctly around the widget tree reached the SVG.
 const String kCrestKnockoutHex = '#1a1764';
+
+/// The ground every brand panel is built on.
+///
+/// ⚠️ ONE value for every portal, and a NEUTRAL one. The panels used to pick
+/// their own near-black, and each was tinted towards its own team colour —
+/// green-black for Disposal, navy for Valuation and Top Management, a second
+/// navy for Yard Access. That put the team colour into the ground itself, so
+/// the panels did not read as the same surface and the accent had nothing
+/// neutral to be light against.
+///
+/// Not pure `#000000`: an absolute black takes no shading, so the gradient's
+/// first third would be a dead flat patch and the orbs would have no ground to
+/// fall off into. `#050505` is black to the eye and still has somewhere to go.
+const Color kBrandPanelBlack = Color(0xFF050505);
 
 /// Repaints the crest's knockout to [behind] -- the colour the crest is drawn
 /// over -- so the ship and plane keep reading as holes.
@@ -56,7 +68,19 @@ class BrandPanel extends StatefulWidget {
   /// DC/SDDC, and so on. The gradient's third stop and the crest's tint.
   final Color accent;
 
-  /// The darkest corner, top-left. Each portal picks its own near-black.
+  /// The darkest corner, top-left.
+  ///
+  /// ⚠️ Defaults to [kBrandPanelBlack] and every portal now takes that
+  /// default. It used to be per-portal, and that was the bug: the five values
+  /// in use were TINTED near-blacks, so the ground itself carried the team
+  /// colour. Disposal's `#051A0F` is green-black, Valuation's `#0A0F2C` is
+  /// navy, Yard Access had a third navy — side by side the panels looked like
+  /// different surfaces rather than one surface lit six ways.
+  ///
+  /// Black is the base for all of them now, and the accent arrives only as
+  /// the light moving over it. Still a parameter rather than a constant so a
+  /// panel that genuinely needs another ground can say so, but nothing in the
+  /// app passes one.
   final Color deepColor;
 
   /// Portal name for the badge under the title.
@@ -73,7 +97,7 @@ class BrandPanel extends StatefulWidget {
   const BrandPanel({
     super.key,
     required this.accent,
-    required this.deepColor,
+    this.deepColor = kBrandPanelBlack,
     required this.badgeLabel,
     this.badgeIcon,
     this.subtitle = 'SR Management System',
@@ -83,8 +107,7 @@ class BrandPanel extends StatefulWidget {
   State<BrandPanel> createState() => _BrandPanelState();
 }
 
-class _BrandPanelState extends State<BrandPanel>
-    with TickerProviderStateMixin {
+class _BrandPanelState extends State<BrandPanel> with TickerProviderStateMixin {
   /// The asset, read once and cached for the process. Every sign-in screen
   /// mounts one of these, and re-reading it per screen is wasted work.
   static Future<String>? _source;
@@ -146,27 +169,42 @@ class _BrandPanelState extends State<BrandPanel>
   /// The crest sits at the middle of the panel, so what is behind it is the
   /// gradient's middle.
   ///
-  /// ⚠️ Based on the panel's OWN deep colour, not on `primaryNavy`.
+  /// ⚠️ Built from [kBrandPanelBlack] and the panel's accent — nothing else.
   ///
-  /// It used to return a navy-based colour, which was right while every
-  /// panel's middle was navy. It is not any more: each portal supplies its
-  /// own near-black, and on the purple panel the middle is `#0A0F2C` while
-  /// this returned `#1A1764` — so the ship and the plane were painted a navy
-  /// that matched nothing behind them and appeared as two solid patches on
-  /// the crest. Exactly the failure the knockout exists to prevent, caused by
-  /// the one value it depends on being read from the wrong place.
+  /// Two earlier versions of this got it wrong in the same way, by mixing in a
+  /// colour that had nothing to do with this panel. First it returned a fixed
+  /// `#1A1764`, so on a portal whose middle was `#0A0F2C` the ship and plane
+  /// were painted a navy that matched nothing behind them and showed as two
+  /// solid patches. Then it lifted the deep colour 35% towards `primaryNavy`,
+  /// which matched the crest again but put navy into the middle of every
+  /// panel — including the green one.
+  ///
+  /// The knockout only works while this returns *exactly* what the gradient
+  /// paints at the centre, so the two are now derived from the same two
+  /// values and no third colour is involved.
   ///
   /// ⚠️ The orbs are kept OFF the centre (see [_OrbFieldPainter]) so this
   /// stays true: a disc of light drifting behind the crest would change the
   /// colour there frame by frame, and no single value could match it.
-  Color _behindCrest(BuildContext context, double t) {
+  Color _behindCrest(double t) {
     // A small lean, not a wash: at full strength the accent would tint the
     // whole middle of the panel and the crest would lose its contrast.
     //
     // ⚠️ Scaled by how BRIGHT the accent is, for the same reason
     // [_accentDepth] is. Gold leans much harder than teal at the same factor.
-    final mid = Color.lerp(widget.deepColor, context.colors.primaryNavy, 0.35)!;
-    return Color.lerp(mid, widget.accent, 0.10 * t * _accentDepth)!;
+    // ⚠️ The 0.35 lift towards `primaryNavy` is GONE. It was the second
+    // source of the tint: whatever ground a panel was given, this pulled its
+    // middle a third of the way to navy, so the green panel's centre was
+    // green-navy and the crest sat on a different colour on every portal.
+    // The lift is now towards the panel's OWN accent only, which is the one
+    // colour that is supposed to differ between portals.
+    //
+    // Raised 0.10 → 0.16 because the lift now starts from black rather than
+    // from a navy-mixed colour, and without it the middle is too dark for the
+    // crest's knockout to read as a hole rather than as a black patch.
+    final mid = Color.lerp(
+        widget.deepColor, Colors.white, 0.06 * (1.8 - _accentDepth * 0.4))!;
+    return Color.lerp(mid, widget.accent, 0.16 * t * _accentDepth)!;
   }
 
   /// How far the accent corner is pulled back towards the deep colour.
@@ -284,8 +322,9 @@ class _BrandPanelState extends State<BrandPanel>
 
   /// Relative luminance of any colour, sRGB (WCAG).
   static double _relativeLuminance(Color c) {
-    double channel(double v) =>
-        v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+    double channel(double v) => v <= 0.03928
+        ? v / 12.92
+        : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
     return 0.2126 * channel(c.r) +
         0.7152 * channel(c.g) +
         0.0722 * channel(c.b);
@@ -301,7 +340,7 @@ class _BrandPanelState extends State<BrandPanel>
         // Eased, so the turn at each end is soft rather than a bounce off a
         // wall -- the giveaway that something is on a loop.
         final t = Curves.easeInOut.transform(_c.value);
-        final behind = _behindCrest(context, t);
+        final behind = _behindCrest(t);
 
         return Container(
           decoration: BoxDecoration(
@@ -395,74 +434,76 @@ class _BrandPanelState extends State<BrandPanel>
               ),
               Center(
                 child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // ⚠️ Tinted with the INK, not the accent: on Yard Access
-              // the accent is #1A237E on a #060D1F panel and the crest all but
-              // disappeared. The knockout stays the colour actually BEHIND the
-              // crest -- that is what keeps the ship and the plane looking
-              // cut out, and it has nothing to do with the tint.
-              // ⚠️ The halo is painted BEHIND the crest, never over it.
-              //
-              // The crest's ship and plane are fake holes: they are filled
-              // with whatever colour is behind them. Anything drawn on TOP
-              // would tint the disc and the two shapes differently, and they
-              // would stop reading as holes — the one thing this widget
-              // exists to protect. Sitting underneath, the halo lights the
-              // crest without touching the trick.
-              _HaloedCrest(
-                source: _source!,
-                tint: ink,
-                knockout: behind,
-                accent: accent,
-                glow: _glow,
-              ),
-              const SizedBox(height: 34),
-              Text('Sri Lanka Customs',
-                  style: TextStyle(
-                      color: ink,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2)),
-              const SizedBox(height: 2),
-              Text(widget.subtitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
-              const SizedBox(height: 22),
-              // A hairline above the portal badge: it separates the service's
-              // name from the door being used, which are two different
-              // things that were previously stacked with nothing between.
-              Container(
-                width: 54,
-                height: 1,
-                color: ink.withOpacity(0.28),
-              ),
-              const SizedBox(height: 22),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
-                decoration: BoxDecoration(
-                  // The badge keeps the ACCENT in its border and fill --
-                  // this is where the portal's colour belongs, and neither is
-                  // asked to be legible.
-                  border: Border.all(color: accent.withOpacity(0.3)),
-                  borderRadius: BorderRadius.circular(24),
-                  color: accent.withOpacity(0.06),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (widget.badgeIcon != null) ...[
-                    Icon(widget.badgeIcon, color: ink, size: 16),
-                    const SizedBox(width: 8),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // ⚠️ Tinted with the INK, not the accent: on Yard Access
+                    // the accent is #1A237E on a #060D1F panel and the crest all but
+                    // disappeared. The knockout stays the colour actually BEHIND the
+                    // crest -- that is what keeps the ship and the plane looking
+                    // cut out, and it has nothing to do with the tint.
+                    // ⚠️ The halo is painted BEHIND the crest, never over it.
+                    //
+                    // The crest's ship and plane are fake holes: they are filled
+                    // with whatever colour is behind them. Anything drawn on TOP
+                    // would tint the disc and the two shapes differently, and they
+                    // would stop reading as holes — the one thing this widget
+                    // exists to protect. Sitting underneath, the halo lights the
+                    // crest without touching the trick.
+                    _HaloedCrest(
+                      source: _source!,
+                      tint: ink,
+                      knockout: behind,
+                      accent: accent,
+                      glow: _glow,
+                    ),
+                    const SizedBox(height: 34),
+                    Text('Sri Lanka Customs',
+                        style: TextStyle(
+                            color: ink,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2)),
+                    const SizedBox(height: 2),
+                    Text(widget.subtitle,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: Color(0xFFB0BEC5),
+                            fontSize: 16,
+                            height: 1.2)),
+                    const SizedBox(height: 22),
+                    // A hairline above the portal badge: it separates the service's
+                    // name from the door being used, which are two different
+                    // things that were previously stacked with nothing between.
+                    Container(
+                      width: 54,
+                      height: 1,
+                      color: ink.withOpacity(0.28),
+                    ),
+                    const SizedBox(height: 22),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 28, vertical: 10),
+                      decoration: BoxDecoration(
+                        // The badge keeps the ACCENT in its border and fill --
+                        // this is where the portal's colour belongs, and neither is
+                        // asked to be legible.
+                        border: Border.all(color: accent.withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(24),
+                        color: accent.withOpacity(0.06),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (widget.badgeIcon != null) ...[
+                          Icon(widget.badgeIcon, color: ink, size: 16),
+                          const SizedBox(width: 8),
+                        ],
+                        Text(widget.badgeLabel,
+                            style: TextStyle(
+                                color: ink,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
+                      ]),
+                    ),
                   ],
-                  Text(widget.badgeLabel,
-                      style: TextStyle(
-                          color: ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600)),
-                ]),
-              ),
-            ],
                 ),
               ),
             ],
@@ -622,9 +663,33 @@ class _OrbFieldPainter extends CustomPainter {
   /// corners and cut to roughly a third, they light the edges and leave the
   /// crest on the deep colour, which is what the mark needs behind it.
   static const _orbs = <_Orb>[
-    _Orb(cx: 0.08, cy: 0.06, r: 0.34, dx: 0.07, dy: 0.05, a: 0.30, speed: 1.00, phase: 0.0),
-    _Orb(cx: 0.94, cy: 0.84, r: 0.32, dx: 0.06, dy: 0.07, a: 0.26, speed: 0.61, phase: 2.1),
-    _Orb(cx: 0.06, cy: 0.97, r: 0.28, dx: 0.05, dy: 0.05, a: 0.18, speed: 1.37, phase: 4.3),
+    _Orb(
+        cx: 0.08,
+        cy: 0.06,
+        r: 0.34,
+        dx: 0.07,
+        dy: 0.05,
+        a: 0.30,
+        speed: 1.00,
+        phase: 0.0),
+    _Orb(
+        cx: 0.94,
+        cy: 0.84,
+        r: 0.32,
+        dx: 0.06,
+        dy: 0.07,
+        a: 0.26,
+        speed: 0.61,
+        phase: 2.1),
+    _Orb(
+        cx: 0.06,
+        cy: 0.97,
+        r: 0.28,
+        dx: 0.05,
+        dy: 0.05,
+        a: 0.18,
+        speed: 1.37,
+        phase: 4.3),
   ];
 
   /// How far every orb is dimmed, by how BRIGHT this portal's accent is.
@@ -639,8 +704,9 @@ class _OrbFieldPainter extends CustomPainter {
   /// Takes gold to about 0.55 of its old strength and leaves the dim accents
   /// nearly untouched.
   double get _brightnessTrim {
-    double channel(double v) =>
-        v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+    double channel(double v) => v <= 0.03928
+        ? v / 12.92
+        : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
     final l = 0.2126 * channel(accent.r) +
         0.7152 * channel(accent.g) +
         0.0722 * channel(accent.b);

@@ -304,7 +304,6 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
             flex: 5,
             child: BrandPanel(
               accent: context.colors.primaryGold,
-              deepColor: const Color(0xFF0A0F2C),
               badgeLabel: 'Valuation • Create Account',
               badgeIcon: Icons.calculate_rounded,
             ),

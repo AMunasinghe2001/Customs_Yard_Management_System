@@ -290,7 +290,6 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
             flex: 5,
             child: BrandPanel(
               accent: context.colors.primaryGold,
-              deepColor: const Color(0xFF050411),
               badgeLabel: 'SDDC / DDC • Create Account',
               badgeIcon: Icons.person_add_rounded,
             ),
