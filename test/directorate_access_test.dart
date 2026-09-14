@@ -212,7 +212,7 @@ void main() {
       final fn = svc.substring(
           svc.indexOf('Future<String> resetDirectorateCredentials('));
       final body = fn.substring(0, fn.indexOf('\n  }'));
-      expect(body, contains("rpc(\n        'reset_password_for_identifier'"));
+      expect(body, contains("rpc(\n      'reset_directorate_credentials'"));
     });
   });
 

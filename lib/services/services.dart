@@ -21,6 +21,8 @@ bool _isForfeitStatus(String? status) {
       normalized == 'forfeited';
 }
 
+String _normalizeLoginIdentifier(String identifier) => identifier.trim();
+
 // ── Auth Service ──────────────────────────────────────────────
 
 class AuthService {
@@ -268,7 +270,7 @@ class AuthService {
   /// account" would let anyone test which usernames and addresses are real, so
   /// the screens say "if that account exists, a code has been sent" either way.
   Future<String?> startPasswordReset(String identifier) async {
-    final id = identifier.trim();
+    final id = _normalizeLoginIdentifier(identifier);
     if (id.isEmpty) return null;
     final resolved = await _withNetworkRetry(
       () => supabase
@@ -293,6 +295,7 @@ class AuthService {
     required String otp,
     required String newPassword,
   }) async {
+    final normalizedIdentifier = _normalizeLoginIdentifier(identifier);
     // ⚠️ Check the code WITHOUT spending it. The password can still be
     // refused after this line -- too short, or one used before -- and
     // consuming the code first meant a rejected password also destroyed the
@@ -303,7 +306,7 @@ class AuthService {
         consume: false);
     await _withNetworkRetry(
       () => supabase.rpc('reset_password_for_identifier', params: {
-        'p_identifier': identifier.trim(),
+        'p_identifier': normalizedIdentifier,
         'p_password': newPassword,
       }),
     );
@@ -354,7 +357,7 @@ class AuthService {
   /// after spending the code — which then made a second tap fail differently.
   Future<String> startOtpLogin(String identifier, String password,
       {String? requireRole}) async {
-    final id = identifier.trim();
+    final id = _normalizeLoginIdentifier(identifier);
     String email = id;
     if (!id.contains('@')) {
       final resolved = await _withNetworkRetry(
@@ -460,7 +463,7 @@ class AuthService {
   /// so the resulting session is identical — only the one-time code is skipped.
   Future<ProfileModel?> passwordOnlyLogin(
       String identifier, String password) async {
-    final id = identifier.trim();
+    final id = _normalizeLoginIdentifier(identifier);
     String email = id;
     if (!id.contains('@')) {
       final resolved = await _withNetworkRetry(
@@ -3963,16 +3966,15 @@ class IctService {
     final username = await AdminService()._uniqueUsername(fullName);
     final password = AdminService._randomOfficerPassword();
 
-    // The password first: if the email fails, the account is left reachable
-    // with credentials nobody has, so the write is what must not happen
-    // without the send. Ordering it this way means a failed send is reported
-    // and ICT can simply reissue.
+    // Change both values in one database transaction. The email is sent only
+    // after this succeeds, so it can never describe a half-applied reset.
     await AuthService._withNetworkRetry(() => supabase.rpc(
-        'reset_password_for_identifier',
-        params: {'p_identifier': email, 'p_password': password}));
-    await AuthService._withNetworkRetry(() => supabase
-        .from('profiles')
-        .update({'username': username}).eq('id', profileId));
+      'reset_directorate_credentials',
+      params: {
+        'p_profile_id': profileId,
+        'p_username': username,
+        'p_password': password,
+      }));
 
     await GmailOtpService.instance
         .sendCredentials(email, fullName, username, password,

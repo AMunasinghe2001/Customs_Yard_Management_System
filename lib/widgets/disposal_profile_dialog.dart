@@ -52,6 +52,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
   bool _isLoading = false;
   bool _obscureNew = true, _obscureConfirm = true;
   String _originalEmail = '';
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -82,6 +83,107 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
     return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 
+  String _friendlyProfileError(Object e) {
+    final raw = e.toString().trim();
+    final low = raw.toLowerCase();
+
+    // Password reuse / current password
+    if (low.contains('current password')) {
+      return 'New password cannot be your current password. Please choose a different password.';
+    }
+    if (low.contains('used this password before') ||
+        low.contains('password_history')) {
+      return 'You have used this password recently. Please choose a password you have not used before.';
+    }
+
+    // Password policy rules
+    if (low.contains('at least 12') ||
+        low.contains('min length') ||
+        low.contains('too short')) {
+      return 'Password must be at least 12 characters.';
+    }
+    if (low.contains('at most 24') ||
+        low.contains('max length') ||
+        low.contains('too long')) {
+      return 'Password must be at most 24 characters.';
+    }
+    if (low.contains('uppercase')) {
+      return 'Password must contain an uppercase letter (A-Z).';
+    }
+    if (low.contains('lowercase')) {
+      return 'Password must contain a lowercase letter (a-z).';
+    }
+    if (low.contains('number') || low.contains('digit')) {
+      return 'Password must contain a number (0-9).';
+    }
+    if (low.contains('special character') || low.contains('symbol')) {
+      return 'Password must contain a special character (@ # % ! & ...).';
+    }
+    if (low.contains('common') || low.contains('commonly used')) {
+      return 'Password contains a commonly used word. Please choose a stronger password.';
+    }
+    if (low.contains('passwords do not match')) {
+      return 'Passwords do not match.';
+    }
+
+    // Username taken / unique constraint
+    if (low.contains('duplicate') ||
+        low.contains('23505') ||
+        low.contains('profiles_username_lower_idx') ||
+        (low.contains('username') &&
+            (low.contains('unique') ||
+                low.contains('already exists') ||
+                low.contains('taken')))) {
+      return 'That username is already taken. Please choose another.';
+    }
+
+    // Email errors
+    if (low.contains('email') &&
+        (low.contains('duplicate') ||
+            low.contains('user_already_exists') ||
+            low.contains('23505') ||
+            low.contains('already in use'))) {
+      return 'This email address is already in use by another account.';
+    }
+
+    // Permission / Session errors
+    if (low.contains('42501') ||
+        low.contains('permission denied') ||
+        low.contains('only change your own password')) {
+      return 'You may only update your own account.';
+    }
+
+    // Network / server
+    if (low.contains('socketexception') ||
+        low.contains('connection refused') ||
+        low.contains('network')) {
+      return 'Network problem — could not reach the server. Check your connection and try again.';
+    }
+
+    // Clean raw message
+    var cleaned = raw;
+    for (final prefix in [
+      'Exception: ',
+      'PgQueryException: ',
+      'PostgreSQLException: ',
+      'AuthApiException: ',
+      'AuthException: ',
+      'AuthException(null): ',
+      'AuthException(invalid_credentials): ',
+    ]) {
+      if (cleaned.startsWith(prefix)) {
+        cleaned = cleaned.substring(prefix.length);
+      }
+    }
+    cleaned = cleaned.replaceFirst(RegExp(r'^Severity\.\w+\s*'), '').trim();
+    if (cleaned.startsWith('22023:')) {
+      cleaned = cleaned.substring(6).trim();
+    }
+    return cleaned.isNotEmpty
+        ? cleaned
+        : 'Failed to update profile. Please check the details and try again.';
+  }
+
   Future<void> _pickImage() async {
     final result = await FilePicker.platform
         .pickFiles(type: FileType.image, allowMultiple: false);
@@ -95,7 +197,10 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
     final profile = ref.read(currentProfileProvider);
     if (profile == null) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     try {
       await ref.read(adminServiceProvider).updateProfile(
             profile.id,
@@ -137,7 +242,9 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
       }
     } catch (e) {
       if (mounted) {
-        showErrorSnack(context, e);
+        setState(() {
+          _errorMessage = _friendlyProfileError(e);
+        });
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -248,7 +355,10 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
                         TextButton(
                           onPressed: _isLoading
                               ? null
-                              : () => setState(() => _editing = false),
+                              : () => setState(() {
+                                    _editing = false;
+                                    _errorMessage = null;
+                                  }),
                           child: const Text('Cancel'),
                         ),
                         const Gap(12),
@@ -285,7 +395,10 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
                           icon: const Icon(Icons.edit_rounded, size: 18),
                           label: const Text('Edit Profile',
                               style: TextStyle(fontWeight: FontWeight.w700)),
-                          onPressed: () => setState(() => _editing = true),
+                          onPressed: () => setState(() {
+                            _editing = true;
+                            _errorMessage = null;
+                          }),
                         ),
                       ],
               ),
@@ -363,6 +476,37 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_errorMessage != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: context.colors.dangerRed.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: context.colors.dangerRed.withOpacity(0.35)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.error_outline_rounded,
+                    color: context.colors.dangerRed, size: 20),
+                const Gap(10),
+                Expanded(
+                  child: Text(
+                    _errorMessage!,
+                    style: TextStyle(
+                      color: context.colors.dangerRed,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Gap(14),
+        ],
         // Avatar picker
         Center(
           child: InkWell(

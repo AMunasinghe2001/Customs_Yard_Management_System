@@ -6,6 +6,7 @@ import 'package:postgres/postgres.dart';
 
 import '../app_env.dart';
 import 'pg_query.dart';
+import '../device_id.dart';
 
 /// Where the office server's PostgreSQL lives.
 ///
@@ -536,6 +537,29 @@ class PgDatabase {
         'role': _currentRole,
       },
     );
+
+    // ⚠️ Which MACHINE this is, for the approved-device check in
+    // auth.sign_in (migration 032).
+    //
+    // Set on the connection rather than passed to sign_in, for two reasons:
+    // a pooled connection is reused, so like the three variables above it
+    // must be stamped on every connection and never left over from the
+    // previous occupant; and the device is a property of the CLIENT, not of
+    // one call — anything else the database wants to refuse per machine can
+    // read the same variable without a new argument.
+    //
+    // A failure here is swallowed on purpose. An empty id is what an
+    // unidentified machine sends, and with an empty device register the
+    // database allows it; refusing to connect would take the app down over a
+    // check that is not yet switched on.
+    try {
+      await conn.execute(
+        Sql.named("select set_config('app.device_id', @dev, false)"),
+        parameters: {'dev': await DeviceId.get()},
+      );
+    } catch (_) {
+      // Left unset; current_setting returns '' and the register decides.
+    }
   }
 
   /// Whether a live connection is currently held. Never assume from this that

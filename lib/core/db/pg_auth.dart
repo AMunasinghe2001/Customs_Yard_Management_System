@@ -143,7 +143,8 @@ class PgAuth {
     required String password,
   }) async {
     final rows = await PgDatabase.instance.query(
-      'select id, email, meta, email_confirmed_at from auth.sign_in(@id, @pw)',
+      'select id, email, raw_user_meta_data as meta, email_confirmed_at '
+          'from auth.sign_in(@id, @pw)',
       parameters: {'id': email.trim(), 'pw': password},
     );
     if (rows.isEmpty) {

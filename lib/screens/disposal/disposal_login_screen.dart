@@ -12,7 +12,6 @@ import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
-import '../../services/services.dart';
 import '../../services/otp_service.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
@@ -386,9 +385,15 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
         low.contains('over_email_send_rate_limit')) {
       return 'Too many email requests. Please wait a few minutes before trying again.';
     }
-    if (raw.contains('Invalid login credentials') ||
-        raw.contains('invalid_credentials')) {
+    if (low.contains('invalid login credentials') ||
+        low.contains('invalid_credentials')) {
       return 'Incorrect username/email or password. Please try again.';
+    }
+    if (low.contains('not approved') ||
+        low.contains('approved machine') ||
+        low.contains('device')) {
+      return 'This computer is not approved for the SR Management System. '
+          'Ask the ICT Directorate to approve it.';
     }
     if (low.contains('expired')) {
       return 'This code has expired. Tap "Resend code" for a new one, then enter it within 2 minutes.';

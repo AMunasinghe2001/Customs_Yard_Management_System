@@ -76,27 +76,33 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _saveProfile(BuildContext dialogContext) async {
+  String? _dialogError;
+
+  Future<void> _saveProfile(BuildContext dialogContext,
+      [void Function(void Function())? setDlgState]) async {
     if (!_formKey.currentState!.validate()) return;
 
     final profile = ref.read(currentProfileProvider);
     if (profile == null) return;
 
     setState(() => _isLoading = true);
+    if (setDlgState != null) {
+      setDlgState(() => _dialogError = null);
+    }
 
     try {
       await ref.read(adminServiceProvider).updateProfile(
             profile.id,
-          fullName: _nameCtrl!.text.trim(),
-          username: _usernameCtrl!.text.trim(),
-          badgeNumber: _salaryCtrl!.text.trim(),
-          mobileNumber:
-            _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
-          // jobRole and yard are deliberately NOT sent: ICT owns them, the
-          // fields are read-only above, and updateProfile skips a null.
-          profileImageUrl: _profileImageCtrl!.text.trim().isEmpty
-            ? null
-            : _profileImageCtrl!.text.trim(),
+            fullName: _nameCtrl!.text.trim(),
+            username: _usernameCtrl!.text.trim(),
+            badgeNumber: _salaryCtrl!.text.trim(),
+            mobileNumber:
+                _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
+            // jobRole and yard are deliberately NOT sent: ICT owns them, the
+            // fields are read-only above, and updateProfile skips a null.
+            profileImageUrl: _profileImageCtrl!.text.trim().isEmpty
+                ? null
+                : _profileImageCtrl!.text.trim(),
           );
 
       // Optional password change
@@ -108,7 +114,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       }
 
       // Refresh current profile provider
-      final updatedProfile = await ref.read(authServiceProvider).getCurrentProfile();
+      final updatedProfile =
+          await ref.read(authServiceProvider).getCurrentProfile();
       if (updatedProfile != null) {
         ref.read(currentProfileProvider.notifier).state = updatedProfile;
         // Keep the session's active yard in sync so new records are tagged correctly.
@@ -132,9 +139,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_friendlyProfileError(e)),
-            backgroundColor: context.colors.dangerRed));
+        final msg = _friendlyProfileError(e);
+        if (setDlgState != null) {
+          setDlgState(() => _dialogError = msg);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(msg),
+              backgroundColor: context.colors.dangerRed));
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -142,14 +154,104 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   String _friendlyProfileError(Object e) {
-    final raw = e.toString().toLowerCase();
-    if (raw.contains('duplicate') ||
-        raw.contains('23505') ||
-        raw.contains('profiles_username_lower_idx') ||
-        raw.contains('unique')) {
+    final raw = e.toString().trim();
+    final low = raw.toLowerCase();
+
+    // Password reuse / current password
+    if (low.contains('current password')) {
+      return 'New password cannot be your current password. Please choose a different password.';
+    }
+    if (low.contains('used this password before') ||
+        low.contains('password_history')) {
+      return 'You have used this password recently. Please choose a password you have not used before.';
+    }
+
+    // Password policy rules
+    if (low.contains('at least 12') ||
+        low.contains('min length') ||
+        low.contains('too short')) {
+      return 'Password must be at least 12 characters.';
+    }
+    if (low.contains('at most 24') ||
+        low.contains('max length') ||
+        low.contains('too long')) {
+      return 'Password must be at most 24 characters.';
+    }
+    if (low.contains('uppercase')) {
+      return 'Password must contain an uppercase letter (A-Z).';
+    }
+    if (low.contains('lowercase')) {
+      return 'Password must contain a lowercase letter (a-z).';
+    }
+    if (low.contains('number') || low.contains('digit')) {
+      return 'Password must contain a number (0-9).';
+    }
+    if (low.contains('special character') || low.contains('symbol')) {
+      return 'Password must contain a special character (@ # % ! & ...).';
+    }
+    if (low.contains('common') || low.contains('commonly used')) {
+      return 'Password contains a commonly used word. Please choose a stronger password.';
+    }
+    if (low.contains('passwords do not match')) {
+      return 'Passwords do not match.';
+    }
+
+    // Username taken / unique constraint
+    if (low.contains('duplicate') ||
+        low.contains('23505') ||
+        low.contains('profiles_username_lower_idx') ||
+        (low.contains('username') &&
+            (low.contains('unique') ||
+                low.contains('already exists') ||
+                low.contains('taken')))) {
       return 'That username is already taken. Please choose another.';
     }
-    return 'Failed to update profile: $e';
+
+    // Email errors
+    if (low.contains('email') &&
+        (low.contains('duplicate') ||
+            low.contains('user_already_exists') ||
+            low.contains('23505') ||
+            low.contains('already in use'))) {
+      return 'This email address is already in use by another account.';
+    }
+
+    // Permission / Session errors
+    if (low.contains('42501') ||
+        low.contains('permission denied') ||
+        low.contains('only change your own password')) {
+      return 'You may only update your own account.';
+    }
+
+    // Network / server
+    if (low.contains('socketexception') ||
+        low.contains('connection refused') ||
+        low.contains('network')) {
+      return 'Network problem — could not reach the server. Check your connection and try again.';
+    }
+
+    // Clean raw message
+    var cleaned = raw;
+    for (final prefix in [
+      'Exception: ',
+      'PgQueryException: ',
+      'PostgreSQLException: ',
+      'AuthApiException: ',
+      'AuthException: ',
+      'AuthException(null): ',
+      'AuthException(invalid_credentials): ',
+    ]) {
+      if (cleaned.startsWith(prefix)) {
+        cleaned = cleaned.substring(prefix.length);
+      }
+    }
+    cleaned = cleaned.replaceFirst(RegExp(r'^Severity\.\w+\s*'), '').trim();
+    if (cleaned.startsWith('22023:')) {
+      cleaned = cleaned.substring(6).trim();
+    }
+    return cleaned.isNotEmpty
+        ? cleaned
+        : 'Failed to update profile. Please check the details and try again.';
   }
 
   String _initials(String? name) {
@@ -218,6 +320,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _confirmPasswordCtrl!.clear();
     _obscureNew = true;
     _obscureConfirm = true;
+    _dialogError = null;
 
     showAppDialog(
       context: context,
@@ -233,6 +336,39 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                      if (_dialogError != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 11),
+                          margin: const EdgeInsets.only(bottom: 14),
+                          decoration: BoxDecoration(
+                            color: context.colors.dangerRed.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color:
+                                    context.colors.dangerRed.withOpacity(0.35)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.error_outline_rounded,
+                                  color: context.colors.dangerRed, size: 20),
+                              const Gap(10),
+                              Expanded(
+                                child: Text(
+                                  _dialogError!,
+                                  style: TextStyle(
+                                    color: context.colors.dangerRed,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       Center(
                         child: InkWell(
                           borderRadius: BorderRadius.circular(60),
@@ -527,7 +663,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: _isLoading ? null : () => _saveProfile(ctx),
+              onPressed: _isLoading ? null : () => _saveProfile(ctx, setDlgState),
               style: ElevatedButton.styleFrom(
                 backgroundColor: context.colors.primaryGold,
                 foregroundColor: context.colors.primaryNavy,
