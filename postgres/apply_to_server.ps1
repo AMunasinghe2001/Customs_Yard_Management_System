@@ -16,7 +16,11 @@ param(
   [string]$PgHost   = '10.10.71.15',
   [int]   $Port     = 5432,
   [string]$Database = 'Customs_SR_DB',
-  [string]$User     = 'postgres'
+  [string]$User     = 'postgres',
+  # The SQL to apply. Defaults to the 021->031 bundle; pass a single migration
+  # to apply just that one, e.g.
+  #   .\postgres\apply_to_server.ps1 -File migrations\035_sign_up_writes_the_profile_atomically.sql
+  [string]$File     = 'postgres\69_apply_021_to_031.sql'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,6 +49,7 @@ Write-Host ''
 Write-Host "Server   : $PgHost`:$Port" -ForegroundColor Cyan
 Write-Host "Database : $Database"      -ForegroundColor Cyan
 Write-Host "As       : $User"          -ForegroundColor Cyan
+Write-Host "Applying : $File"          -ForegroundColor Cyan
 Write-Host ''
 
 # Reachability first: a timeout here is a network problem, not a SQL one, and
@@ -82,7 +87,7 @@ try {
 
 Write-Host ''
 if ($code -eq 0) {
-  Write-Host 'DONE. All four migrations applied and verified.' -ForegroundColor Green
+  Write-Host "DONE. $File applied and self-verified." -ForegroundColor Green
   Write-Host ''
   Write-Host 'Point the .env at this server and restart the app:'
   Write-Host "  PG_HOST=$PgHost"

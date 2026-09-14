@@ -3287,7 +3287,15 @@ class AdminService {
     String? profileImageUrl,
   }) async {
     // Verify our self-issued Gmail code (throws on bad/expired code).
-    GmailOtpService.instance.verifyCode(email.trim(), otp);
+    //
+    // ⚠️ WITHOUT spending it. Everything below can still fail — a refused
+    // role, a duplicate username, a password the policy rejects — and a
+    // consumed code turned every one of those into a second, misleading
+    // error: the officer was told "No verification code was sent" when the
+    // real complaint was about the account. Reported from the ICT sign-up
+    // screen: first press showed the real error, second press showed the
+    // missing-code one. The code is spent at the end, once nothing can fail.
+    GmailOtpService.instance.verifyCode(email.trim(), otp, consume: false);
 
     final metadata = <String, dynamic>{
       'full_name': fullName,
@@ -3364,35 +3372,27 @@ class AdminService {
       throw Exception('Sign-up failed. Please try again.');
     }
 
-    // NOT swallowed. The account in auth.users is worthless without its
-    // profile row — the user could "sign up" successfully and then be refused
-    // at every login with a bare "profile_not_found". Surfacing the real error
-    // here is what tells them (and us) what actually went wrong; a role the
-    // profiles_role_check constraint does not allow used to land here and get
-    // mis-reported as a network problem.
-    try {
-      await supabase.from('profiles').upsert({
-        'id': user.id,
-        'full_name': fullName,
-        'badge_number': badgeNumber,
-        'role': role,
-        'is_active': true,
-        if (username != null) 'username': username,
-        if (mobileNumber != null) 'mobile_number': mobileNumber,
-        if (jobRole != null) 'job_role': jobRole,
-        if (department != null) 'department': department,
-        if (yard != null) 'yard': yard,
-        if (directorate != null) 'directorate': directorate,
-        if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
-      });
-    } catch (e) {
-      // Leave no half-made account behind: without a profile the auth user can
-      // never sign in, and it would block a retry as "already registered".
-      try {
-        await supabase.auth.signOut();
-      } catch (_) {}
-      throw Exception(_profileWriteMessage(e, role));
-    }
+    // ⚠️ The profile is written by `auth.sign_up` itself (migration 035), in
+    // the same transaction as the account. There is deliberately NO profile
+    // write here any more.
+    //
+    // There used to be an upsert at this point carrying username, job_role and
+    // directorate, and it was the reported bug: a person signing up is not
+    // signed in, so `auth.uid()` is null and the `yard_profiles_insert` policy
+    // refused it with 42501 — surfaced as "This account is not permitted to
+    // create that profile". The account had already been committed by the
+    // statement before, so it survived the error and the officer found it in
+    // the database after being told the sign-up failed.
+    //
+    // Moving the write inside the SECURITY DEFINER function is what makes the
+    // account and its full profile succeed or fail together. Re-adding a
+    // client-side profile write here would restore the bug.
+
+    // ⚠️ Spend the code only now. Nothing above can fail any more, so this is
+    // the first point at which throwing the code away cannot strand the
+    // officer with a working account and a dead code, or a failed account and
+    // no way to retry.
+    GmailOtpService.instance.consumeCode(email.trim());
 
     await supabase.auth.signOut();
   }
