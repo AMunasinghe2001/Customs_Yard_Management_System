@@ -1048,55 +1048,69 @@ class _WarehousesTab extends ConsumerWidget {
     final capCtrl = TextEditingController(text: zone.capacity.toString());
     final descCtrl = TextEditingController(text: zone.description ?? '');
 
+    // ⚠️ The SAME StyledFormDialog every other Yard Administration form uses.
+    //
+    // This was a bare AlertDialog, so the Warehouses page showed TWO different
+    // edit forms: "Edit Warehouse" with the yard's navy header, and this one
+    // with Material's default chrome — no header, no section card, different
+    // buttons. One page, one design.
     final saved = await showAppDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Edit Zone'),
-        content: SizedBox(
-          width: 360,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: codeCtrl,
-              decoration: InputDecoration(
-                  labelText: 'Zone Code',
-                  hintText:
-                      '${warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: capCtrl,
-              keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: 'Capacity (items) *'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: descCtrl,
-              decoration:
-                  const InputDecoration(labelText: 'Description (optional)'),
-            ),
-          ]),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.trim().isEmpty) return;
-              if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
-              Navigator.pop(c, true);
-            },
-            child: const Text('Save'),
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDlg) => StyledFormDialog(
+          label: 'Zone',
+          title: 'Edit Zone',
+          icon: Icons.grid_view_rounded,
+          width: 460,
+          yard: true,
+          child: StyledFormSection(
+            title: '${warehouse.name} · ${zone.name}',
+            icon: Icons.warehouse_rounded,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                // The Zone Code hint mirrors the name as it is typed, so a
+                // rebuild is needed on every keystroke.
+                onChanged: (_) => setDlg(() {}),
+                decoration: const InputDecoration(
+                    labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
+              ),
+              TextField(
+                controller: codeCtrl,
+                decoration: InputDecoration(
+                    labelText: 'Zone Code',
+                    hintText:
+                        '${warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
+              ),
+              TextField(
+                controller: capCtrl,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Capacity (items) *'),
+              ),
+              TextField(
+                controller: descCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'Description (optional)'),
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Cancel')),
+            StyledDialogPrimaryButton(
+              labelText: 'Save',
+              icon: Icons.save_rounded,
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
+                Navigator.pop(c, true);
+              },
+            ),
+          ],
+        ),
       ),
     );
 
@@ -1203,6 +1217,7 @@ class _WarehousesTab extends ConsumerWidget {
           label: 'Warehouse',
           title: 'Edit Warehouse',
           icon: Icons.warehouse_rounded,
+          yard: true,
           width: 460,
           child: StyledFormSection(
             title: warehouse.name,
@@ -1742,6 +1757,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                   label: 'Item Category',
                   title: 'Add Package Category',
                   icon: Icons.category_rounded,
+                  yard: true,
                   width: 560,
                   child: StyledFormSection(
                     title: 'Category Details',
@@ -1887,10 +1903,18 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
         builder: (ctx) => Consumer(builder: (ctx, ref, _) {
               return StatefulBuilder(builder: (ctx, setState) {
                 final warehouses = ref.watch(warehousesProvider);
+                // ⚠️ Who may change WHAT. The category's name and description
+                // are one national list and belong to ICT; where its goods go
+                // is this yard's own business. See migration 037 — the yard
+                // used to be shown editable name/description fields whose
+                // save RLS silently threw away.
+                final isIct =
+                    ref.watch(currentProfileProvider)?.isIct ?? false;
                 return StyledFormDialog(
                   label: 'Item Category',
                   title: 'Edit Package Category',
                   icon: Icons.category_rounded,
+                  yard: true,
                   width: 560,
                   child: StyledFormSection(
                     title: category.name,
@@ -1899,12 +1923,20 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                     children: [
                       TextField(
                           controller: nameC,
-                          decoration: const InputDecoration(
-                              labelText: 'Category Name *')),
+                          readOnly: !isIct,
+                          enabled: isIct,
+                          decoration: InputDecoration(
+                              labelText: 'Category Name *',
+                              helperText:
+                                  isIct ? null : 'Set by the ICT Directorate')),
                       TextField(
                           controller: descC,
-                          decoration:
-                              const InputDecoration(labelText: 'Description'),
+                          readOnly: !isIct,
+                          enabled: isIct,
+                          decoration: InputDecoration(
+                              labelText: 'Description',
+                              helperText:
+                                  isIct ? null : 'Set by the ICT Directorate'),
                           maxLines: 3),
                       warehouses.when(
                         data: (list) => StyledDropdownFormField<String?>(
@@ -2011,18 +2043,35 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             }
                           }
 
-                          await ref
-                              .read(packageCategoryServiceProvider)
-                              .updateCategory(
-                                category.id,
-                                nameC.text.trim(),
-                                description: descC.text.trim(),
-                                targetWarehouseId: selectedWarehouseId,
-                                targetZone: selectedWarehouseId == null ||
-                                        selectedZone == null
-                                    ? null
-                                    : selectedZone,
-                              );
+                          // ⚠️ Errors are SHOWN, not swallowed. A refused
+                          // write used to close the dialog as though it had
+                          // saved, which is the bug this whole change is
+                          // about; catching and reporting is the other half
+                          // of the fix.
+                          try {
+                            await ref
+                                .read(packageCategoryServiceProvider)
+                                .updateCategory(
+                                  category.id,
+                                  nameC.text.trim(),
+                                  description: descC.text.trim(),
+                                  targetWarehouseId: selectedWarehouseId,
+                                  targetZone: selectedWarehouseId == null ||
+                                          selectedZone == null
+                                      ? null
+                                      : selectedZone,
+                                  canEditName: isIct,
+                                );
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                                content: Text(
+                                    e.toString().replaceAll('Exception: ', '')),
+                                backgroundColor: Colors.red,
+                              ));
+                            }
+                            return;
+                          }
                           ref.invalidate(packageCategoriesProvider);
                           if (ctx.mounted) Navigator.pop(ctx);
                         }),
@@ -2503,6 +2552,7 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
       label: 'ZONES & CAPACITY',
       title: widget.warehouse.name,
       icon: Icons.grid_view_rounded,
+      yard: true,
       width: 620,
       actions: [
         TextButton(
@@ -2758,6 +2808,7 @@ class _AddWarehouseDialogState extends ConsumerState<_AddWarehouseDialog> {
       label: 'WAREHOUSE',
       title: 'Add New Warehouse',
       icon: Icons.warehouse_rounded,
+      yard: true,
       width: 620,
       actions: [
         TextButton(

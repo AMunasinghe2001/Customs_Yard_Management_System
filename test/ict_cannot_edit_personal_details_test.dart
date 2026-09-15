@@ -163,9 +163,11 @@ void main() {
       expect(dlg, contains('yard && !isDark'));
     });
 
-    test('the yard flag stays opt-in', () {
-      // Every other caller must keep the design it has. If this ever fires,
-      // check the new caller really is a yard screen.
+    test('the yard flag stays opt-in, and only yard screens take it', () {
+      // ⚠️ Not a fixed COUNT any more — Yard Administration's warehouse and
+      // category dialogs legitimately take it too. The rule being guarded is
+      // that no DIRECTORATE screen does: the tint is their design, and a
+      // navy bar on a directorate popup is the same mistake in reverse.
       final callers = Directory('lib')
           .listSync(recursive: true)
           .whereType<File>()
@@ -173,9 +175,23 @@ void main() {
           .where((f) => f.readAsStringSync().contains('yard: true'))
           // Windows reports back-slashed paths; compare on one spelling.
           .map((f) => f.path.replaceAll(r'\', '/'))
+          .toList()
+        ..sort();
+
+      const directorates = [
+        '/screens/ict/',
+        '/screens/disposal/',
+        '/screens/valuation/',
+        '/screens/appeal/',
+        '/screens/executive/',
+      ];
+      final wrong = callers
+          .where((c) => directorates.any(c.contains))
           .toList();
-      expect(callers, ['lib/screens/profile/edit_profile_screen.dart'],
-          reason: 'a new screen took the yard header: $callers');
+      expect(wrong, isEmpty,
+          reason: 'a directorate screen took the yard header: $wrong');
+      expect(callers, isNotEmpty,
+          reason: 'nothing takes the yard header any more');
     });
   });
 }

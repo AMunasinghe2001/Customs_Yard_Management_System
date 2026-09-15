@@ -101,6 +101,19 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
     // bounced them to '/' — the portal chooser — rather than to the sign-in
     // they had been using.
     final router = ref.read(routerProvider);
+
+    // ⚠️ Captured BEFORE the navigation below, which replaces the location
+    // with the login page — a moment later there is nothing left to read.
+    //
+    // The id and the route only; the session still goes. This is what lets
+    // the SAME officer come back to the page they were on, and what makes a
+    // different officer get a fresh app instead of someone else's work.
+    LockedSessionMemory.capture(
+      uid: profile?.id,
+      currentRoute:
+          router.routerDelegate.currentConfiguration.uri.toString(),
+    );
+
     router.go(_loginRoute);
 
     try {

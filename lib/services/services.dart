@@ -4592,9 +4592,13 @@ class AuditLogService {
 
 class PackageCategoryService {
   Future<List<PackageCategory>> getCategories() async {
+    // ⚠️ The per-yard VIEW, not the bare table: it resolves this yard's own
+    // target warehouse/zone (migration 037). Reading `package_categories`
+    // directly would show no target at all, because those columns no longer
+    // live there.
     final data = await supabase
-        .from('package_categories')
-        .select('*, warehouses(name)')
+        .from('package_categories_for_yard')
+        .select('*')
         .order('name');
     return [
       for (final e in (data as List))
@@ -4606,12 +4610,25 @@ class PackageCategoryService {
       {String? description,
       String? targetWarehouseId,
       String? targetZone}) async {
-    await supabase.from('package_categories').insert({
+    // ⚠️ `.select()` so a blocked insert is visible. Creating a category is
+    // ICT's to do — it adds to the national list — and without this a yard
+    // would get the same silent no-op the update had.
+    final rows = await supabase.from('package_categories').insert({
       'name': name,
       'description': description,
-      'target_warehouse_id': targetWarehouseId,
-      'target_zone': targetZone,
-    });
+    }).select('id');
+    if ((rows as List).isEmpty) {
+      throw Exception(
+          'You are not permitted to create a category. Categories are added '
+          'by the ICT Directorate.');
+    }
+    final newId = (rows.first as Map<String, dynamic>)['id'] as String;
+
+    await setCategoryTargetForYard(
+      categoryId: newId,
+      targetWarehouseId: targetWarehouseId,
+      targetZone: targetZone,
+    );
 
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -4619,21 +4636,50 @@ class PackageCategoryService {
         userId: user.id,
         action: 'Created package category: $name',
         entityType: 'package_category',
-        entityId: 'new',
+        entityId: newId,
       );
     }
   }
 
+  /// Saves a category.
+  ///
+  /// ⚠️ TWO tables, because two different people own the two halves.
+  ///
+  /// The name and description are national — one list, `name` is globally
+  /// unique — and belong to ICT. The target warehouse and zone are a fact
+  /// about ONE yard's own warehouses, so they live in
+  /// `package_category_targets`, keyed by (category, yard), and the yard sets
+  /// its own row. See migration 037.
+  ///
+  /// This used to write all four columns to `package_categories`. For a yard
+  /// SDDC the RLS policy matched no rows, Postgres reported `UPDATE 0` rather
+  /// than an error, and the dialog closed as though it had saved — the
+  /// reported bug.
   Future<void> updateCategory(String id, String name,
       {String? description,
       String? targetWarehouseId,
-      String? targetZone}) async {
-    await supabase.from('package_categories').update({
-      'name': name,
-      'description': description,
-      'target_warehouse_id': targetWarehouseId,
-      'target_zone': targetZone,
-    }).eq('id', id);
+      String? targetZone,
+      bool canEditName = true}) async {
+    if (canEditName) {
+      final rows = await supabase.from('package_categories').update({
+        'name': name,
+        'description': description,
+      }).eq('id', id).select('id');
+      // ⚠️ RLS refuses by matching NOTHING, so an empty result is the only
+      // signal that the write was blocked. Saying so is the whole point: the
+      // silent version is what made this look like it had worked.
+      if ((rows as List).isEmpty) {
+        throw Exception(
+            'You are not permitted to rename a category. The name and '
+            'description are set by the ICT Directorate.');
+      }
+    }
+
+    await setCategoryTargetForYard(
+      categoryId: id,
+      targetWarehouseId: targetWarehouseId,
+      targetZone: targetZone,
+    );
 
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -4644,6 +4690,41 @@ class PackageCategoryService {
         entityId: id,
       );
     }
+  }
+
+  /// Points this YARD's copy of [categoryId] at a warehouse and zone.
+  ///
+  /// Upserts on (category_id, yard): the row may not exist yet, and a yard
+  /// that clears both fields should end up with no target rather than a row
+  /// full of nulls.
+  Future<void> setCategoryTargetForYard({
+    required String categoryId,
+    String? targetWarehouseId,
+    String? targetZone,
+  }) async {
+    final yard = AppSession.currentYard;
+    if (yard == null || yard.isEmpty) {
+      // A directorate account has no yard, so it has no per-yard target to
+      // set. Nothing to do rather than writing a row keyed by an empty yard.
+      return;
+    }
+
+    if (targetWarehouseId == null && targetZone == null) {
+      await supabase
+          .from('package_category_targets')
+          .delete()
+          .eq('category_id', categoryId)
+          .eq('yard', yard);
+      return;
+    }
+
+    await supabase.from('package_category_targets').upsert({
+      'category_id': categoryId,
+      'yard': yard,
+      'target_warehouse_id': targetWarehouseId,
+      'target_zone': targetZone,
+      'updated_by': supabase.auth.currentUser?.id,
+    }, onConflict: 'category_id,yard');
   }
 
   Future<void> deleteCategory(String id) async {

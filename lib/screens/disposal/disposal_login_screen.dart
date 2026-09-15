@@ -17,6 +17,7 @@ import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
 import '../../core/session_reset.dart';
+import '../../core/idle_lock.dart';
 
 /// Two-step login for the Disposal Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in.
@@ -273,7 +274,7 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     ref.read(currentProfileProvider.notifier).state = profile;
     if (mounted) {
       context.showSuccess('Logged in as ${profile.fullName}');
-      context.go('/disposal');
+      context.go(resumeRouteAfterSignIn(uid: profile.id, home: '/disposal'));
     }
   }
 

@@ -39,6 +39,54 @@ final ValueNotifier<bool> idleLockedFlag = ValueNotifier<bool>(false);
 /// front door with every portal on it.
 String lastLockedPortal = '/';
 
+/// Who was signed in when the lock went up, and where they were.
+///
+/// ⚠️ Outside the ProviderScope for the same reason as [lastLockedPortal]:
+/// the sign-out that accompanies the lock rebuilds the container, so anything
+/// held inside it is gone by the time the officer comes back.
+///
+/// ⚠️ It holds an IDENTIFIER and a ROUTE — never a password, and never the
+/// session. The lock still signs the user out, which is the whole point of it
+/// (an unattended PC must hold no live session). This is only enough to
+/// recognise that the SAME person came back and to put them where they were.
+/// Someone else signing in gets a fresh app, because none of this matches.
+class LockedSessionMemory {
+  LockedSessionMemory._();
+
+  /// The user id that was signed in, or null if nobody was.
+  static String? userId;
+
+  /// The route the officer was actually on — the dashboard, a register, a
+  /// detail page — as opposed to the login page the lock navigates to.
+  static String? route;
+
+  /// Whatever a screen chose to save about its half-finished work, keyed by
+  /// the route that saved it. A form puts its fields here as they are typed;
+  /// nothing else reads them.
+  static final Map<String, Map<String, dynamic>> formState = {};
+
+  /// Remembers the person and the page, at the moment of locking.
+  static void capture({required String? uid, required String? currentRoute}) {
+    userId = uid;
+    route = currentRoute;
+  }
+
+  /// True when [uid] is the person the lock remembers.
+  ///
+  /// A null [userId] means nothing was captured, so nothing can be resumed —
+  /// this must not treat "nobody was signed in" as a match for anybody.
+  static bool isSamePerson(String? uid) =>
+      userId != null && uid != null && userId == uid;
+
+  /// Drops everything. Called when a DIFFERENT user signs in, and after a
+  /// resume has been used, so stale work cannot reappear later.
+  static void clear() {
+    userId = null;
+    route = null;
+    formState.clear();
+  }
+}
+
 /// Reads [idleLockedFlag] and rebuilds watchers when it changes.
 ///
 /// A provider so callers are unchanged, but it holds no state of its own —
@@ -185,4 +233,30 @@ class _IdleActivityDetectorState extends ConsumerState<IdleActivityDetector> {
       ),
     );
   }
+}
+
+
+/// Where a portal should land after a successful sign-in.
+///
+/// Normally [home] — the portal's own dashboard. But if the app was LOCKED and
+/// the person now signing in is the one it locked on, this returns the route
+/// they were actually on, so they resume instead of restarting.
+///
+/// ⚠️ Matching is on the USER ID the sign-in just returned, not on anything
+/// typed into the form. A different officer at the same desk gets [home] and a
+/// cleared memory — they must never inherit the previous person's page, and
+/// they must never see a form someone else half-filled.
+///
+/// Call it exactly once per sign-in: it CONSUMES the memory, so a later
+/// ordinary sign-in cannot be sent to a stale page.
+String resumeRouteAfterSignIn({required String? uid, required String home}) {
+  if (!LockedSessionMemory.isSamePerson(uid)) {
+    LockedSessionMemory.clear();
+    return home;
+  }
+  final route = LockedSessionMemory.route;
+  LockedSessionMemory.userId = null;  // spent; the form state stays for the
+                                      // screen that is about to rebuild.
+  if (route == null || route.isEmpty || route == '/') return home;
+  return route;
 }

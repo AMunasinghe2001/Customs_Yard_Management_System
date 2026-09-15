@@ -3540,7 +3540,11 @@ class PackageCategory {
       name: json['name'] as String,
       description: json['description'] as String?,
       targetWarehouseId: json['target_warehouse_id'] as String?,
-      targetWarehouseName:
+      // ⚠️ A plain column now, not an embed. The per-yard view resolves the
+      // warehouse name itself (migration 037) because a VIEW has no foreign
+      // keys for `warehouses(name)` to join through. The old embed shape is
+      // still read as a fallback for any caller still selecting the table.
+      targetWarehouseName: json['target_warehouse_name'] as String? ??
           (json['warehouses'] as Map<String, dynamic>?)?['name'] as String?,
       targetZone: json['target_zone'] as String?,
       createdAt: parseDbDateRequired(json['created_at']),

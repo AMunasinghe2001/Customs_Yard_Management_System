@@ -17,6 +17,7 @@ import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
 import '../../services/otp_service.dart';
 import '../../core/session_reset.dart';
+import '../../core/idle_lock.dart';
 
 /// Two-step login for the ICT Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -217,7 +218,9 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
     }
     ref.read(currentProfileProvider.notifier).state = profile;
     await _saveCredentials();
-    if (mounted) context.go('/ict');
+    if (mounted) {
+      context.go(resumeRouteAfterSignIn(uid: profile.id, home: '/ict'));
+    }
   }
 
   Future<void> _submitLogin({bool isResend = false}) async {

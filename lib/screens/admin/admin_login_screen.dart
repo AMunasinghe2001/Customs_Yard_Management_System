@@ -10,6 +10,7 @@ import '../../widgets/forgot_password_panel.dart';
 import '../../core/db_client.dart';
 import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
+import '../../core/idle_lock.dart';
 import '../../models/models.dart';
 import '../../widgets/password_expired_stage.dart';
 import '../../services/services.dart';
@@ -113,7 +114,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
       ref.read(currentProfileProvider.notifier).state = profile;
       if (mounted) {
         context.showSuccess('Logged in successfully as ${profile.fullName}');
-        context.go('/admin');
+        context.go(resumeRouteAfterSignIn(uid: profile.id, home: '/admin'));
       }
     } catch (e) {
       setState(() => _error = _friendlyError(e.toString()));
@@ -137,7 +138,9 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
         return;
       }
       ref.read(currentProfileProvider.notifier).state = profile;
-      if (mounted) context.go('/admin');
+      if (mounted) {
+      context.go(resumeRouteAfterSignIn(uid: profile.id, home: '/admin'));
+    }
     } catch (e) {
       setState(() => _error = _friendlyError(e.toString()));
     } finally {
@@ -298,7 +301,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                                       if (!mounted) return;
                                       context.showSuccess(
                                           'Logged in successfully as ${p.fullName}');
-                                      context.go('/admin');
+                                      context.go(resumeRouteAfterSignIn(uid: p.id, home: '/admin'));
                                     },
                                     // ⚠️ Back to THIS form, not into the app —
                                     // see the note on the yard portal. The

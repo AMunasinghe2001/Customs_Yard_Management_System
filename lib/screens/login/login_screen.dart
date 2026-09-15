@@ -10,6 +10,7 @@ import '../../widgets/forgot_password_panel.dart';
 import '../../core/db_client.dart';
 import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
+import '../../core/idle_lock.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/auth_back_button.dart';
@@ -114,7 +115,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ref.read(currentProfileProvider.notifier).state = profile;
       if (mounted) {
         context.showSuccess('Logged in successfully as ${profile.fullName}');
-        context.go('/dashboard');
+        context.go(resumeRouteAfterSignIn(uid: profile.id, home: '/dashboard'));
       }
     } catch (e) {
       ref.read(loginErrorProvider.notifier).state =
@@ -297,7 +298,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       if (!mounted) return;
                                       context.showSuccess(
                                           'Logged in successfully as ${p.fullName}');
-                                      context.go('/dashboard');
+                                      context.go(resumeRouteAfterSignIn(uid: p.id, home: '/dashboard'));
                                     },
                                     // ⚠️ Back to THIS form, not into the app.
                                     // The stage has signed the session out,

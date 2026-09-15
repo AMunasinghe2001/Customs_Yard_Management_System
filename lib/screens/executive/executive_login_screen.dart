@@ -18,6 +18,7 @@ import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
 import '../../core/session_reset.dart';
+import '../../core/idle_lock.dart';
 
 /// Two-step login for the Executive Office: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -268,7 +269,7 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
     ref.read(currentProfileProvider.notifier).state = profile;
     if (mounted) {
       context.showSuccess('Logged in as ${profile.fullName}');
-      context.go('/executive');
+      context.go(resumeRouteAfterSignIn(uid: profile.id, home: '/executive'));
     }
   }
 
