@@ -120,11 +120,13 @@ void main() {
   group('every text box is one height, and does not glow white', () {
     final theme = _read('lib/core/theme.dart');
 
-    test('the fill is the card colour, not pure white', () {
-      // ⚠️ `surfaceDark` is #FFFFFF in light mode while a card is #F7F9FC, so
-      // each field sat on its card as a brighter white rectangle — the pale
-      // outline around every box.
-      expect(theme, contains('fillColor: colors.cardDark'));
+    test('the fill is a field colour of its own', () {
+      // ⚠️ This asserted `cardDark` when it was written. That was a step, not
+      // the answer: a field painted the CARD colour disappears into the card
+      // it sits on, so the same form held boxes that looked grey and boxes
+      // that looked white. `fieldFill` differs from both the card and the
+      // surface — the full rule lives in one_field_height_test.dart.
+      expect(theme, contains('fillColor: colors.fieldFill'));
       expect(theme.contains('fillColor: colors.surfaceDark'), isFalse,
           reason: 'the fields are pure white on an off-white card again');
     });

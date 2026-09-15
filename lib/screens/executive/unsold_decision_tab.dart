@@ -476,9 +476,7 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
               hintStyle:
                   TextStyle(color: context.colors.textMuted, fontSize: 12),
               filled: true,
-              fillColor: context.colors.cardDark,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              fillColor: context.colors.fieldFill,
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide(color: context.colors.borderColor)),

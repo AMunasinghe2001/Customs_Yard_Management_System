@@ -343,16 +343,13 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                           StyledDropdownFormField<String>(
                             value: _position,
                             label: 'Position *',
-                            // ⚠️ Matches the TextFormFields under it. The
-                            // widget defaults to `isDense` with 12px of
-                            // vertical padding, while a plain field on this
-                            // form takes Material's roomier default — so the
-                            // dropdown sat visibly shorter than every box
-                            // below it, and its hover splash ate into the
-                            // gap before the helper text.
-                            isDense: false,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 16),
+                            // ⚠️ No size override. This used to force
+                            // `isDense: false` + 16px padding because the
+                            // widget shrank itself with a 12px label, so the
+                            // dropdown sat shorter than every box below it.
+                            // That is fixed in StyledDropdownFormField now,
+                            // and restating it here would make this one
+                            // dropdown taller than the rest.
                             helperText:
                                 'Select your official ICT division designation',
                             menuWidth: 364,

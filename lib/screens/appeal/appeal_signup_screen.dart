@@ -348,9 +348,6 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
                             // dropdown sat visibly shorter than every box
                             // below it, and its hover splash ate into the
                             // gap before the helper text.
-                            isDense: false,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 16),
                             helperText:
                                 'Only one DC and one SDDC account can exist',
                             menuWidth: 364,

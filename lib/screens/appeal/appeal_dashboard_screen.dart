@@ -914,8 +914,6 @@ class _AppealYardFilter extends ConsumerWidget {
           helperText: null,
           isDense: true,
           menuWidth: 220,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           prefixIcon:
               Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [

@@ -404,13 +404,25 @@ class StyledDropdownFormField<T> extends StatelessWidget {
               isEmpty: value == null,
               decoration: InputDecoration(
                 labelText: label,
-                labelStyle: labelStyle ?? const TextStyle(fontSize: 12),
+                // ⚠️ No 12px label override. A smaller label makes the
+                // decorator reserve less height, so the dropdown came out
+                // shorter than the TextField beside it however the padding
+                // was set — the label, not the padding, was the real cause.
+                labelStyle: labelStyle,
                 floatingLabelBehavior: floatingLabelBehavior,
                 isDense: isDense,
                 // Rendered below instead — see the note above.
                 helperText: null,
-                filled: fillColor != null,
-                fillColor: fillColor,
+                // ⚠️ ALWAYS filled, like every other field.
+                //
+                // This was `filled: fillColor != null`, so a dropdown with no
+                // explicit colour was left UNFILLED — white — while the text
+                // boxes around it took the theme's grey. That is why one
+                // dropdown on a form looked grey and the rest looked white:
+                // the grey ones were the few that happened to pass a colour.
+                filled: true,
+                fillColor: fillColor ??
+                    Theme.of(context).inputDecorationTheme.fillColor,
                 // ⚠️ Not errorText — that would draw the message under the
                 // box, inside the ink again, AND a second time in the
                 // sibling below. `errorBorder` still fires off this flag, so
@@ -418,8 +430,13 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 error: field.errorText == null ? null : const SizedBox.shrink(),
                 prefixIcon: prefixIcon,
                 prefixIconConstraints: prefixIconConstraints,
+                // ⚠️ The THEME's padding when no caller overrides it, so a
+                // dropdown is exactly as tall as the TextField beside it.
+                // This used to fall back to its own `vertical: 12` while the
+                // theme said 11, and the two controls in one row sat at
+                // different heights for no reason anyone could see.
                 contentPadding: contentPadding ??
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    Theme.of(context).inputDecorationTheme.contentPadding,
                 suffixIcon: Icon(Icons.arrow_drop_down_rounded,
                     color: accentColor ?? context.colors.primaryGold, size: 24),
                 // maxHeight caps the 24px arrow so it cannot make the box
@@ -579,8 +596,6 @@ class _StyledDropdownContentState<T>
                             },
                           ),
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                         borderSide:

@@ -23,8 +23,7 @@ extension AppSnackBar on BuildContext {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       elevation: 6,
       duration: const Duration(seconds: 3),
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       content: Row(children: [
         Icon(icon, color: Colors.white, size: 18),
         const SizedBox(width: 10),
@@ -64,7 +63,9 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color dangerRed;
   final Color heldOrange;
   final Color surfaceDark; // Used as standard container surface
-  final Color cardDark;    // Used as standard card color
+  /// The inside of every text box and dropdown. See [_fieldFillLight].
+  final Color fieldFill;
+  final Color cardDark; // Used as standard card color
   final Color borderColor;
   final Color textPrimary;
   final Color textSecondary;
@@ -84,6 +85,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.dangerRed,
     required this.heldOrange,
     required this.surfaceDark,
+    required this.fieldFill,
     required this.cardDark,
     required this.borderColor,
     required this.textPrimary,
@@ -106,6 +108,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? dangerRed,
     Color? heldOrange,
     Color? surfaceDark,
+    Color? fieldFill,
     Color? cardDark,
     Color? borderColor,
     Color? textPrimary,
@@ -126,6 +129,7 @@ class AppColors extends ThemeExtension<AppColors> {
       dangerRed: dangerRed ?? this.dangerRed,
       heldOrange: heldOrange ?? this.heldOrange,
       surfaceDark: surfaceDark ?? this.surfaceDark,
+      fieldFill: fieldFill ?? this.fieldFill,
       cardDark: cardDark ?? this.cardDark,
       borderColor: borderColor ?? this.borderColor,
       textPrimary: textPrimary ?? this.textPrimary,
@@ -141,7 +145,8 @@ class AppColors extends ThemeExtension<AppColors> {
     return AppColors(
       customsBlue: Color.lerp(customsBlue, other.customsBlue, t)!,
       customsBlueDark: Color.lerp(customsBlueDark, other.customsBlueDark, t)!,
-      customsBlueLight: Color.lerp(customsBlueLight, other.customsBlueLight, t)!,
+      customsBlueLight:
+          Color.lerp(customsBlueLight, other.customsBlueLight, t)!,
       primaryNavy: Color.lerp(primaryNavy, other.primaryNavy, t)!,
       primaryGold: Color.lerp(primaryGold, other.primaryGold, t)!,
       accentBlue: Color.lerp(accentBlue, other.accentBlue, t)!,
@@ -151,6 +156,7 @@ class AppColors extends ThemeExtension<AppColors> {
       dangerRed: Color.lerp(dangerRed, other.dangerRed, t)!,
       heldOrange: Color.lerp(heldOrange, other.heldOrange, t)!,
       surfaceDark: Color.lerp(surfaceDark, other.surfaceDark, t)!,
+      fieldFill: Color.lerp(fieldFill, other.fieldFill, t)!,
       cardDark: Color.lerp(cardDark, other.cardDark, t)!,
       borderColor: Color.lerp(borderColor, other.borderColor, t)!,
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
@@ -168,6 +174,7 @@ class AppTheme {
   static const Color warningAmber = Color(0xFFF57F17);
   static const Color dangerRed = Color(0xFFC62828);
   static const Color heldOrange = Color(0xFFE65100);
+
   /// Appeal Directorate accent – deep purple for strong contrast against the
   /// dark navy scaffold, and a royal/legal feel that pairs well with gold.
   static const Color appealPurple = Color(0xFF7B1FA2);
@@ -198,7 +205,7 @@ class AppTheme {
   static const Color _primaryNavy = Color(0xFF0e0c3a);
   static const Color _accentBlue = Color(0xFF231f87);
   static const Color _accentLightBlue = Color(0xFF6b67d9);
-  
+
   // Dark mode surfaces
   static const Color _surfaceDark = Color(0xFF1a1764);
   static const Color _cardDark = Color(0xFF1e1b7a);
@@ -216,16 +223,31 @@ class AppTheme {
   static const Color accentBlue = _accentBlue;
   static const Color accentLightBlue = _accentLightBlue;
   static const Color cardDark = _cardDark;
+
+  /// Dark mode keeps the surface colour: on a dark card the two already
+  /// differ enough to read as a field.
+  static const Color fieldFill = _surfaceDark;
   static const Color borderColor = _borderDark;
   static const Color textSecondary = _textSecondaryDark;
   static const Color textMuted = _textMutedDark;
   static const Color scaffoldBg = _bgDark;
 
   // Custom Light Colors
-  static const Color _bgLight = Color(0xFFF0F4FA);      // Very light, slightly cool grey for background
-  static const Color _surfaceLight = Color(0xFFFFFFFF); // Pure white for generic container surfaces
-  static const Color _cardLight = Color(0xFFF7F9FC);    // Subtly distinguished white for cards
-  static const Color _borderLight = Color(0xFFDDE3EC);  // Soft border
+  static const Color _bgLight =
+      Color(0xFFF0F4FA); // Very light, slightly cool grey for background
+  static const Color _surfaceLight =
+      Color(0xFFFFFFFF); // Pure white for generic container surfaces
+  static const Color _cardLight =
+      Color(0xFFF7F9FC); // Subtly distinguished white for cards
+  static const Color _borderLight = Color(0xFFDDE3EC); // Soft border
+  /// The inside of every text box and dropdown, light mode.
+  ///
+  /// ⚠️ A real grey, NOT `_cardLight`. The fields used to be filled with the
+  /// card colour (#F7F9FC) on cards that were already that colour, so a box
+  /// only showed up where the page behind it happened to be white — which is
+  /// why some looked white and others grey in the same form. This reads as a
+  /// field wherever it sits.
+  static const Color _fieldFillLight = Color(0xFFEDF1F7);
   static const Color _textPrimaryLight = Color(0xFF1A1A24);
   static const Color _textSecondaryLight = Color(0xFF5A6372);
   static const Color _textMutedLight = Color(0xFF8A93A2);
@@ -243,6 +265,8 @@ class AppTheme {
     dangerRed: dangerRed,
     heldOrange: heldOrange,
     surfaceDark: _surfaceDark,
+    // Dark mode: the surface already reads as a field against the card.
+    fieldFill: _surfaceDark,
     cardDark: _cardDark,
     borderColor: _borderDark,
     textPrimary: _textPrimaryDark,
@@ -255,15 +279,17 @@ class AppTheme {
     customsBlue: _customsBlue,
     customsBlueDark: _customsBlueDark,
     customsBlueLight: _customsBlueLight,
-    primaryNavy: _primaryNavy, // primary brand stays the same if needed, or invert
+    primaryNavy:
+        _primaryNavy, // primary brand stays the same if needed, or invert
     primaryGold: primaryGold,
-    accentBlue: _accentBlue,   // brand blue
+    accentBlue: _accentBlue, // brand blue
     accentLightBlue: Color(0xFF5753C4), // slightly darker for contrast on white
     successGreen: successGreen,
     warningAmber: warningAmber,
     dangerRed: dangerRed,
     heldOrange: heldOrange,
     surfaceDark: _surfaceLight,
+    fieldFill: _fieldFillLight,
     cardDark: _cardLight,
     borderColor: _borderLight,
     textPrimary: _textPrimaryLight,
@@ -273,7 +299,8 @@ class AppTheme {
   );
 
   static ThemeData get darkTheme => _buildTheme(Brightness.dark, _darkColors);
-  static ThemeData get lightTheme => _buildTheme(Brightness.light, _lightColors);
+  static ThemeData get lightTheme =>
+      _buildTheme(Brightness.light, _lightColors);
 
   static ThemeData _buildTheme(Brightness brightness, AppColors colors) {
     return ThemeData(
@@ -294,21 +321,30 @@ class AppTheme {
       scaffoldBackgroundColor: colors.scaffoldBg,
       textTheme: GoogleFonts.outfitTextTheme(
         ThemeData(brightness: brightness).textTheme.copyWith(
-          displayLarge: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w700),
-          displayMedium: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600),
-          headlineLarge: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w700),
-          headlineMedium: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600),
-          headlineSmall: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600),
-          titleLarge: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600),
-          titleMedium: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w500),
-          bodyLarge: TextStyle(color: colors.textPrimary),
-          bodyMedium: TextStyle(color: colors.textSecondary),
-          bodySmall: TextStyle(color: colors.textMuted),
-          labelLarge: const TextStyle(color: primaryGold, fontWeight: FontWeight.w600),
-        ),
+              displayLarge: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w700),
+              displayMedium: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w600),
+              headlineLarge: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w700),
+              headlineMedium: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w600),
+              headlineSmall: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w600),
+              titleLarge: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w600),
+              titleMedium: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w500),
+              bodyLarge: TextStyle(color: colors.textPrimary),
+              bodyMedium: TextStyle(color: colors.textSecondary),
+              bodySmall: TextStyle(color: colors.textMuted),
+              labelLarge: const TextStyle(
+                  color: primaryGold, fontWeight: FontWeight.w600),
+            ),
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: brightness == Brightness.dark ? _primaryNavy : _customsBlueDark,
+        backgroundColor:
+            brightness == Brightness.dark ? _primaryNavy : _customsBlueDark,
         foregroundColor: Colors.white, // Always white text on app bar
         elevation: 0,
         centerTitle: false,
@@ -323,16 +359,18 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        // ⚠️ The CARD colour, not `surfaceDark`.
+        // ⚠️ A dedicated FIELD colour, not the card's and not the surface's.
         //
-        // In light mode `surfaceDark` resolves to pure #FFFFFF while a card is
-        // #F7F9FC, so every text box sat on its card as a slightly brighter
-        // white rectangle — read as a faint pale outline around each field,
-        // which is what it looked like. They are the same colour now, and the
-        // border alone draws the field. Dark mode is unchanged in effect:
-        // there the two are #1a1764 and #1e1b7a, close enough that nothing
-        // visibly moves.
-        fillColor: colors.cardDark,
+        // Two wrong versions preceded this. `surfaceDark` is pure #FFFFFF in
+        // light mode, so a field sat on its card as a brighter white rectangle
+        // — a pale outline round every box. `cardDark` (#F7F9FC) fixed that
+        // but made the field the same colour as the card it sits on, so a box
+        // only showed where the page behind it happened to be white: some
+        // looked grey and others white in the SAME form.
+        //
+        // `fieldFill` is a real grey that differs from BOTH, so a field reads
+        // as a field wherever it is placed.
+        fillColor: colors.fieldFill,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: colors.borderColor),
@@ -358,7 +396,7 @@ class AppTheme {
         // ICT dialogs set theirs explicitly rather than relying on this.
         isDense: true,
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         labelStyle: TextStyle(color: colors.textSecondary),
         hintStyle: TextStyle(color: colors.textMuted),
       ),
@@ -367,7 +405,8 @@ class AppTheme {
           backgroundColor: primaryGold,
           foregroundColor: _primaryNavy, // Keep gold buttons with navy text
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ),
       ),
@@ -376,11 +415,13 @@ class AppTheme {
           foregroundColor: primaryGold,
           side: const BorderSide(color: primaryGold),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       ),
       dataTableTheme: DataTableThemeData(
-        headingTextStyle: const TextStyle(color: primaryGold, fontWeight: FontWeight.w700, fontSize: 13),
+        headingTextStyle: const TextStyle(
+            color: primaryGold, fontWeight: FontWeight.w700, fontSize: 13),
         dataTextStyle: TextStyle(color: colors.textPrimary, fontSize: 14),
         headingRowColor: WidgetStateProperty.all(colors.surfaceDark),
         dataRowColor: WidgetStateProperty.resolveWith((states) {
@@ -398,7 +439,10 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: colors.cardDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        titleTextStyle: TextStyle(color: colors.textPrimary, fontSize: 20, fontWeight: FontWeight.w700),
+        titleTextStyle: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.w700),
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: colors.cardDark,

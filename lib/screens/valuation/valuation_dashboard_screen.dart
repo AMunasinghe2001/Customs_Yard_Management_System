@@ -1179,8 +1179,6 @@ class _ValSearchFieldState extends State<_ValSearchField> {
                 ),
           filled: true,
           fillColor: gold.withOpacity(0.06),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           border: border(gold.withOpacity(0.4)),
           enabledBorder: border(gold.withOpacity(0.4)),
           focusedBorder: border(gold, 1.5),
@@ -1225,8 +1223,6 @@ class _ValYardFilter extends ConsumerWidget {
           helperText: null,
           isDense: true,
           menuWidth: 220,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           prefixIcon:
               Icon(Icons.warehouse_rounded, color: gold, size: 20),
           options: [
@@ -1920,9 +1916,7 @@ class _ValBidsAndRevalDialogState
             isDense: true,
             hintText: 'Note (optional)',
             filled: true,
-            fillColor: context.colors.cardDark,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            fillColor: context.colors.fieldFill,
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(color: context.colors.borderColor)),

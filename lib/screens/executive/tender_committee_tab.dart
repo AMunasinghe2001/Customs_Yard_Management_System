@@ -768,9 +768,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                     isDense: true,
                     labelText: 'Member ${i + 1} name',
                     filled: true,
-                    fillColor: context.colors.cardDark,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
+                    fillColor: context.colors.fieldFill,
                     border: border(context.colors.borderColor),
                     enabledBorder: border(context.colors.borderColor),
                     focusedBorder: border(accent, 1.4),
@@ -802,9 +800,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                       isDense: true,
                       labelText: 'Designation',
                       filled: true,
-                      fillColor: context.colors.cardDark,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
+                      fillColor: context.colors.fieldFill,
                       border: border(context.colors.borderColor),
                       enabledBorder: border(context.colors.borderColor),
                       focusedBorder: border(accent, 1.4),
@@ -820,9 +816,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                       isDense: true,
                       labelText: 'Salary No.',
                       filled: true,
-                      fillColor: context.colors.cardDark,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
+                      fillColor: context.colors.fieldFill,
                       border: border(context.colors.borderColor),
                       enabledBorder: border(context.colors.borderColor),
                       focusedBorder: border(accent, 1.4),
@@ -864,9 +858,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
               hintStyle:
                   TextStyle(color: context.colors.textMuted, fontSize: 12),
               filled: true,
-              fillColor: context.colors.cardDark,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              fillColor: context.colors.fieldFill,
               border: border(context.colors.borderColor),
               enabledBorder: border(context.colors.borderColor),
               focusedBorder: border(accent, 1.4),
@@ -1440,9 +1432,7 @@ class _CommitteeValuationDialogState
                   hintStyle:
                       TextStyle(color: context.colors.textMuted, fontSize: 12),
                   filled: true,
-                  fillColor: context.colors.cardDark,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  fillColor: context.colors.fieldFill,
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide:

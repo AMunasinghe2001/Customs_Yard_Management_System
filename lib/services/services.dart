@@ -2764,8 +2764,13 @@ class WarehouseService {
 
   Future<List<Map<String, dynamic>>> getCategoryZoneCombinedSummary() async {
     // 1. Fetch Categories mapping
-    final categoriesData =
-        await supabase.from('package_categories').select('name, target_zone');
+    // ⚠️ The per-yard VIEW. `target_zone` no longer exists on
+    // `package_categories` — migration 038 dropped it once 037 had moved the
+    // routing to package_category_targets. Selecting it from the table would
+    // fail at runtime with "column target_zone does not exist".
+    final categoriesData = await supabase
+        .from('package_categories_for_yard')
+        .select('name, target_zone');
     final Map<String, String> categoryZoneMap = {};
     final Map<String, String> originalNamesMap = {};
 

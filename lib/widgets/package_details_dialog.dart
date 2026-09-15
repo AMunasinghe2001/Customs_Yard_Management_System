@@ -7907,7 +7907,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                       child: StyledDropdownFormField<String>(
                         label: 'Activity ${rIdx + 1} *',
                         menuWidth: 300,
-                        fillColor: context.colors.cardDark,
+                        fillColor: context.colors.fieldFill,
                         value: activities
                                 .contains(widget.row.selectedReasons[rIdx])
                             ? widget.row.selectedReasons[rIdx]
@@ -9829,9 +9829,7 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
                         decoration: const InputDecoration(
                           labelText: 'Quantity',
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
-                        ),
+                          ),
                         onChanged: (v) => _setQty(int.tryParse(v) ?? 0),
                       ),
                     ),

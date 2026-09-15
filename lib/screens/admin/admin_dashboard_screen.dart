@@ -703,7 +703,6 @@ class _OnlineMemberTile extends StatelessWidget {
       dense: true,
       visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
       minVerticalPadding: 0,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14),
       horizontalTitleGap: 12,
       leading: Container(
         height: 32,

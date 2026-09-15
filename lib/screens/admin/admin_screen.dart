@@ -1777,8 +1777,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                         data: (list) => StyledDropdownFormField<String?>(
                           value: selectedWarehouseId,
                           label: 'Target Warehouse (Auto-assign)',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 18),
                           options: [
                             const StyledDropdownOption<String?>(
                                 null, 'None: Do not auto-assign'),
@@ -1824,8 +1822,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             label: zones.isEmpty
                                 ? 'Target Zone (none defined)'
                                 : 'Target Zone',
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 18),
                             options: [
                               const StyledDropdownOption<String?>(null, 'None'),
                               ...zones.map((z) => StyledDropdownOption<String?>(
@@ -1903,13 +1899,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
         builder: (ctx) => Consumer(builder: (ctx, ref, _) {
               return StatefulBuilder(builder: (ctx, setState) {
                 final warehouses = ref.watch(warehousesProvider);
-                // ⚠️ Who may change WHAT. The category's name and description
-                // are one national list and belong to ICT; where its goods go
-                // is this yard's own business. See migration 037 — the yard
-                // used to be shown editable name/description fields whose
-                // save RLS silently threw away.
-                final isIct =
-                    ref.watch(currentProfileProvider)?.isIct ?? false;
                 return StyledFormDialog(
                   label: 'Item Category',
                   title: 'Edit Package Category',
@@ -1923,20 +1912,12 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                     children: [
                       TextField(
                           controller: nameC,
-                          readOnly: !isIct,
-                          enabled: isIct,
-                          decoration: InputDecoration(
-                              labelText: 'Category Name *',
-                              helperText:
-                                  isIct ? null : 'Set by the ICT Directorate')),
+                          decoration: const InputDecoration(
+                              labelText: 'Category Name *')),
                       TextField(
                           controller: descC,
-                          readOnly: !isIct,
-                          enabled: isIct,
-                          decoration: InputDecoration(
-                              labelText: 'Description',
-                              helperText:
-                                  isIct ? null : 'Set by the ICT Directorate'),
+                          decoration:
+                              const InputDecoration(labelText: 'Description'),
                           maxLines: 3),
                       warehouses.when(
                         data: (list) => StyledDropdownFormField<String?>(
@@ -1944,8 +1925,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                               ? selectedWarehouseId
                               : null,
                           label: 'Target Warehouse (Auto-assign)',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 18),
                           options: [
                             const StyledDropdownOption<String?>(
                                 null, 'None: Do not auto-assign'),
@@ -1996,8 +1975,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             label: zones.isEmpty
                                 ? 'Target Zone (none defined)'
                                 : 'Target Zone',
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 18),
                             options: [
                               const StyledDropdownOption<String?>(null, 'None'),
                               ...zones.map((z) => StyledDropdownOption<String?>(
@@ -2060,7 +2037,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                           selectedZone == null
                                       ? null
                                       : selectedZone,
-                                  canEditName: isIct,
                                 );
                           } catch (e) {
                             if (ctx.mounted) {

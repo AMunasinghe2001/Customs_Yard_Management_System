@@ -944,8 +944,6 @@ class _StyledYardPicker extends StatelessWidget {
           helperText: null,
           isDense: true,
           menuWidth: width,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           prefixIcon: Icon(Icons.warehouse_rounded,
               color: context.colors.primaryGold, size: 20),
           options: [
@@ -4852,8 +4850,6 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                 helperText: null,
                 isDense: true,
                 menuWidth: 400,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 options: [
                   for (final e in kTenderSaleTypes.entries)
                     StyledDropdownOption(e.key, e.value),
@@ -6761,9 +6757,7 @@ class _EnterBidsDialogState extends ConsumerState<EnterBidsDialog> {
               prefixText: 'Rs. ',
               hintText: '0.00',
               filled: true,
-              fillColor: context.colors.cardDark,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              fillColor: context.colors.fieldFill,
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide(color: context.colors.borderColor)),
@@ -7774,8 +7768,6 @@ class _DestructionFormDialogState
                 helperText: null,
                 isDense: true,
                 menuWidth: 400,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 options: [
                   for (final e in kDestructionTypes.entries)
                     StyledDropdownOption(e.key, e.value),

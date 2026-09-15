@@ -86,8 +86,6 @@ class DisposalSearchState extends ConsumerState<DisposalSearch> {
                 ),
           filled: true,
           fillColor: context.colors.primaryGold.withOpacity(0.06),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           border: border(context.colors.primaryGold.withOpacity(0.4)),
           enabledBorder: border(context.colors.primaryGold.withOpacity(0.4)),
           focusedBorder: border(context.colors.primaryGold, 1.5),
@@ -149,8 +147,6 @@ class YardAllFilter extends ConsumerWidget {
           helperText: null,
           isDense: true,
           menuWidth: 220,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           prefixIcon: Icon(Icons.warehouse_rounded,
               color: context.colors.primaryGold, size: 20),
           options: [

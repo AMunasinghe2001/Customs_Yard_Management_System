@@ -350,9 +350,6 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
                             // dropdown sat visibly shorter than every box
                             // below it, and its hover splash ate into the
                             // gap before the helper text.
-                            isDense: false,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 16),
                             helperText: 'One account per post (DGC · ADGC · SDC · DC)',
                             menuWidth: 364,
                             prefixIcon: Icon(Icons.badge_outlined,

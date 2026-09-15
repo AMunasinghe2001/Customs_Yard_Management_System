@@ -110,7 +110,7 @@ class _CustomDropdownFieldState<T> extends State<CustomDropdownField<T>> {
             ? const BoxConstraints() 
             : null,
           filled: true,
-          fillColor: context.colors.surfaceDark,
+          fillColor: context.colors.fieldFill,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: context.colors.borderColor, width: 1.5),
@@ -137,11 +137,7 @@ class _CustomDropdownFieldState<T> extends State<CustomDropdownField<T>> {
               : context.colors.textSecondary,
             fontWeight: _focusNode.hasFocus ? FontWeight.w600 : FontWeight.normal,
           ),
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: widget.prefixIcon != null ? 8 : 16,
-            vertical: widget.isDense ? 12 : 16,
           ),
-        ),
         dropdownColor: context.colors.cardDark,
         icon: Icon(
           Icons.arrow_drop_down_rounded,

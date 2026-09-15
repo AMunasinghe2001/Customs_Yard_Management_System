@@ -207,8 +207,6 @@ class DisposalDateFilter extends StatelessWidget {
           isDense: true,
           menuWidth: 200,
           splashRadius: 14,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           prefixIcon: Icon(
             filterType == 'day'
                 ? Icons.today_rounded

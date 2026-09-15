@@ -45,6 +45,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   // yard; the prefix of the generated SR number follows this selection.
   // Normalised through yardByCode so it always matches a dropdown item.
   String _selectedYard = yardByCode(AppSession.currentYard).code;
+
   /// Which register this number is minted from -- SR or OA. Each keeps
   /// its own serial run, so switching this re-mints the number rather
   /// than continuing the other register's count.
@@ -500,8 +501,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       });
       _tabController.animateTo(1);
     } catch (e) {
-      if (mounted)
-        showErrorSnack(context, e);
+      if (mounted) showErrorSnack(context, e);
     } finally {
       setState(() => _isChecking = false);
     }
@@ -719,15 +719,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 StyledDropdownFormField<String>(
                                   label: 'Registration Type',
                                   menuWidth: 260,
-                                  // Match the roomier (non-dense) section
-                                  // fields below (Old SR Number / SR Number).
-                                  isDense: false,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 16),
-                                  valueStyle: TextStyle(
-                                      fontSize: 16,
-                                      color: context.colors.textPrimary),
-                                  labelStyle: const TextStyle(fontSize: 14),
+                                  // ⚠️ No isDense/valueStyle override. These
+                                  // made this dropdown taller and its text
+                                  // bigger than every field below it, so one
+                                  // form showed three different control
+                                  // sizes. The theme sets the height once.
                                   value: _entryMode,
                                   options: const [
                                     StyledDropdownOption('new', 'New Entry'),
@@ -786,19 +782,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                           // yard under two directorates would
                                           // otherwise give no clue which one
                                           // this account writes under.
-                                          labelText:
-                                              AppSession.currentDirectorate ==
-                                                      null
-                                                  ? 'Yard'
-                                                  : 'Yard · '
-                                                      '${directorateSrPrefix(AppSession.currentDirectorate)}',
-                                        ).copyWith(
-                                          fillColor:
-                                              Theme.of(context).brightness ==
-                                                      Brightness.dark
-                                                  ? Colors.grey.shade900
-                                                  : Colors.grey.shade100,
-                                          filled: true,
+                                          labelText: AppSession
+                                                      .currentDirectorate ==
+                                                  null
+                                              ? 'Yard'
+                                              : 'Yard · '
+                                                  '${directorateSrPrefix(AppSession.currentDirectorate)}',
                                         ),
                                       ),
                                     ),
@@ -813,15 +802,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                       child: StyledDropdownFormField<String>(
                                         label: 'Register',
                                         menuWidth: 140,
-                                        isDense: false,
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 16),
-                                        valueStyle: TextStyle(
-                                            fontSize: 16,
-                                            color: context.colors.textPrimary),
-                                        labelStyle:
-                                            const TextStyle(fontSize: 14),
                                         value: _srDocType,
                                         options: [
                                           for (final t in kSrDocTypes)
@@ -1175,38 +1155,65 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               .slideY(
                                   begin: 0.1, duration: 400.ms, delay: 350.ms)
                               .fadeIn(),
-                          const Gap(24),
+                          const Gap(16),
+                          // ⚠️ The two actions read as a PAIR now.
+                          //
+                          // "Next" was a full-width 52px slab and "Reset" a
+                          // small default OutlinedButton beside it, so the
+                          // row looked like one button plus an afterthought.
+                          // Both are 44 high, both sized to their content,
+                          // and they sit at the end of the form the way the
+                          // dialogs' Cancel/Save pair does.
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Expanded(
-                                child: SizedBox(
-                                  height: 52,
-                                  child: Tooltip(
-                                    message: isOfficer
-                                        ? 'Package entry/updates are restricted to administrators only'
-                                        : '',
-                                    child: ElevatedButton.icon(
-                                      icon: _isChecking
-                                          ? SizedBox(
-                                              width: 18,
-                                              height: 18,
-                                              child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  color: Colors.white))
-                                          : const Icon(Icons.flash_on_rounded),
-                                      label: Text(_isChecking
-                                          ? 'Processing...'
-                                          : 'Next'),
-                                      onPressed:
-                                          _isChecking ? null : _checkPackage,
-                                    ),
+                              SizedBox(
+                                height: 44,
+                                child: OutlinedButton.icon(
+                                  onPressed: _isChecking ? null : _reset,
+                                  icon: const Icon(Icons.refresh_rounded,
+                                      size: 18),
+                                  label: const Text('Reset'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
                                   ),
                                 ),
                               ),
                               const Gap(12),
-                              OutlinedButton(
-                                  onPressed: _reset,
-                                  child: const Text('Reset')),
+                              SizedBox(
+                                height: 44,
+                                child: Tooltip(
+                                  message: isOfficer
+                                      ? 'Package entry/updates are restricted to administrators only'
+                                      : '',
+                                  child: ElevatedButton.icon(
+                                    icon: _isChecking
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white))
+                                        : const Icon(Icons.flash_on_rounded,
+                                            size: 18),
+                                    label: Text(
+                                        _isChecking ? 'Processing...' : 'Next'),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 28),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10)),
+                                    ),
+                                    onPressed:
+                                        _isChecking ? null : _checkPackage,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -1533,7 +1540,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
           children: [
             Text('Warehouse Confirmation',
                 style: Theme.of(context).textTheme.titleLarge),
-            const Gap(20),
+            const Gap(14),
             if (_warehouseSent)
               Container(
                 width: double.infinity,
@@ -1563,7 +1570,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                   )
                       .animate()
                       .slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
-                  const Gap(20),
+                  const Gap(14),
                   if (_savedPackage != null)
                     Column(
                       children: [
@@ -1670,7 +1677,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                       textAlign: TextAlign.center),
                 ]),
               ),
-            const Gap(24),
+            const Gap(14),
             if (widget.tempPackageItems != null && !_warehouseSent) ...[
               Text('Goods Distribution',
                   style: Theme.of(context).textTheme.titleMedium),
@@ -1831,7 +1838,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                 );
               }),
             ],
-            const Gap(20),
+            const Gap(14),
             if (!_warehouseSent)
               SizedBox(
                 width: double.infinity,
@@ -2068,7 +2075,7 @@ class _QrCodePage extends StatelessWidget {
         children: [
           Text('QR Code Generate',
               style: Theme.of(context).textTheme.titleLarge),
-          const Gap(20),
+          const Gap(14),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(28),
@@ -2102,7 +2109,7 @@ class _QrCodePage extends StatelessWidget {
                       color: context.colors.textSecondary, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
-                const Gap(24),
+                const Gap(14),
                 if (package != null)
                   ElevatedButton.icon(
                     onPressed: () => showAppDialog(
@@ -2230,11 +2237,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                   controller: widget.row.nameCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Goods Name *',
-                      isDense: true,
-                      helperText: ' ',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                    labelText: 'Goods Name *',
+                    isDense: true,
+                    helperText: ' ',
+                  ),
                   validator: (v) => widget.showValidationErrors &&
                           (v == null || v.trim().isEmpty)
                       ? 'Required'
@@ -2293,11 +2299,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 child: TextFormField(
                   controller: widget.row.unitOtherCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Name *',
-                      isDense: true,
-                      helperText: ' ',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                    labelText: 'Name *',
+                    isDense: true,
+                    helperText: ' ',
+                  ),
                   validator: (v) => widget.showValidationErrors &&
                           widget.row.unitOfMeasureCtrl.text == 'Other' &&
                           (v == null || v.trim().isEmpty)
@@ -2314,11 +2319,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                 controller: widget.row.qtyCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'Quantity *',
-                    isDense: true,
-                    helperText: ' ',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                  labelText: 'Quantity *',
+                  isDense: true,
+                  helperText: ' ',
+                ),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 validator: (v) {
@@ -2379,11 +2383,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 child: TextFormField(
                   controller: widget.row.innerQtyCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Inner Qty *',
-                      isDense: true,
-                      helperText: ' ',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                    labelText: 'Inner Qty *',
+                    isDense: true,
+                    helperText: ' ',
+                  ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (v) {
@@ -2434,122 +2437,120 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               ),
             ),
             if (widget.row.nature != kNaturePerishable) ...[
-            const Gap(10),
-            Expanded(
-              flex: 2,
-              child: StyledDropdownFormField<String>(
-                label: 'Status *',
-                menuWidth: 200,
-                value: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
-                        .contains(widget.row.status)
-                    ? widget.row.status
-                    : 'Other',
-                options: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
-                    .map((s) => StyledDropdownOption(s, s))
-                    .toList(),
-                onChanged: (v) {
-                  setState(() {
-                    widget.row.status = v!;
-                    // ⚠️ Drop any activity the NEW status does not offer.
-                    //
-                    // Detain and the disposal statuses have different lists,
-                    // so a choice made under one can be invalid under the
-                    // other. Left in place it would stay on screen but not be
-                    // in the dropdown's options -- the field renders empty
-                    // while the row still holds the old value, and that value
-                    // is what gets saved. Anything the new list DOES contain
-                    // is kept, so switching Forfeit to Abandoned costs the
-                    // officer nothing.
-                    final allowed = postStatusActivitiesFor(widget.row.status);
-                    for (var i = 0;
-                        i < widget.row.selectedReasons.length;
-                        i++) {
-                      if (!allowed.contains(widget.row.selectedReasons[i])) {
-                        widget.row.selectedReasons[i] = null;
-                      }
-                    }
-                  });
-                  widget.onChanged();
-                },
-              ),
-            ),
-            if (widget.row.status == 'Other') ...[
               const Gap(10),
               Expanded(
                 flex: 2,
-                child: TextFormField(
-                  controller: widget.row.otherStatusCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Other Status *',
-                    isDense: true,
-                    helperText: ' ',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  ),
-                  validator: (v) => widget.showValidationErrors &&
-                          widget.row.status == 'Other' &&
-                          (v == null || v.trim().isEmpty)
-                      ? 'Required'
-                      : null,
-                  onChanged: (_) => widget.onChanged(),
+                child: StyledDropdownFormField<String>(
+                  label: 'Status *',
+                  menuWidth: 200,
+                  value: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                          .contains(widget.row.status)
+                      ? widget.row.status
+                      : 'Other',
+                  options: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                      .map((s) => StyledDropdownOption(s, s))
+                      .toList(),
+                  onChanged: (v) {
+                    setState(() {
+                      widget.row.status = v!;
+                      // ⚠️ Drop any activity the NEW status does not offer.
+                      //
+                      // Detain and the disposal statuses have different lists,
+                      // so a choice made under one can be invalid under the
+                      // other. Left in place it would stay on screen but not be
+                      // in the dropdown's options -- the field renders empty
+                      // while the row still holds the old value, and that value
+                      // is what gets saved. Anything the new list DOES contain
+                      // is kept, so switching Forfeit to Abandoned costs the
+                      // officer nothing.
+                      final allowed =
+                          postStatusActivitiesFor(widget.row.status);
+                      for (var i = 0;
+                          i < widget.row.selectedReasons.length;
+                          i++) {
+                        if (!allowed.contains(widget.row.selectedReasons[i])) {
+                          widget.row.selectedReasons[i] = null;
+                        }
+                      }
+                    });
+                    widget.onChanged();
+                  },
                 ),
               ),
-            ],
+              if (widget.row.status == 'Other') ...[
+                const Gap(10),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: widget.row.otherStatusCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Other Status *',
+                      isDense: true,
+                      helperText: ' ',
+                    ),
+                    validator: (v) => widget.showValidationErrors &&
+                            widget.row.status == 'Other' &&
+                            (v == null || v.trim().isEmpty)
+                        ? 'Required'
+                        : null,
+                    onChanged: (_) => widget.onChanged(),
+                  ),
+                ),
+              ],
             ],
             // ⚠️ Category exists to route goods to a WAREHOUSE ZONE. A
             // perishable never reaches a warehouse, so the field has nothing
             // to decide -- and the zone-capacity hint below it would report
             // space the goods will never occupy.
             if (widget.row.nature != kNaturePerishable) ...[
-            const Gap(10),
-            Expanded(
-              flex: 2,
-              child: categories.when(
-                loading: () => const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
-                error: (e, _) => IconButton(
-                    icon: const Icon(Icons.refresh,
-                        size: 16, color: Colors.orange),
-                    onPressed: () => ref.refresh(packageCategoriesProvider),
-                    tooltip: 'Error loading categories'),
-                data: (list) {
-                  final selectedCategory = list
-                      .where((c) => c.name == widget.row.categoryCtrl.text)
-                      .firstOrNull;
-                  return StyledDropdownFormField<String>(
-                    label: 'Category',
-                    menuWidth: 280,
-                    value: selectedCategory?.name,
-                    options: list.map((c) {
-                      final zn = c.targetZone?.trim();
-                      final zone = (zn != null && zn.isNotEmpty)
-                          ? zones
-                              .where((z) =>
-                                  z.warehouseId == c.targetWarehouseId &&
-                                  z.name.trim().toLowerCase() ==
-                                      zn.toLowerCase())
-                              .firstOrNull
-                          : null;
-                      final occ = zone != null ? occupancy[zone.id] : null;
-                      final free = occ?.free ?? zone?.capacity ?? 0;
-                      final isFull = zone != null && free <= 0;
+              const Gap(10),
+              Expanded(
+                flex: 2,
+                child: categories.when(
+                  loading: () => const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  error: (e, _) => IconButton(
+                      icon: const Icon(Icons.refresh,
+                          size: 16, color: Colors.orange),
+                      onPressed: () => ref.refresh(packageCategoriesProvider),
+                      tooltip: 'Error loading categories'),
+                  data: (list) {
+                    final selectedCategory = list
+                        .where((c) => c.name == widget.row.categoryCtrl.text)
+                        .firstOrNull;
+                    return StyledDropdownFormField<String>(
+                      label: 'Category',
+                      menuWidth: 280,
+                      value: selectedCategory?.name,
+                      options: list.map((c) {
+                        final zn = c.targetZone?.trim();
+                        final zone = (zn != null && zn.isNotEmpty)
+                            ? zones
+                                .where((z) =>
+                                    z.warehouseId == c.targetWarehouseId &&
+                                    z.name.trim().toLowerCase() ==
+                                        zn.toLowerCase())
+                                .firstOrNull
+                            : null;
+                        final occ = zone != null ? occupancy[zone.id] : null;
+                        final free = occ?.free ?? zone?.capacity ?? 0;
+                        final isFull = zone != null && free <= 0;
 
-                      final label = isFull
-                          ? '${c.name} [Zone $zn FULL 🔴]'
-                          : c.name;
-                      return StyledDropdownOption(c.name, label);
-                    }).toList(),
-                    onChanged: (v) {
-                      widget.row.categoryCtrl.text = v ?? '';
-                      setState(() {});
-                      widget.onChanged();
-                    },
-                  );
-                },
+                        final label =
+                            isFull ? '${c.name} [Zone $zn FULL 🔴]' : c.name;
+                        return StyledDropdownOption(c.name, label);
+                      }).toList(),
+                      onChanged: (v) {
+                        widget.row.categoryCtrl.text = v ?? '';
+                        setState(() {});
+                        widget.onChanged();
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
             ],
           ],
         ),
@@ -2600,84 +2601,83 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
         // The zone-capacity hint follows the Category field, so it goes with
         // it: there is no zone to report on for goods that never enter one.
         if (widget.row.nature != kNaturePerishable)
-        Row(children: [
-          categories.when(
-              data: (list) {
-                final cat = list
-                    .where((c) => c.name == widget.row.categoryCtrl.text)
-                    .firstOrNull;
-                if (cat != null && cat.targetWarehouseId != null) {
-                  final zn = (cat.targetZone ?? '').trim();
-                  final zone = zn.isNotEmpty
-                      ? zones
-                          .where((z) =>
-                              z.warehouseId == cat.targetWarehouseId &&
-                              z.name.trim().toLowerCase() ==
-                                  zn.toLowerCase())
-                          .firstOrNull
-                      : null;
-                  final occ = zone != null ? occupancy[zone.id] : null;
-                  final free = occ?.free ?? zone?.capacity ?? 0;
-                  final isFull = zone != null && free <= 0;
+          Row(children: [
+            categories.when(
+                data: (list) {
+                  final cat = list
+                      .where((c) => c.name == widget.row.categoryCtrl.text)
+                      .firstOrNull;
+                  if (cat != null && cat.targetWarehouseId != null) {
+                    final zn = (cat.targetZone ?? '').trim();
+                    final zone = zn.isNotEmpty
+                        ? zones
+                            .where((z) =>
+                                z.warehouseId == cat.targetWarehouseId &&
+                                z.name.trim().toLowerCase() == zn.toLowerCase())
+                            .firstOrNull
+                        : null;
+                    final occ = zone != null ? occupancy[zone.id] : null;
+                    final free = occ?.free ?? zone?.capacity ?? 0;
+                    final isFull = zone != null && free <= 0;
 
-                  if (isFull) {
+                    if (isFull) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                            color: context.colors.dangerRed.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color:
+                                    context.colors.dangerRed.withOpacity(0.4),
+                                width: 1)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 15, color: context.colors.dangerRed),
+                          const Gap(6),
+                          Text(
+                              '${_formatWarehouseName(cat.targetWarehouseName ?? cat.targetWarehouseId ?? '')} | Zone ${cat.targetZone ?? '—'} (FULL - No space available)',
+                              style: TextStyle(
+                                  color: context.colors.dangerRed,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700))
+                        ]),
+                      );
+                    }
+
                     return Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                          color: context.colors.dangerRed.withOpacity(0.12),
+                          color: context.colors.primaryGold.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                              color: context.colors.dangerRed
-                                  .withOpacity(0.4),
-                              width: 1)),
+                              color:
+                                  context.colors.primaryGold.withOpacity(0.3))),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.warning_amber_rounded,
-                            size: 15, color: context.colors.dangerRed),
+                        Icon(Icons.route_rounded,
+                            size: 14, color: context.colors.primaryGold),
                         const Gap(6),
                         Text(
-                            '${_formatWarehouseName(cat.targetWarehouseName ?? cat.targetWarehouseId ?? '')} | Zone ${cat.targetZone ?? '—'} (FULL - No space available)',
+                            _formatWarehouseName(cat.targetWarehouseName ??
+                                    cat.targetWarehouseId ??
+                                    '') +
+                                (cat.targetZone != null
+                                    ? ' | Zone ${cat.targetZone}'
+                                    : '') +
+                                (zone != null ? ' ($free free)' : ''),
                             style: TextStyle(
-                                color: context.colors.dangerRed,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700))
+                                color: context.colors.primaryGold,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600))
                       ]),
                     );
                   }
-
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                        color: context.colors.primaryGold.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                            color:
-                                context.colors.primaryGold.withOpacity(0.3))),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.route_rounded,
-                          size: 14, color: context.colors.primaryGold),
-                      const Gap(6),
-                      Text(
-                          _formatWarehouseName(cat.targetWarehouseName ??
-                                  cat.targetWarehouseId ??
-                                  '') +
-                              (cat.targetZone != null
-                                  ? ' | Zone ${cat.targetZone}'
-                                  : '') +
-                              (zone != null ? ' ($free free)' : ''),
-                          style: TextStyle(
-                              color: context.colors.primaryGold,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600))
-                    ]),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink()),
-        ]),
+                  return const SizedBox.shrink();
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink()),
+          ]),
         const Gap(16),
         // ── Post Status Activity Section ──
         // Options are driven by the item's Status: `Detain` gets the pending
@@ -2745,7 +2745,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     child: StyledDropdownFormField<String>(
                       label: 'Activity ${rIdx + 1} *',
                       menuWidth: 300,
-                      fillColor: context.colors.cardDark,
+                      fillColor: context.colors.fieldFill,
                       value:
                           activities.contains(widget.row.selectedReasons[rIdx])
                               ? widget.row.selectedReasons[rIdx]

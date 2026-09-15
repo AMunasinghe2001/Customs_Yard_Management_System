@@ -164,8 +164,6 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
             fillColor: widget.readOnly
                 ? context.colors.primaryGold.withOpacity(0.06)
                 : context.colors.surfaceDark,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             // Null lets the theme's own border through, which is the grey
             // outline that turns gold on focus. Only Central Disposal's copy
             // states one.

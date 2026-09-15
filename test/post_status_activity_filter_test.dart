@@ -69,7 +69,12 @@ void main() {
     // old value — and the old value is what gets saved.
     test('changing the status drops an activity the new one does not offer',
         () {
-      expect(form, contains('final allowed = postStatusActivitiesFor(widget.row.status)'));
+      // ⚠️ Whitespace-insensitive: `dart format` wraps this call onto its
+      // own line whenever the surrounding code changes width, and an exact
+      // single-line pattern then fails while the rule itself is unchanged.
+      final flat = form.replaceAll(RegExp(r'\s+'), ' ');
+      expect(flat,
+          contains('final allowed = postStatusActivitiesFor(widget.row.status)'));
       expect(form, contains('widget.row.selectedReasons[i] = null'));
     });
   });

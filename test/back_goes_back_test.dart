@@ -93,20 +93,35 @@ void main() {
 
     for (final path in signups) {
       test('${path.split('/').last} sizes it like a TextFormField', () {
-        // ⚠️ StyledDropdownFormField defaults to `isDense` with 12px of
-        // vertical padding, while a plain field on these forms takes
-        // Material's roomier default — so the dropdown sat visibly shorter
-        // than every box below it.
+        // ⚠️ This used to assert the OPPOSITE: `isDense: false` and
+        // `vertical: 16` on every one of these dropdowns.
+        //
+        // That was a per-screen workaround for a bug in the widget itself.
+        // StyledDropdownFormField forced `labelStyle: fontSize 12`, and a
+        // smaller label makes the decorator reserve less height — so the
+        // dropdown came out shorter than the fields under it whatever padding
+        // the screen passed. Five screens each carried their own correction.
+        //
+        // The widget now takes the theme's label and padding like any other
+        // field, so the fix is in ONE place and the screens must not restate
+        // it. A screen that reintroduces an override is the regression.
         final src = File(path).readAsStringSync();
-        // Search the whole dropdown block: contentPadding may sit either
-        // side of the label in the source.
         final i = src.indexOf('StyledDropdownFormField<String>(');
         expect(i, greaterThan(-1), reason: '$path has no Position dropdown');
         final end = (i + 1200) < src.length ? i + 1200 : src.length;
-        final block = src.substring(i, end);
+        // ⚠️ Comment lines stripped before matching: the note explaining WHY
+        // the override was removed names `isDense: false`, and a plain search
+        // matched its own documentation.
+        final block = src
+            .substring(i, end)
+            .split('\n')
+            .where((l) => !l.trimLeft().startsWith('//'))
+            .join('\n');
         expect(block, contains("label: 'Position *'"));
-        expect(block, contains('isDense: false'));
-        expect(block, contains('vertical: 16'));
+        expect(block.contains('isDense: false'), isFalse,
+            reason: '$path forces its dropdown out of the shared height');
+        expect(block.contains('vertical: 16'), isFalse,
+            reason: '$path sets its own dropdown padding again');
       });
     }
 

@@ -449,9 +449,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Full Name *',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          ),
                         validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                       ),
                       const Gap(10),
@@ -461,9 +459,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Username',
                           helperText: 'Used to sign in (email also works)',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          ),
                         validator: (v) {
                           final t = v?.trim() ?? '';
                           if (t.isEmpty) return null; // optional
@@ -488,9 +484,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Salary Number',
                           helperText: 'Set by ICT',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          ),
                       ),
                       const Gap(10),
                       TextFormField(
@@ -498,9 +492,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Mobile Number',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          ),
                         keyboardType: TextInputType.phone,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
@@ -531,9 +523,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Job Role',
                                 helperText: 'Set by ICT',
-                                contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 14),
-                              ),
+                                ),
                             ),
                           ),
                           const Gap(10),
@@ -547,9 +537,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Yard',
                                 helperText: 'Set by ICT',
-                                contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 14),
-                              ),
+                                ),
                             ),
                           ),
                         ],
@@ -604,8 +592,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
                           labelText: 'New Password',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
                           suffixIcon: IconButton(
                             icon: Icon(
                                 _obscureNew
@@ -632,8 +618,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
                           labelText: 'Confirm New Password',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
                           suffixIcon: IconButton(
                             icon: Icon(
                                 _obscureConfirm
@@ -665,8 +649,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         style: TextStyle(color: context.colors.textMuted),
                         decoration: InputDecoration(
                           labelText: 'Email Address',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
                           filled: true,
                           fillColor: context.colors.borderColor.withOpacity(0.3),
                         ),

@@ -95,8 +95,16 @@ void main() {
     // shared AppTheme — every other portal's tables must keep their gold,
     // title-case headings.
     test('the shared table theme is untouched', () {
-      final theme = _read('lib/core/theme.dart');
-      expect(theme, contains('headingTextStyle: const TextStyle(color: primaryGold'));
+      // ⚠️ Whitespace-insensitive. `dart format` rewraps this constructor
+      // whenever the lines around it change width, and an exact single-line
+      // pattern then fails while the shared table theme is perfectly intact —
+      // which says nothing about the rule being guarded.
+      final theme =
+          _read('lib/core/theme.dart').replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+          theme,
+          contains(
+              'headingTextStyle: const TextStyle( color: primaryGold'));
     });
 
     test('no other portal uses the ICT kit', () {
