@@ -34,6 +34,7 @@ class IctDashboardScreen extends ConsumerStatefulWidget {
 class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     with SingleTickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
+
   /// 0 = Staff Accounts, 1 = Yards & Directorates, 2 = Directorate Access,
   /// 3 = Rates & Taxes,
   /// 3 = Activity Logs.
@@ -171,12 +172,13 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
             final email = emailC.text.trim();
 
             if (first.isEmpty || last.isEmpty || email.isEmpty) {
-              setDialogState(
-                  () => dialogError = 'First Name, Last Name and Email are required.');
+              setDialogState(() => dialogError =
+                  'First Name, Last Name and Email are required.');
               return;
             }
             if (!email.contains('@') || !email.contains('.')) {
-              setDialogState(() => dialogError = 'Enter a valid email address.');
+              setDialogState(
+                  () => dialogError = 'Enter a valid email address.');
               return;
             }
             if (selectedDirectorate == null || selectedYard == null) {
@@ -206,8 +208,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     'Verification OTP sent to $email. Enter the code to create the account.';
               });
             } catch (e) {
-              setDialogState(
-                  () => dialogError = e.toString().replaceAll('Exception: ', ''));
+              setDialogState(() =>
+                  dialogError = e.toString().replaceAll('Exception: ', ''));
             } finally {
               setDialogState(() => dialogLoading = false);
             }
@@ -226,17 +228,18 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
             });
 
             try {
-              final res = await ref.read(ictServiceProvider).verifyAndCreateUser(
-                    email: emailC.text.trim(),
-                    otp: otp,
-                    fullName: '${firstC.text.trim()} ${lastC.text.trim()}',
-                    mobileNumber: mobileC.text.trim(),
-                    badgeNumber: salaryC.text.trim(),
-                    role: kPostRoles[selectedPost] ?? 'officer',
-                    jobRole: selectedPost,
-                    yard: selectedYard!,
-                    directorate: selectedDirectorate,
-                  );
+              final res =
+                  await ref.read(ictServiceProvider).verifyAndCreateUser(
+                        email: emailC.text.trim(),
+                        otp: otp,
+                        fullName: '${firstC.text.trim()} ${lastC.text.trim()}',
+                        mobileNumber: mobileC.text.trim(),
+                        badgeNumber: salaryC.text.trim(),
+                        role: kPostRoles[selectedPost] ?? 'officer',
+                        jobRole: selectedPost,
+                        yard: selectedYard!,
+                        directorate: selectedDirectorate,
+                      );
 
               if (ctx.mounted) Navigator.pop(ctx);
               _loadData();
@@ -276,8 +279,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 }
               }
             } catch (e) {
-              setDialogState(
-                  () => dialogError = e.toString().replaceAll('Exception: ', ''));
+              setDialogState(() =>
+                  dialogError = e.toString().replaceAll('Exception: ', ''));
             } finally {
               setDialogState(() => dialogLoading = false);
             }
@@ -296,7 +299,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                   Icon(icon, color: color, size: 18),
                   const Gap(8),
                   Expanded(
-                    child: Text(text, style: TextStyle(color: color, fontSize: 13)),
+                    child: Text(text,
+                        style: TextStyle(color: color, fontSize: 13)),
                   ),
                 ]),
               );
@@ -317,7 +321,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               if (dialogError != null)
                 banner(dialogError!, context.colors.dangerRed,
                     Icons.error_outline_rounded),
-
               StyledFormSection(
                 erp: true,
                 accentColor: AppTheme.ictCyan,
@@ -342,8 +345,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                         ],
                         onChanged: otpSent
                             ? null
-                            : (v) => setDialogState(
-                                () => selectedPost = v ?? kYardStaffPostKeys.first),
+                            : (v) => setDialogState(() =>
+                                selectedPost = v ?? kYardStaffPostKeys.first),
                       ),
                     ),
                     const Gap(12),
@@ -375,7 +378,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 ],
               ),
               const Gap(16),
-
               StyledFormSection(
                 erp: true,
                 accentColor: AppTheme.ictCyan,
@@ -500,12 +502,16 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
           children: [
             Icon(
               emailed ? Icons.check_circle_rounded : Icons.info_outline_rounded,
-              color: emailed ? context.colors.successGreen : context.colors.warningAmber,
+              color: emailed
+                  ? context.colors.successGreen
+                  : context.colors.warningAmber,
               size: 28,
             ),
             const Gap(10),
             Text(
-              emailed ? 'Account Created & Emailed' : 'Account Created (Manual Handover)',
+              emailed
+                  ? 'Account Created & Emailed'
+                  : 'Account Created (Manual Handover)',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ],
@@ -542,8 +548,42 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               const Gap(10),
               const Divider(),
               const Gap(10),
-              _credRow('Username', username, isBold: true, isHighlight: true),
-              _credRow('Temporary Password', password, isBold: true, isHighlight: true),
+              // ⚠️ The username and password are shown ONLY when the e-mail
+              // could not be sent.
+              //
+              // They were shown every time, on a screen an ICT officer uses in
+              // an open office — a working credential for somebody else's
+              // account, readable by anyone walking past and sitting there
+              // until the dialog is dismissed. The e-mail already carries them
+              // to the officer's own mailbox, so on the normal path this panel
+              // was a second, less private copy of a secret that had already
+              // been delivered.
+              //
+              // When delivery FAILED there is no other copy: refusing to show
+              // them there would leave ICT with an account nobody can sign in
+              // to and no way to hand it over. So the fallback still prints
+              // them, and says plainly that it is the only copy.
+              if (!emailed) ...[
+                _credRow('Username', username, isBold: true, isHighlight: true),
+                _credRow('Temporary Password', password,
+                    isBold: true, isHighlight: true),
+              ] else
+                Row(
+                  children: [
+                    Icon(Icons.lock_outline_rounded,
+                        size: 16, color: context.colors.textSecondary),
+                    const Gap(8),
+                    Expanded(
+                      child: Text(
+                        'The username and password were sent to the officer. '
+                        'They are deliberately not shown here.',
+                        style: TextStyle(
+                            color: context.colors.textSecondary,
+                            fontSize: 12.5),
+                      ),
+                    ),
+                  ],
+                ),
               const Gap(12),
               Container(
                 padding: const EdgeInsets.all(10),
@@ -559,7 +599,14 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     const Gap(8),
                     Expanded(
                       child: Text(
-                        'The officer can sign in at Yard Access with either username or email and can customize their password in their profile.',
+                        emailed
+                            ? 'The officer can sign in at Yard Access with '
+                                'either username or email, and can change '
+                                'their password in their profile.'
+                            : 'This is the ONLY copy of these credentials — '
+                                'the e-mail did not go out. Hand them to the '
+                                'officer directly, and have them change the '
+                                'password once they are in.',
                         style: TextStyle(
                             color: context.colors.textPrimary, fontSize: 11.5),
                       ),
@@ -574,7 +621,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.ictCyan,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Done', style: TextStyle(color: Colors.white)),
@@ -592,14 +640,13 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label,
-              style: TextStyle(
-                  color: context.colors.textSecondary, fontSize: 13)),
+              style:
+                  TextStyle(color: context.colors.textSecondary, fontSize: 13)),
           SelectableText(
             value,
             style: TextStyle(
-              color: isHighlight
-                  ? AppTheme.ictCyan
-                  : context.colors.textPrimary,
+              color:
+                  isHighlight ? AppTheme.ictCyan : context.colors.textPrimary,
               fontWeight: isBold ? FontWeight.w800 : FontWeight.w500,
               fontSize: 13,
             ),
@@ -610,10 +657,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
   }
 
   void _showEditStaffDialog(ProfileModel staff) {
-    final nameC = TextEditingController(text: staff.fullName);
-    final unameC = TextEditingController(text: staff.username ?? '');
+    // Only the fields ICT may actually change need a controller. The name,
+    // username and mobile are displayed from `staff` directly.
     final salaryC = TextEditingController(text: staff.badgeNumber ?? '');
-    final mobileC = TextEditingController(text: staff.mobileNumber ?? '');
     // The POST held. An account provisioned before ICT recorded one falls
     // back to whatever its permission role implies.
     String selectedPost = staff.jobRole?.trim().isNotEmpty == true &&
@@ -630,21 +676,22 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           Future<void> saveChanges() async {
-            if (nameC.text.trim().isEmpty) {
-              setDialogState(() => error = 'Full Name is required.');
-              return;
-            }
             setDialogState(() {
               loading = true;
               error = null;
             });
             try {
+              // ⚠️ The officer's OWN values are passed straight back, not the
+              // contents of an editable field. The form no longer offers them,
+              // and sending anything else here would let this screen rewrite a
+              // person's name or sign-in username behind their back — the very
+              // thing making the fields read-only is meant to prevent.
               await ref.read(ictServiceProvider).updateUserProfile(
                     staff.id,
-                    fullName: nameC.text.trim(),
-                    username: unameC.text.trim(),
+                    fullName: staff.fullName,
+                    username: staff.username ?? '',
                     badgeNumber: salaryC.text.trim(),
-                    mobileNumber: mobileC.text.trim(),
+                    mobileNumber: staff.mobileNumber ?? '',
                     yard: selectedYard ?? staff.yard ?? kDefaultYardCode,
                     role: kPostRoles[selectedPost] ?? 'officer',
                     jobRole: selectedPost,
@@ -691,80 +738,124 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       style: TextStyle(
                           color: context.colors.dangerRed, fontSize: 13)),
                 ),
-              TextField(
-                controller: nameC,
-                decoration: const InputDecoration(labelText: 'Full Name *'),
-              ),
-              const Gap(12),
-              Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: unameC,
-                    decoration: const InputDecoration(labelText: 'Username'),
-                  ),
-                ),
-                const Gap(12),
-                Expanded(
-                  child: TextField(
-                    controller: salaryC,
-                    decoration:
-                        const InputDecoration(labelText: 'Salary / Badge No'),
-                  ),
-                ),
-              ]),
-              const Gap(12),
-              TextField(
-                controller: mobileC,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Mobile Number'),
-              ),
-              const Gap(12),
-              Row(children: [
-                Expanded(
-                  // The same styled dropdown the Add form uses -- this was a
-                  // bare DropdownButtonFormField, so the two forms that edit
-                  // the same field looked nothing alike.
-                  child: _IctDialogDropdown(
-                    label: 'Post *',
-                    icon: Icons.shield_outlined,
-                    accent: AppTheme.ictCyan,
-                    value: selectedPost,
-                    // ⚠️ The assignable posts, plus this account's OWN post
-                    // if it is a legacy one. Dropping the legacy key from
-                    // the list would leave the dropdown with no matching
-                    // value and silently re-post the officer on save.
-                    options: [
-                      for (final key in {
-                        ...kAssignablePostKeys,
-                        if (kPostTitles.containsKey(selectedPost)) selectedPost,
-                      })
-                        StyledDropdownOption(key, kPostTitles[key]!),
-                    ],
-                    onChanged: (v) => setDialogState(
-                        () => selectedPost = v ?? kYardStaffPostKeys.last),
-                  ),
-                ),
-                const Gap(12),
-                Expanded(
-                  child: _DirectorateField(
-                    value: selectedDirectorate,
-                    onChanged: (v) => setDialogState(() {
-                      selectedDirectorate = v;
-                      selectedYard = null;
-                    }),
-                  ),
-                ),
-              ]),
-              const Gap(12),
-              Row(children: [
-                Expanded(
-                  child: _YardField(
+              // ⚠️ The SAME two sections the Add form uses, in the same
+              // order. This dialog was a bare column of fields while "Create
+              // Yard Staff Account" grouped them into titled cards, so the
+              // two forms that describe one account looked unrelated and the
+              // edit form's rows sat right on top of each other.
+              StyledFormSection(
+                erp: true,
+                accentColor: AppTheme.ictCyan,
+                title: 'Role & Yard Assignment',
+                icon: Icons.admin_panel_settings_outlined,
+                children: [
+                  Row(children: [
+                    Expanded(
+                      // The same styled dropdown the Add form uses -- this was
+                      // a bare DropdownButtonFormField, so the two forms that
+                      // edit the same field looked nothing alike.
+                      child: _IctDialogDropdown(
+                        label: 'Post *',
+                        icon: Icons.shield_outlined,
+                        accent: AppTheme.ictCyan,
+                        value: selectedPost,
+                        // ⚠️ The assignable posts, plus this account's OWN
+                        // post if it is a legacy one. Dropping the legacy key
+                        // from the list would leave the dropdown with no
+                        // matching value and silently re-post the officer on
+                        // save.
+                        options: [
+                          for (final key in {
+                            ...kAssignablePostKeys,
+                            if (kPostTitles.containsKey(selectedPost))
+                              selectedPost,
+                          })
+                            StyledDropdownOption(key, kPostTitles[key]!),
+                        ],
+                        onChanged: (v) => setDialogState(
+                            () => selectedPost = v ?? kYardStaffPostKeys.last),
+                      ),
+                    ),
+                    const Gap(12),
+                    Expanded(
+                      child: _DirectorateField(
+                        value: selectedDirectorate,
+                        onChanged: (v) => setDialogState(() {
+                          selectedDirectorate = v;
+                          selectedYard = null;
+                        }),
+                      ),
+                    ),
+                  ]),
+                  // ⚠️ The Add form puts an explicit Gap(12) between its rows
+                  // ON TOP of the one StyledFormSection already inserts, so
+                  // its rows breathe at 24 while these sat at 12 and looked
+                  // packed. Same spacing on both forms now.
+                  const Gap(12),
+                  _YardField(
                     directorate: selectedDirectorate,
                     value: selectedYard,
                     onChanged: (v) => setDialogState(() => selectedYard = v),
                   ),
-                ),
-              ]),
+                ],
+              ),
+              const Gap(16),
+
+              // ⚠️ PERSONAL details are shown, never edited, here.
+              //
+              // The name, the username and the mobile number belong to the
+              // officer, and they change them from their own profile in the
+              // yard. ICT edits what the DEPARTMENT owns: the salary number,
+              // the post and the yard. Letting ICT retype someone's name or
+              // sign-in username from an office console means a person's own
+              // details can be altered without them, and the audit trail reads
+              // as if they did it themselves.
+              StyledFormSection(
+                erp: true,
+                accentColor: AppTheme.ictCyan,
+                title: 'Personal & Contact Details',
+                icon: Icons.badge_outlined,
+                children: [
+                  // ⚠️ NO per-field helper line. A field carrying one is
+                  // taller than a field without, so "Username" with a note
+                  // beside "Salary / Badge No" without one made the row step
+                  // up and down. The note is said ONCE, below.
+                  _ReadOnlyDetail(label: 'Full Name', value: staff.fullName),
+                  const Gap(12),
+                  Row(children: [
+                    Expanded(
+                      child: _ReadOnlyDetail(
+                          label: 'Username', value: staff.username ?? ''),
+                    ),
+                    const Gap(12),
+                    Expanded(
+                      child: TextField(
+                        controller: salaryC,
+                        decoration: const InputDecoration(
+                            labelText: 'Salary / Badge No'),
+                      ),
+                    ),
+                  ]),
+                  const Gap(12),
+                  _ReadOnlyDetail(
+                      label: 'Mobile Number', value: staff.mobileNumber ?? ''),
+                  const Gap(12),
+                  Row(children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 13, color: context.colors.textSecondary),
+                    const Gap(6),
+                    Expanded(
+                      child: Text(
+                        'Name, username and mobile are set by the officer in '
+                        'their own profile. ICT sets the salary number, post '
+                        'and yard.',
+                        style: TextStyle(
+                            color: context.colors.textSecondary, fontSize: 11),
+                      ),
+                    ),
+                  ]),
+                ],
+              ),
             ]),
             actions: [
               TextButton(
@@ -844,7 +935,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       radius: 20,
                       backgroundColor: accent.withOpacity(0.15),
                       child: Text(
-                        staff.fullName.isNotEmpty ? staff.fullName[0].toUpperCase() : '?',
+                        staff.fullName.isNotEmpty
+                            ? staff.fullName[0].toUpperCase()
+                            : '?',
                         style: TextStyle(
                           color: accent,
                           fontWeight: FontWeight.bold,
@@ -873,7 +966,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                               const SizedBox(width: 8),
                               IctStatusPill(
                                 label: staff.postShortTitle,
-                                color: staff.isAdmin ? context.colors.primaryGold : accent,
+                                color: staff.isAdmin
+                                    ? context.colors.primaryGold
+                                    : accent,
                                 dot: false,
                                 width: 70,
                               ),
@@ -894,7 +989,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.location_on_outlined, size: 13, color: context.colors.textMuted),
+                                  Icon(Icons.location_on_outlined,
+                                      size: 13,
+                                      color: context.colors.textMuted),
                                   const SizedBox(width: 3),
                                   Text(
                                     'Current Yard: ${yardObj.name}',
@@ -914,7 +1011,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     const SizedBox(width: 8),
                     IctStatusPill(
                       label: staff.isActive ? 'ACTIVE' : 'INACTIVE',
-                      color: staff.isActive ? context.colors.successGreen : context.colors.textMuted,
+                      color: staff.isActive
+                          ? context.colors.successGreen
+                          : context.colors.textMuted,
                       dot: true,
                     ),
                   ],
@@ -940,16 +1039,17 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 constraints: const BoxConstraints(maxHeight: 340),
                 child: FutureBuilder<List<AuditLogModel>>(
                   future: ref.read(ictServiceProvider).getStaffHistory(
-                    staff.id,
-                    username: staff.username,
-                    fullName: staff.fullName,
-                  ),
+                        staff.id,
+                        username: staff.username,
+                        fullName: staff.fullName,
+                      ),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return Center(
                         child: Padding(
                           padding: const EdgeInsets.all(32),
-                          child: CircularProgressIndicator(color: accent, strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                              color: accent, strokeWidth: 2),
                         ),
                       );
                     }
@@ -959,7 +1059,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                           padding: const EdgeInsets.all(24),
                           child: Text(
                             'Failed to load history: ${snapshot.error}',
-                            style: TextStyle(color: context.colors.dangerRed, fontSize: 12),
+                            style: TextStyle(
+                                color: context.colors.dangerRed, fontSize: 12),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -978,11 +1079,14 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.history_toggle_off_rounded, size: 36, color: context.colors.textMuted),
+                            Icon(Icons.history_toggle_off_rounded,
+                                size: 36, color: context.colors.textMuted),
                             const SizedBox(height: 8),
                             Text(
                               'No transfer or status change history recorded yet.',
-                              style: TextStyle(color: context.colors.textMuted, fontSize: 12.5),
+                              style: TextStyle(
+                                  color: context.colors.textMuted,
+                                  fontSize: 12.5),
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -1003,7 +1107,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                         if (actionLower.contains('transfer')) {
                           itemIcon = Icons.swap_horiz_rounded;
                           itemColor = accent;
-                        } else if (actionLower.contains('post') || actionLower.contains('role')) {
+                        } else if (actionLower.contains('post') ||
+                            actionLower.contains('role')) {
                           itemIcon = Icons.badge_outlined;
                           itemColor = accent;
                         } else if (actionLower.contains('activated')) {
@@ -1012,12 +1117,14 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                         } else if (actionLower.contains('deactivated')) {
                           itemIcon = Icons.block_rounded;
                           itemColor = context.colors.dangerRed;
-                        } else if (actionLower.contains('created') || log.entityType == 'auth') {
+                        } else if (actionLower.contains('created') ||
+                            log.entityType == 'auth') {
                           itemIcon = Icons.person_add_outlined;
                           itemColor = context.colors.primaryGold;
                         }
 
-                        final formattedDate = DateFormat('yyyy-MM-dd • hh:mm a').format(log.createdAt);
+                        final formattedDate = DateFormat('yyyy-MM-dd • hh:mm a')
+                            .format(log.createdAt);
 
                         // Extract clean details without database trigger artifacts
                         String? cleanDetail;
@@ -1025,10 +1132,12 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                           final d = log.details!;
                           final parts = <String>[];
                           if (d['old_yard'] != null && d['new_yard'] != null) {
-                            parts.add('Yard: ${d['old_yard']} ➔ ${d['new_yard']}');
+                            parts.add(
+                                'Yard: ${d['old_yard']} ➔ ${d['new_yard']}');
                           }
                           if (d['old_post'] != null && d['new_post'] != null) {
-                            parts.add('Post: ${d['old_post']} ➔ ${d['new_post']}');
+                            parts.add(
+                                'Post: ${d['old_post']} ➔ ${d['new_post']}');
                           }
                           if (parts.isNotEmpty) {
                             cleanDetail = parts.join('  •  ');
@@ -1036,11 +1145,13 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                         }
 
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: context.colors.cardDark,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: context.colors.borderColor),
+                            border:
+                                Border.all(color: context.colors.borderColor),
                           ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1052,7 +1163,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                   color: itemColor.withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                child: Icon(itemIcon, size: 16, color: itemColor),
+                                child:
+                                    Icon(itemIcon, size: 16, color: itemColor),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -1060,7 +1172,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Expanded(
                                           child: Text(
@@ -1092,7 +1205,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                         ),
                                       ),
                                     ],
-                                    if (log.userFullName != null && log.userFullName!.isNotEmpty) ...[
+                                    if (log.userFullName != null &&
+                                        log.userFullName!.isNotEmpty) ...[
                                       const SizedBox(height: 2),
                                       Text(
                                         'By: ${log.userFullName}',
@@ -1159,726 +1273,813 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
       body: IctAccent(
         color: accent,
         child: Row(children: [
-        _IctSideRail(controller: _tabs, accent: accent),
-        Expanded(
-          child: Column(
-        children: [
-          // ── Top Header ──────────────────────────────────────────
-          Container(
-            // ⚠️ Flat, not the accent gradient the other directorate headers
-            // wear. Those headers ARE the page's identity — one screen, one
-            // wash. A console header sits above four different modules and is
-            // read many times a day, so it stays neutral and lets the module
-            // below it carry the colour.
-            // ⚠️ kIctTopBarHeight, the same height the rail's brand block is
-            // pinned to. They are two widgets either side of the rail's
-            // border, so nothing makes them agree on their own — and when
-            // they disagreed their two bottom rules sat a few pixels apart,
-            // which reads as a notch in the corner where the two meet.
-            height: kIctTopBarHeight,
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-            decoration: BoxDecoration(
-              color: context.colors.cardDark,
-              border:
-                  Border(bottom: BorderSide(color: context.colors.borderColor)),
-            ),
-            child: Row(children: [
-              // ⚠️ No emblem or portal name here -- the rail carries both, and
-              // repeating them wastes the width the header needs for the page
-              // title and its actions. An ERP console names the SECTION you
-              // are in at the top; the product is named once, on the rail.
-              AnimatedBuilder(
-                animation: _tabs.animation ?? _tabs,
-                builder: (context, _) {
-                  final item = _IctSideRail.itemAt(_tabs.index);
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // A breadcrumb, not a second copy of the section name:
-                      // it says where in the console you are, which is the one
-                      // thing the rail cannot show once it scrolls out of the
-                      // corner of the eye.
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text('Administration',
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600)),
-                        Icon(Icons.chevron_right_rounded,
-                            size: 14, color: context.colors.textMuted),
-                        Text(item.label,
-                            style: TextStyle(
-                                color: accent,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700)),
-                      ]),
-                      const Gap(3),
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(item.icon, color: accent, size: 19),
-                        const Gap(9),
-                        Text(item.label,
-                            style: TextStyle(
-                                color: context.colors.textPrimary,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800)),
-                      ]),
-                    ],
-                  );
-                },
-              ),
-              const Spacer(),
-
-              // ⚠️ The three header controls are one aligned group at one
-              // height. They were a rounded-999 pill, a bare IconButton and a
-              // themed OutlinedButton — three shapes and three heights, and
-              // the tallest of them set how deep the header had to be.
-              //
-              // Tapping the profile opens the SHARED DisposalProfileDialog:
-              // ICT's badge used to be dead, so its officers had no way to
-              // reach their own profile or change their password.
-              if (profile != null)
-                Tooltip(
-                  message: 'View profile',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(kIctControlRadius),
-                      // ⚠️ A dialog again, not a page.
-                      //
-                      // The page version broke the console: the rail stayed
-                      // visible and clickable but its taps only moved a tab
-                      // controller nothing was showing any more, so choosing
-                      // another module did nothing and the one back button
-                      // was the only way out. A dialog cannot get into that
-                      // state -- it owns the screen until it is dismissed,
-                      // and dismissing it puts you back where you were.
-                      onTap: () => showIctProfileDialog(context, accent),
-                      child: Container(
-                        height: 40,
-                        // ⚠️ Capped, and padded. The account name is a job
-                        // title — "ICT Directorate (Chief ICT Officer /
-                        // System Admin)" — so at its natural width it filled
-                        // the header and sat hard against its own border with
-                        // no room on either side. It now ellipsises inside a
-                        // box with real padding.
-                        constraints: const BoxConstraints(maxWidth: 340),
-                        padding: const EdgeInsets.fromLTRB(7, 0, 12, 0),
-                        decoration: BoxDecoration(
-                          color: accent.withOpacity(0.08),
-                          borderRadius:
-                              BorderRadius.circular(kIctControlRadius),
-                          border:
-                              Border.all(color: accent.withOpacity(0.3)),
-                        ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          CircleAvatar(
-                            radius: 13,
-                            backgroundColor: accent.withOpacity(0.2),
-                            child: Text(
-                              profile.fullName.isNotEmpty
-                                  ? profile.fullName[0].toUpperCase()
-                                  : '?',
-                              style: TextStyle(
-                                  color: accent,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800),
-                            ),
-                          ),
-                          const Gap(10),
-                          Flexible(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(profile.fullName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        color: context.colors.textPrimary,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12.5)),
-                                const Gap(1),
-                                Text('System Administrator',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 10)),
-                              ],
-                            ),
-                          ),
-                          // Amber/red dot while the password is inside its
-                          // expiry window — the same quiet nudge the others
-                          // show.
-                          if (profile.isPasswordExpiringSoon ||
-                              profile.isPasswordExpired) ...[
-                            const Gap(9),
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: profile.isPasswordExpired
-                                    ? context.colors.dangerRed
-                                    : context.colors.warningAmber,
-                              ),
-                            ),
-                          ],
-                          const Gap(4),
-                          Icon(Icons.expand_more_rounded,
-                              color: accent.withOpacity(0.8), size: 17),
-                        ]),
-                      ),
-                    ),
-                  ),
-                ),
-              const Gap(8),
-
-              // Theme toggle — a bordered square, so it reads as a control
-              // rather than as an icon someone left in the header.
-              Tooltip(
-                message: 'Toggle theme',
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(kIctControlRadius),
-                    onTap: () {
-                      final isDark =
-                          ref.read(themeModeProvider) == ThemeMode.dark;
-                      ref.read(themeModeProvider.notifier).state =
-                          isDark ? ThemeMode.light : ThemeMode.dark;
-                    },
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: context.colors.surfaceDark,
-                        borderRadius:
-                            BorderRadius.circular(kIctControlRadius),
-                        border:
-                            Border.all(color: context.colors.borderColor),
-                      ),
-                      child: Icon(
-                        ref.watch(themeModeProvider) == ThemeMode.dark
-                            ? Icons.light_mode_rounded
-                            : Icons.dark_mode_rounded,
-                        color: context.colors.textSecondary,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const Gap(8),
-
-              // Sign Out — still the labelled button every other directorate
-              // shows, and it still goes through AuthService: ICT once called
-              // supabase.auth.signOut() directly and skipped the sign-out
-              // bookkeeping (audit log, presence) the others do.
-              SizedBox(
-                height: 38,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: context.colors.dangerRed,
-                    side: BorderSide(
-                        color: context.colors.dangerRed.withOpacity(0.45)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(kIctControlRadius)),
-                  ),
-                  icon: const Icon(Icons.logout_rounded, size: 16),
-                  label: const Text('Sign Out',
-                      style: TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w700)),
-                  onPressed: () async {
-                    await ref.read(authServiceProvider).signOut();
-                    ref.read(currentProfileProvider.notifier).state = null;
-                    if (context.mounted) context.go('/');
-                  },
-                ),
-              ),
-            ]),
-          ),
-
-          // ── Body Content ────────────────────────────────────────
-          // TabBarView so the two pages can be dragged between, not only
-          // tapped. The strip above stays in sync through the controller.
+          _IctSideRail(controller: _tabs, accent: accent),
           Expanded(
-            child: TabBarView(
-              controller: _tabs,
-              // ⚠️ Not draggable. On a trackpad a two-finger sideways flick
-              // slid the console between modules -- so an officer scrolling a
-              // wide table found half of Directorate Access beside half of
-              // Yards, with no idea what they had done. A console is navigated
-              // from its rail; the pages are not a carousel.
-              //
-              // The rail's animateTo still runs the slide, so choosing a
-              // module is animated -- it is only the DRAG that is gone.
-              physics: const NeverScrollableScrollPhysics(),
-              // ⚠️ Each module is wrapped by _IctModule, so choosing one from
-              // the rail brings the page in rather than snapping it into
-              // place. TabBarView's own slide moves both pages together,
-              // which on a full-width console reads as the whole window
-              // lurching sideways; the arriving page lifting and fading in on
-              // its own is what makes it read as a page LOADING.
+            child: Column(
               children: [
-                // 24, matching the Yards & Directorates tab and every other
-                // directorate page.
-                _IctModule(
-                  index: 0,
-                  controller: _tabs,
-                  child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ⚠️ The same staged entrance Activity Logs plays: the
-                  // measures, then the filters, then the rows. Two modules of
-                  // one console must not arrive differently — a page that
-                  // simply appears, next to one that unfolds, reads as the
-                  // one that failed.
-                  //
-                  // On the SUBTREES rather than on the module, because the
-                  // stagger is the point: one fade over the whole page would
-                  // put the toolbar and the table on the same beat.
-                  // _IctModule still carries the module itself in.
-                  // KPI Overview Cards
-                  Row(children: [
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'SDDC / DDC (Admins)',
-                        value: '$totalAdmins',
-                        subtitle: 'Yard Administrator Accounts',
-                        icon: Icons.admin_panel_settings_rounded,
-                        color: context.colors.primaryGold,
-                      ),
+                // ── Top Header ──────────────────────────────────────────
+                Container(
+                  // ⚠️ Flat, not the accent gradient the other directorate headers
+                  // wear. Those headers ARE the page's identity — one screen, one
+                  // wash. A console header sits above four different modules and is
+                  // read many times a day, so it stays neutral and lets the module
+                  // below it carry the colour.
+                  // ⚠️ kIctTopBarHeight, the same height the rail's brand block is
+                  // pinned to. They are two widgets either side of the rail's
+                  // border, so nothing makes them agree on their own — and when
+                  // they disagreed their two bottom rules sat a few pixels apart,
+                  // which reads as a notch in the corner where the two meet.
+                  height: kIctTopBarHeight,
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                  decoration: BoxDecoration(
+                    color: context.colors.cardDark,
+                    border: Border(
+                        bottom: BorderSide(color: context.colors.borderColor)),
+                  ),
+                  child: Row(children: [
+                    // ⚠️ No emblem or portal name here -- the rail carries both, and
+                    // repeating them wastes the width the header needs for the page
+                    // title and its actions. An ERP console names the SECTION you
+                    // are in at the top; the product is named once, on the rail.
+                    AnimatedBuilder(
+                      animation: _tabs.animation ?? _tabs,
+                      builder: (context, _) {
+                        final item = _IctSideRail.itemAt(_tabs.index);
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // A breadcrumb, not a second copy of the section name:
+                            // it says where in the console you are, which is the one
+                            // thing the rail cannot show once it scrolls out of the
+                            // corner of the eye.
+                            Row(mainAxisSize: MainAxisSize.min, children: [
+                              Text('Administration',
+                                  style: TextStyle(
+                                      color: context.colors.textMuted,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600)),
+                              Icon(Icons.chevron_right_rounded,
+                                  size: 14, color: context.colors.textMuted),
+                              Text(item.label,
+                                  style: TextStyle(
+                                      color: accent,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700)),
+                            ]),
+                            const Gap(3),
+                            Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(item.icon, color: accent, size: 19),
+                              const Gap(9),
+                              Text(item.label,
+                                  style: TextStyle(
+                                      color: context.colors.textPrimary,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800)),
+                            ]),
+                          ],
+                        );
+                      },
                     ),
-                    const Gap(16),
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'Yard Officers',
-                        value: '$totalOfficers',
-                        subtitle: 'Inspection & Yard Staff',
-                        icon: Icons.badge_rounded,
-                        color: const Color(0xFF5E35B1),
-                      ),
-                    ),
-                    const Gap(16),
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'Active Accounts',
-                        value: '$totalActive / ${_staffList.length}',
-                        subtitle: 'Currently Active Staff',
-                        icon: Icons.verified_user_rounded,
-                        color: context.colors.successGreen,
-                      ),
-                    ),
-                    const Gap(16),
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'Customs Yards Covered',
-                        value: '$yardsCovered',
-                        subtitle: 'Active Yard Locations',
-                        icon: Icons.warehouse_rounded,
-                        color: accent,
-                      ),
-                    ),
-                  ]).animate().fadeIn(duration: 300.ms),
-                  const Gap(28),
+                    const Spacer(),
 
-                  // ── Toolbar ───────────────────────────────────
-                  // One strip: what you are looking for, how it is narrowed,
-                  // and the one thing this screen exists to do. Every control
-                  // in it is kIctControlHeight tall.
-                  IctToolbar(children: [
-                    Expanded(
-                      flex: 3,
-                      child: IctSearchField(
-                        controller: _searchCtrl,
-                        accent: accent,
-                        hintText: 'Search name, salary no, email or username',
-                        onChanged: (_) => _loadData(),
-                        onClear: () {
-                          _searchCtrl.clear();
-                          _loadData();
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: IctSelect(
-                        label: 'Yard',
-                        icon: Icons.warehouse_rounded,
-                        accent: accent,
-                        value: _selectedYard,
-                        // Value is a YardFilterOption.value: a bare yard code,
-                        // or "<yard>|<directorate>" for one entry of a
-                        // multi-directorate yard (e.g. "NNR|CED", shown as
-                        // "CED/NNR") -- see _loadData for how it is split.
-                        options: [
-                          const StyledDropdownOption('all', 'All Yards'),
-                          for (final o in ref
-                                  .watch(yardFilterOptionsProvider)
-                                  .valueOrNull ??
-                              [
-                                for (final y in kYards)
-                                  YardFilterOption(
-                                      value: y.code,
-                                      label: y.name,
-                                      filterYard: y.code)
-                              ])
-                            StyledDropdownOption(o.value, o.label),
-                        ],
-                        onChanged: (v) {
-                          setState(() => _selectedYard = v ?? 'all');
-                          _loadData();
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: IctSelect(
-                        label: 'Role',
-                        icon: Icons.badge_rounded,
-                        accent: accent,
-                        value: _selectedRole,
-                        // Posts, not permission roles: DC and SDDC share the
-                        // 'admin' role, so filtering by role alone could never
-                        // tell them apart and the two had to be one entry.
-                        options: [
-                          const StyledDropdownOption('all', 'All Roles'),
-                          for (final e in kPostTitles.entries)
-                            StyledDropdownOption(e.key, e.value),
-                        ],
-                        onChanged: (v) {
-                          setState(() => _selectedRole = v ?? 'all');
-                          _loadData();
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: IctSelect(
-                        label: 'Status',
-                        icon: Icons.filter_alt_rounded,
-                        accent: accent,
-                        value: _selectedStatus,
-                        options: const [
-                          StyledDropdownOption('all', 'All Status'),
-                          StyledDropdownOption('active', 'Active'),
-                          StyledDropdownOption('inactive', 'Inactive'),
-                        ],
-                        onChanged: (v) {
-                          setState(() => _selectedStatus = v ?? 'all');
-                          _loadData();
-                        },
-                      ),
-                    ),
-                    IctPrimaryButton(
-                      label: 'Add Officer / DC',
-                      icon: Icons.person_add_alt_1_rounded,
-                      accent: accent,
-                      onPressed: _showAddStaffDialog,
-                    ),
-                  ]).animate().fadeIn(duration: 300.ms, delay: 120.ms),
-                  const Gap(20),
-
-                  // ── Staff table ─────────────────────────
-                  // The card names the table and counts it; the heading row
-                  // below is only a quiet rule over the columns.
-                  IctSectionCard(
-                    icon: Icons.groups_2_rounded,
-                    title: 'Staff Register',
-                    subtitle:
-                        'Accounts ICT has provisioned for the yards.',
-                    badge: _isLoading
-                        ? null
-                        : '${_staffList.length} '
-                            '${_staffList.length == 1 ? 'account' : 'accounts'}',
-                    height: 540,
-                    child: _isLoading
-                        ? Center(child: CircularProgressIndicator(color: accent))
-                        : _error != null
-                            // ⚠️ Was captured and never shown: a failed load
-                            // fell through to the empty state, so a database
-                            // that was down read as "no accounts exist".
-                            ? ErrorView(error: _error!, onRetry: _loadData)
-                                // ⚠️ The empty state goes in DataTable2's own
-                            // `empty` slot, not in place of the table. Swapped
-                            // for the table it left the card with no column
-                            // headings, so an officer who filtered everything
-                            // away lost the very controls that would tell them
-                            // what they had filtered ON.
-                            : IctTableTheme(
-                                child: DataTable2(
-                                empty: const EmptyTableState(
-                                  icon: Icons.people_outline_rounded,
-                                  message: 'No staff accounts found',
-                                  subtitle:
-                                      'No DC/SDDC or officers match these filters.',
-                                ),
-                                // ⚠️ No headingTextStyle or headingRowColor
-                                // here: IctTableTheme sets both, and a value
-                                // passed at the call site would win over it.
-                                columnSpacing: 12,
-                                horizontalMargin: 16,
-                                fixedTopRows: 1,
-                                // ⚠️ Balanced, not generous. data_table_2
-                                // squeezes the flexible columns to fit and
-                                // only scrolls once it cannot — so too LOW
-                                // crushes the last column (Actions) out of
-                                // sight, and too HIGH forces a scrollbar even
-                                // on a maximised window. 1400 did the latter.
-                                //
-                                // The fixed columns and gaps take 468 (Role
-                                // 100 + Status 112 + Actions 140 + spacing 84
-                                // + margins 32). At 1040 the five flexible
-                                // columns get ~110px each (~132 for the name)
-                                // — tight, and text ellipsises, which is the
-                                // right trade: every column stays visible.
-                                //
-                                // The rail is 258px, so the table has ~858px
-                                // at the 1180px minimum window (a short
-                                // scroll) and ~1044px by 1366 (none at all).
-                                minWidth: 1040,
-                                headingRowHeight: kIctHeadingHeight,
-                                dataRowHeight: kIctRowHeight,
-                                columns: [
-                                  ictCol('Officer Name', size: ColumnSize.L),
-                                  ictCol('Username / Salary No',
-                                      size: ColumnSize.M),
-                                  ictCol('Role',
-                                      size: ColumnSize.S, fixedWidth: 100),
-                                  ictCol('Assigned Yard', size: ColumnSize.M),
-                                  ictCol('Contact', size: ColumnSize.M),
-                                  // ⚠️ The same column Directorate Access
-                                  // carries. Yard officers rotate on the same
-                                  // 90 days, and ICT had no way to see who was
-                                  // near the limit until they were locked out
-                                  // and rang to say so.
-                                  ictCol('Password', size: ColumnSize.M),
-                                  ictCol('Status',
-                                      size: ColumnSize.S,
-                                      fixedWidth: kIctPillWidth + 24),
-                                  // NOT numeric: that right-aligns the HEADER,
-                                  // leaving the word far from the buttons under
-                                  // it. The cell aligns its own contents.
-                                  ictCol('Actions',
-                                      size: ColumnSize.S, fixedWidth: 140),
-                                ],
-                                rows: _staffList.asMap().entries.map((entry) {
-                                  final i = entry.key;
-                                  final staff = entry.value;
-                                  final yardObj = yardByCode(staff.yard);
-                                  final postColor = staff.isAdmin
-                                      ? context.colors.primaryGold
-                                      : const Color(0xFF5E35B1);
-                                  final status =
-                                      accountStatusOf(context, staff);
-                                  return DataRow2(
-                                    color: ictRowColor(context, i),
-                                    cells: [
-                                      // Name
-                                      DataCell(
-                                        Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 13,
-                                              backgroundColor:
-                                                  postColor.withOpacity(0.18),
-                                              child: Text(
-                                                staff.fullName.isNotEmpty
-                                                    ? staff.fullName[0]
-                                                        .toUpperCase()
-                                                    : '?',
-                                                style: TextStyle(
-                                                  color: postColor,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ),
-                                            const Gap(10),
-                                            Expanded(
-                                              child: Text(
-                                                staff.fullName,
-                                                style: TextStyle(
+                    // ⚠️ The three header controls are one aligned group at one
+                    // height. They were a rounded-999 pill, a bare IconButton and a
+                    // themed OutlinedButton — three shapes and three heights, and
+                    // the tallest of them set how deep the header had to be.
+                    //
+                    // Tapping the profile opens the SHARED DisposalProfileDialog:
+                    // ICT's badge used to be dead, so its officers had no way to
+                    // reach their own profile or change their password.
+                    if (profile != null)
+                      Tooltip(
+                        message: 'View profile',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius:
+                                BorderRadius.circular(kIctControlRadius),
+                            // ⚠️ A dialog again, not a page.
+                            //
+                            // The page version broke the console: the rail stayed
+                            // visible and clickable but its taps only moved a tab
+                            // controller nothing was showing any more, so choosing
+                            // another module did nothing and the one back button
+                            // was the only way out. A dialog cannot get into that
+                            // state -- it owns the screen until it is dismissed,
+                            // and dismissing it puts you back where you were.
+                            onTap: () => showIctProfileDialog(context, accent),
+                            child: Container(
+                              height: 40,
+                              // ⚠️ Capped, and padded. The account name is a job
+                              // title — "ICT Directorate (Chief ICT Officer /
+                              // System Admin)" — so at its natural width it filled
+                              // the header and sat hard against its own border with
+                              // no room on either side. It now ellipsises inside a
+                              // box with real padding.
+                              constraints: const BoxConstraints(maxWidth: 340),
+                              padding: const EdgeInsets.fromLTRB(7, 0, 12, 0),
+                              decoration: BoxDecoration(
+                                color: accent.withOpacity(0.08),
+                                borderRadius:
+                                    BorderRadius.circular(kIctControlRadius),
+                                border:
+                                    Border.all(color: accent.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 13,
+                                      backgroundColor: accent.withOpacity(0.2),
+                                      child: Text(
+                                        profile.fullName.isNotEmpty
+                                            ? profile.fullName[0].toUpperCase()
+                                            : '?',
+                                        style: TextStyle(
+                                            color: accent,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800),
+                                      ),
+                                    ),
+                                    const Gap(10),
+                                    Flexible(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(profile.fullName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
                                                   color: context
                                                       .colors.textPrimary,
                                                   fontWeight: FontWeight.w700,
-                                                  fontSize: 13,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      // Username / Salary No
-                                      DataCell(
-                                        Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              '@${staff.username ?? '—'}',
+                                                  fontSize: 12.5)),
+                                          const Gap(1),
+                                          Text('System Administrator',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                color: accent,
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            Text(
-                                              'Salary: ${staff.badgeNumber ?? '—'}',
-                                              style: TextStyle(
-                                                color: context.colors.textMuted,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      // Role — the POST held.
-                                      DataCell(IctStatusPill(
-                                        label: staff.postShortTitle,
-                                        color: postColor,
-                                        dot: false,
-                                        width: 74,
-                                      )),
-                                      // Assigned Yard
-                                      DataCell(
-                                        Text(
-                                          yardObj.name,
-                                          style: TextStyle(
-                                            color: context.colors.textPrimary,
-                                            fontSize: 12.5,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      // Contact (Mobile)
-                                      DataCell(
-                                        Text(
-                                          staff.mobileNumber?.isNotEmpty == true
-                                              ? staff.mobileNumber!
-                                              : '—',
-                                          style: TextStyle(
-                                            color: context.colors.textSecondary,
-                                            fontSize: 12.5,
-                                          ),
-                                        ),
-                                      ),
-                                      // Password age — shared with the
-                                      // Directorate Access table.
-                                      DataCell(PasswordAgeCell(profile: staff)),
-                                      // Status
-                                      DataCell(IctStatusPill(
-                                        label: status.label,
-                                        color: status.color,
-                                        tooltip: status.tooltip,
-                                      )),
-                                      // Actions — Edit, Toggle Status, History
-                                      DataCell(Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          RowActionButtons(
-                                            accent: accent,
-                                            onEdit: () =>
-                                                _showEditStaffDialog(staff),
-                                            onDelete: () =>
-                                                _toggleStaffStatus(staff),
-                                            editTooltip: 'Edit Details',
-                                            // ⚠️ A DORMANT account says so.
-                                            // It was switched off by the
-                                            // 30-day sweep rather than by a
-                                            // person, and turning it back on
-                                            // also resets that clock — an
-                                            // unlabelled "Activate Account"
-                                            // gave no hint that ICT is the
-                                            // only office that can do it, or
-                                            // that the account would not
-                                            // simply switch itself off again.
-                                            deleteTooltip: staff.isActive
-                                                ? 'Deactivate Account'
-                                                : (staff.deactivatedReason ==
-                                                        'dormant'
-                                                    ? 'Reactivate — unused for '
-                                                        '30 days. Restores '
-                                                        'access and restarts '
-                                                        'the dormancy clock.'
-                                                    : 'Activate Account'),
-                                            deleteIcon: staff.isActive
-                                                ? Icons.block_rounded
-                                                : Icons.check_circle_outline_rounded,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Tooltip(
-                                            message: 'View History',
-                                            child: Material(
-                                              color: Colors.transparent,
-                                              child: InkWell(
-                                                onTap: () => _showStaffHistory(staff),
-                                                borderRadius: BorderRadius.circular(6),
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(6),
-                                                  decoration: BoxDecoration(
-                                                    color: accent.withOpacity(0.1),
-                                                    borderRadius: BorderRadius.circular(6),
-                                                    border: Border.all(
-                                                        color: accent.withOpacity(0.25),
-                                                        width: 0.8),
-                                                  ),
-                                                  child: Icon(Icons.history_rounded,
-                                                      size: 15, color: accent),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
+                                                  color:
+                                                      context.colors.textMuted,
+                                                  fontSize: 10)),
                                         ],
-                                      )),
+                                      ),
+                                    ),
+                                    // Amber/red dot while the password is inside its
+                                    // expiry window — the same quiet nudge the others
+                                    // show.
+                                    if (profile.isPasswordExpiringSoon ||
+                                        profile.isPasswordExpired) ...[
+                                      const Gap(9),
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: profile.isPasswordExpired
+                                              ? context.colors.dangerRed
+                                              : context.colors.warningAmber,
+                                        ),
+                                      ),
                                     ],
-                                  );
-                                }).toList(),
-                              )),
-                  ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn(),
-                ],
-              ),
-            ),
+                                    const Gap(4),
+                                    Icon(Icons.expand_more_rounded,
+                                        color: accent.withOpacity(0.8),
+                                        size: 17),
+                                  ]),
+                            ),
+                          ),
+                        ),
+                      ),
+                    const Gap(8),
+
+                    // Theme toggle — a bordered square, so it reads as a control
+                    // rather than as an icon someone left in the header.
+                    Tooltip(
+                      message: 'Toggle theme',
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius:
+                              BorderRadius.circular(kIctControlRadius),
+                          onTap: () {
+                            final isDark =
+                                ref.read(themeModeProvider) == ThemeMode.dark;
+                            ref.read(themeModeProvider.notifier).state =
+                                isDark ? ThemeMode.light : ThemeMode.dark;
+                          },
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: context.colors.surfaceDark,
+                              borderRadius:
+                                  BorderRadius.circular(kIctControlRadius),
+                              border:
+                                  Border.all(color: context.colors.borderColor),
+                            ),
+                            child: Icon(
+                              ref.watch(themeModeProvider) == ThemeMode.dark
+                                  ? Icons.light_mode_rounded
+                                  : Icons.dark_mode_rounded,
+                              color: context.colors.textSecondary,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Gap(8),
+
+                    // Sign Out — still the labelled button every other directorate
+                    // shows, and it still goes through AuthService: ICT once called
+                    // supabase.auth.signOut() directly and skipped the sign-out
+                    // bookkeeping (audit log, presence) the others do.
+                    SizedBox(
+                      height: 38,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: context.colors.dangerRed,
+                          side: BorderSide(
+                              color:
+                                  context.colors.dangerRed.withOpacity(0.45)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(kIctControlRadius)),
+                        ),
+                        icon: const Icon(Icons.logout_rounded, size: 16),
+                        label: const Text('Sign Out',
+                            style: TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.w700)),
+                        onPressed: () async {
+                          await ref.read(authServiceProvider).signOut();
+                          ref.read(currentProfileProvider.notifier).state =
+                              null;
+                          if (context.mounted) context.go('/');
+                        },
+                      ),
+                    ),
+                  ]),
                 ),
-                _IctModule(
-                    index: 1,
+
+                // ── Body Content ────────────────────────────────────────
+                // TabBarView so the two pages can be dragged between, not only
+                // tapped. The strip above stays in sync through the controller.
+                Expanded(
+                  child: TabBarView(
                     controller: _tabs,
-                    child: YardDirectorateTab(accent: accent)),
-                // Reissues a directorate account's sign-in details. Yard
-                // staff are absent: they reset their own from the login page.
-                _IctModule(
-                    index: 2,
-                    controller: _tabs,
-                    child: DirectorateAccessTab(accent: accent)),
-                // The national rates. It scrolls its own body, like the two
-                // above it.
-                _IctModule(
-                    index: 3,
-                    controller: _tabs,
-                    child: SystemRatesTab(accent: accent)),
-                // Every action across every office. The tab scrolls its own
-                // table, so unlike the others it is not wrapped in a
-                // SingleChildScrollView.
-                _IctModule(
-                    index: 4,
-                    controller: _tabs,
-                    child: ActivityLogsTab(accent: accent)),
+                    // ⚠️ Not draggable. On a trackpad a two-finger sideways flick
+                    // slid the console between modules -- so an officer scrolling a
+                    // wide table found half of Directorate Access beside half of
+                    // Yards, with no idea what they had done. A console is navigated
+                    // from its rail; the pages are not a carousel.
+                    //
+                    // The rail's animateTo still runs the slide, so choosing a
+                    // module is animated -- it is only the DRAG that is gone.
+                    physics: const NeverScrollableScrollPhysics(),
+                    // ⚠️ Each module is wrapped by _IctModule, so choosing one from
+                    // the rail brings the page in rather than snapping it into
+                    // place. TabBarView's own slide moves both pages together,
+                    // which on a full-width console reads as the whole window
+                    // lurching sideways; the arriving page lifting and fading in on
+                    // its own is what makes it read as a page LOADING.
+                    children: [
+                      // 24, matching the Yards & Directorates tab and every other
+                      // directorate page.
+                      _IctModule(
+                        index: 0,
+                        controller: _tabs,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ⚠️ The same staged entrance Activity Logs plays: the
+                              // measures, then the filters, then the rows. Two modules of
+                              // one console must not arrive differently — a page that
+                              // simply appears, next to one that unfolds, reads as the
+                              // one that failed.
+                              //
+                              // On the SUBTREES rather than on the module, because the
+                              // stagger is the point: one fade over the whole page would
+                              // put the toolbar and the table on the same beat.
+                              // _IctModule still carries the module itself in.
+                              // KPI Overview Cards
+                              Row(children: [
+                                Expanded(
+                                  child: _buildKpiCard(
+                                    title: 'SDDC / DDC (Admins)',
+                                    value: '$totalAdmins',
+                                    subtitle: 'Yard Administrator Accounts',
+                                    icon: Icons.admin_panel_settings_rounded,
+                                    color: context.colors.primaryGold,
+                                  ),
+                                ),
+                                const Gap(16),
+                                Expanded(
+                                  child: _buildKpiCard(
+                                    title: 'Yard Officers',
+                                    value: '$totalOfficers',
+                                    subtitle: 'Inspection & Yard Staff',
+                                    icon: Icons.badge_rounded,
+                                    color: const Color(0xFF5E35B1),
+                                  ),
+                                ),
+                                const Gap(16),
+                                Expanded(
+                                  child: _buildKpiCard(
+                                    title: 'Active Accounts',
+                                    value:
+                                        '$totalActive / ${_staffList.length}',
+                                    subtitle: 'Currently Active Staff',
+                                    icon: Icons.verified_user_rounded,
+                                    color: context.colors.successGreen,
+                                  ),
+                                ),
+                                const Gap(16),
+                                Expanded(
+                                  child: _buildKpiCard(
+                                    title: 'Customs Yards Covered',
+                                    value: '$yardsCovered',
+                                    subtitle: 'Active Yard Locations',
+                                    icon: Icons.warehouse_rounded,
+                                    color: accent,
+                                  ),
+                                ),
+                              ]).animate().fadeIn(duration: 300.ms),
+                              const Gap(28),
+
+                              // ── Toolbar ───────────────────────────────────
+                              // One strip: what you are looking for, how it is narrowed,
+                              // and the one thing this screen exists to do. Every control
+                              // in it is kIctControlHeight tall.
+                              IctToolbar(children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: IctSearchField(
+                                    controller: _searchCtrl,
+                                    accent: accent,
+                                    hintText:
+                                        'Search name, salary no, email or username',
+                                    onChanged: (_) => _loadData(),
+                                    onClear: () {
+                                      _searchCtrl.clear();
+                                      _loadData();
+                                    },
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: IctSelect(
+                                    label: 'Yard',
+                                    icon: Icons.warehouse_rounded,
+                                    accent: accent,
+                                    value: _selectedYard,
+                                    // Value is a YardFilterOption.value: a bare yard code,
+                                    // or "<yard>|<directorate>" for one entry of a
+                                    // multi-directorate yard (e.g. "NNR|CED", shown as
+                                    // "CED/NNR") -- see _loadData for how it is split.
+                                    options: [
+                                      const StyledDropdownOption(
+                                          'all', 'All Yards'),
+                                      for (final o in ref
+                                              .watch(yardFilterOptionsProvider)
+                                              .valueOrNull ??
+                                          [
+                                            for (final y in kYards)
+                                              YardFilterOption(
+                                                  value: y.code,
+                                                  label: y.name,
+                                                  filterYard: y.code)
+                                          ])
+                                        StyledDropdownOption(o.value, o.label),
+                                    ],
+                                    onChanged: (v) {
+                                      setState(
+                                          () => _selectedYard = v ?? 'all');
+                                      _loadData();
+                                    },
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: IctSelect(
+                                    label: 'Role',
+                                    icon: Icons.badge_rounded,
+                                    accent: accent,
+                                    value: _selectedRole,
+                                    // Posts, not permission roles: DC and SDDC share the
+                                    // 'admin' role, so filtering by role alone could never
+                                    // tell them apart and the two had to be one entry.
+                                    options: [
+                                      const StyledDropdownOption(
+                                          'all', 'All Roles'),
+                                      for (final e in kPostTitles.entries)
+                                        StyledDropdownOption(e.key, e.value),
+                                    ],
+                                    onChanged: (v) {
+                                      setState(
+                                          () => _selectedRole = v ?? 'all');
+                                      _loadData();
+                                    },
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: IctSelect(
+                                    label: 'Status',
+                                    icon: Icons.filter_alt_rounded,
+                                    accent: accent,
+                                    value: _selectedStatus,
+                                    options: const [
+                                      StyledDropdownOption('all', 'All Status'),
+                                      StyledDropdownOption('active', 'Active'),
+                                      StyledDropdownOption(
+                                          'inactive', 'Inactive'),
+                                    ],
+                                    onChanged: (v) {
+                                      setState(
+                                          () => _selectedStatus = v ?? 'all');
+                                      _loadData();
+                                    },
+                                  ),
+                                ),
+                                IctPrimaryButton(
+                                  label: 'Add Officer / DC',
+                                  icon: Icons.person_add_alt_1_rounded,
+                                  accent: accent,
+                                  onPressed: _showAddStaffDialog,
+                                ),
+                              ])
+                                  .animate()
+                                  .fadeIn(duration: 300.ms, delay: 120.ms),
+                              const Gap(20),
+
+                              // ── Staff table ─────────────────────────
+                              // The card names the table and counts it; the heading row
+                              // below is only a quiet rule over the columns.
+                              IctSectionCard(
+                                icon: Icons.groups_2_rounded,
+                                title: 'Staff Register',
+                                subtitle:
+                                    'Accounts ICT has provisioned for the yards.',
+                                badge: _isLoading
+                                    ? null
+                                    : '${_staffList.length} '
+                                        '${_staffList.length == 1 ? 'account' : 'accounts'}',
+                                height: 540,
+                                child: _isLoading
+                                    ? Center(
+                                        child: CircularProgressIndicator(
+                                            color: accent))
+                                    : _error != null
+                                        // ⚠️ Was captured and never shown: a failed load
+                                        // fell through to the empty state, so a database
+                                        // that was down read as "no accounts exist".
+                                        ? ErrorView(
+                                            error: _error!, onRetry: _loadData)
+                                        // ⚠️ The empty state goes in DataTable2's own
+                                        // `empty` slot, not in place of the table. Swapped
+                                        // for the table it left the card with no column
+                                        // headings, so an officer who filtered everything
+                                        // away lost the very controls that would tell them
+                                        // what they had filtered ON.
+                                        : IctTableTheme(
+                                            child: DataTable2(
+                                            empty: const EmptyTableState(
+                                              icon:
+                                                  Icons.people_outline_rounded,
+                                              message:
+                                                  'No staff accounts found',
+                                              subtitle:
+                                                  'No DC/SDDC or officers match these filters.',
+                                            ),
+                                            // ⚠️ No headingTextStyle or headingRowColor
+                                            // here: IctTableTheme sets both, and a value
+                                            // passed at the call site would win over it.
+                                            columnSpacing: 12,
+                                            horizontalMargin: 16,
+                                            fixedTopRows: 1,
+                                            // ⚠️ Balanced, not generous. data_table_2
+                                            // squeezes the flexible columns to fit and
+                                            // only scrolls once it cannot — so too LOW
+                                            // crushes the last column (Actions) out of
+                                            // sight, and too HIGH forces a scrollbar even
+                                            // on a maximised window. 1400 did the latter.
+                                            //
+                                            // The fixed columns and gaps take 468 (Role
+                                            // 100 + Status 112 + Actions 140 + spacing 84
+                                            // + margins 32). At 1040 the five flexible
+                                            // columns get ~110px each (~132 for the name)
+                                            // — tight, and text ellipsises, which is the
+                                            // right trade: every column stays visible.
+                                            //
+                                            // The rail is 258px, so the table has ~858px
+                                            // at the 1180px minimum window (a short
+                                            // scroll) and ~1044px by 1366 (none at all).
+                                            minWidth: 1040,
+                                            headingRowHeight: kIctHeadingHeight,
+                                            dataRowHeight: kIctRowHeight,
+                                            columns: [
+                                              ictCol('Officer Name',
+                                                  size: ColumnSize.L),
+                                              ictCol('Salary No',
+                                                  size: ColumnSize.M),
+                                              ictCol('Role',
+                                                  size: ColumnSize.S,
+                                                  fixedWidth: 100),
+                                              ictCol('Assigned Yard',
+                                                  size: ColumnSize.M),
+                                              ictCol('Contact',
+                                                  size: ColumnSize.M),
+                                              // ⚠️ The same column Directorate Access
+                                              // carries. Yard officers rotate on the same
+                                              // 90 days, and ICT had no way to see who was
+                                              // near the limit until they were locked out
+                                              // and rang to say so.
+                                              ictCol('Password',
+                                                  size: ColumnSize.M),
+                                              ictCol('Status',
+                                                  size: ColumnSize.S,
+                                                  fixedWidth:
+                                                      kIctPillWidth + 24),
+                                              // NOT numeric: that right-aligns the HEADER,
+                                              // leaving the word far from the buttons under
+                                              // it. The cell aligns its own contents.
+                                              ictCol('Actions',
+                                                  size: ColumnSize.S,
+                                                  fixedWidth: 140),
+                                            ],
+                                            rows: _staffList
+                                                .asMap()
+                                                .entries
+                                                .map((entry) {
+                                              final i = entry.key;
+                                              final staff = entry.value;
+                                              final yardObj =
+                                                  yardByCode(staff.yard);
+                                              final postColor = staff.isAdmin
+                                                  ? context.colors.primaryGold
+                                                  : const Color(0xFF5E35B1);
+                                              final status = accountStatusOf(
+                                                  context, staff);
+                                              return DataRow2(
+                                                color: ictRowColor(context, i),
+                                                cells: [
+                                                  // Name
+                                                  DataCell(
+                                                    Row(
+                                                      children: [
+                                                        CircleAvatar(
+                                                          radius: 13,
+                                                          backgroundColor:
+                                                              postColor
+                                                                  .withOpacity(
+                                                                      0.18),
+                                                          child: Text(
+                                                            staff.fullName
+                                                                    .isNotEmpty
+                                                                ? staff
+                                                                    .fullName[0]
+                                                                    .toUpperCase()
+                                                                : '?',
+                                                            style: TextStyle(
+                                                              color: postColor,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              fontSize: 12,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const Gap(10),
+                                                        Expanded(
+                                                          child: Text(
+                                                            staff.fullName,
+                                                            style: TextStyle(
+                                                              color: context
+                                                                  .colors
+                                                                  .textPrimary,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              fontSize: 13,
+                                                            ),
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  // Salary No.
+                                                  //
+                                                  // ⚠️ The USERNAME is deliberately not
+                                                  // here. It is half of a sign-in
+                                                  // credential, and this register is on
+                                                  // screen in an open office for as long
+                                                  // as ICT has the page open — a list of
+                                                  // every officer's username is a list of
+                                                  // what an attacker no longer has to
+                                                  // guess. The salary number identifies
+                                                  // the officer to ICT without doing that.
+                                                  DataCell(
+                                                    Text(
+                                                      staff.badgeNumber
+                                                                  ?.trim()
+                                                                  .isNotEmpty ==
+                                                              true
+                                                          ? staff.badgeNumber!
+                                                              .trim()
+                                                          : '—',
+                                                      style: TextStyle(
+                                                        color: context
+                                                            .colors.textPrimary,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 12.5,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  // Role — the POST held.
+                                                  DataCell(IctStatusPill(
+                                                    label: staff.postShortTitle,
+                                                    color: postColor,
+                                                    dot: false,
+                                                    width: 74,
+                                                  )),
+                                                  // Assigned Yard
+                                                  DataCell(
+                                                    Text(
+                                                      yardObj.name,
+                                                      style: TextStyle(
+                                                        color: context
+                                                            .colors.textPrimary,
+                                                        fontSize: 12.5,
+                                                      ),
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  // Contact (Mobile)
+                                                  DataCell(
+                                                    Text(
+                                                      staff.mobileNumber
+                                                                  ?.isNotEmpty ==
+                                                              true
+                                                          ? staff.mobileNumber!
+                                                          : '—',
+                                                      style: TextStyle(
+                                                        color: context.colors
+                                                            .textSecondary,
+                                                        fontSize: 12.5,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  // Password age — shared with the
+                                                  // Directorate Access table.
+                                                  DataCell(PasswordAgeCell(
+                                                      profile: staff)),
+                                                  // Status
+                                                  DataCell(IctStatusPill(
+                                                    label: status.label,
+                                                    color: status.color,
+                                                    tooltip: status.tooltip,
+                                                  )),
+                                                  // Actions — Edit, Toggle Status, History
+                                                  DataCell(Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      RowActionButtons(
+                                                        accent: accent,
+                                                        onEdit: () =>
+                                                            _showEditStaffDialog(
+                                                                staff),
+                                                        onDelete: () =>
+                                                            _toggleStaffStatus(
+                                                                staff),
+                                                        editTooltip:
+                                                            'Edit Details',
+                                                        // ⚠️ A DORMANT account says so.
+                                                        // It was switched off by the
+                                                        // 30-day sweep rather than by a
+                                                        // person, and turning it back on
+                                                        // also resets that clock — an
+                                                        // unlabelled "Activate Account"
+                                                        // gave no hint that ICT is the
+                                                        // only office that can do it, or
+                                                        // that the account would not
+                                                        // simply switch itself off again.
+                                                        deleteTooltip: staff
+                                                                .isActive
+                                                            ? 'Deactivate Account'
+                                                            : (staff.deactivatedReason ==
+                                                                    'dormant'
+                                                                ? 'Reactivate — unused for '
+                                                                    '30 days. Restores '
+                                                                    'access and restarts '
+                                                                    'the dormancy clock.'
+                                                                : 'Activate Account'),
+                                                        deleteIcon: staff
+                                                                .isActive
+                                                            ? Icons
+                                                                .block_rounded
+                                                            : Icons
+                                                                .check_circle_outline_rounded,
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Tooltip(
+                                                        message: 'View History',
+                                                        child: Material(
+                                                          color: Colors
+                                                              .transparent,
+                                                          child: InkWell(
+                                                            onTap: () =>
+                                                                _showStaffHistory(
+                                                                    staff),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        6),
+                                                            child: Container(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .all(6),
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: accent
+                                                                    .withOpacity(
+                                                                        0.1),
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(
+                                                                            6),
+                                                                border: Border.all(
+                                                                    color: accent
+                                                                        .withOpacity(
+                                                                            0.25),
+                                                                    width: 0.8),
+                                                              ),
+                                                              child: Icon(
+                                                                  Icons
+                                                                      .history_rounded,
+                                                                  size: 15,
+                                                                  color:
+                                                                      accent),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )),
+                                                ],
+                                              );
+                                            }).toList(),
+                                          )),
+                              )
+                                  .animate()
+                                  .slideY(begin: 0.05, duration: 400.ms)
+                                  .fadeIn(),
+                            ],
+                          ),
+                        ),
+                      ),
+                      _IctModule(
+                          index: 1,
+                          controller: _tabs,
+                          child: YardDirectorateTab(accent: accent)),
+                      // Reissues a directorate account's sign-in details. Yard
+                      // staff are absent: they reset their own from the login page.
+                      _IctModule(
+                          index: 2,
+                          controller: _tabs,
+                          child: DirectorateAccessTab(accent: accent)),
+                      // The national rates. It scrolls its own body, like the two
+                      // above it.
+                      _IctModule(
+                          index: 3,
+                          controller: _tabs,
+                          child: SystemRatesTab(accent: accent)),
+                      // Every action across every office. The tab scrolls its own
+                      // table, so unlike the others it is not wrapped in a
+                      // SingleChildScrollView.
+                      _IctModule(
+                          index: 4,
+                          controller: _tabs,
+                          child: ActivityLogsTab(accent: accent)),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-        ],
-          ),
-        ),
-      ]),
+        ]),
       ),
     );
   }
@@ -1988,8 +2189,8 @@ class _IctSideRail extends StatefulWidget {
         Icons.groups_2_rounded),
     _IctRailItem('Yards & Directorates', 'Offices and their yards',
         Icons.account_tree_rounded),
-    _IctRailItem('Directorate Access', 'Reissue sign-in details',
-        Icons.vpn_key_rounded),
+    _IctRailItem(
+        'Directorate Access', 'Reissue sign-in details', Icons.vpn_key_rounded),
     // ⚠️ The storage rate and the sale taxes, which used to live in the
     // two portals they billed -- the yard's Admin Panel and Central
     // Disposal's Taxes tab. Neither is a yard or a directorate decision:
@@ -1997,8 +2198,8 @@ class _IctSideRail extends StatefulWidget {
     // rate one office can change under another's feet is not a rate.
     _IctRailItem('Rates & Taxes', 'Storage rate and sale levies',
         Icons.payments_rounded),
-    _IctRailItem('Activity Logs', 'Every action, every office',
-        Icons.history_rounded),
+    _IctRailItem(
+        'Activity Logs', 'Every action, every office', Icons.history_rounded),
   ];
 
   @override
@@ -2026,8 +2227,7 @@ class _IctSideRailState extends State<_IctSideRail> {
       width: 258,
       decoration: BoxDecoration(
         color: context.colors.cardDark,
-        border:
-            Border(right: BorderSide(color: context.colors.borderColor)),
+        border: Border(right: BorderSide(color: context.colors.borderColor)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2048,44 +2248,44 @@ class _IctSideRailState extends State<_IctSideRail> {
             // is exactly the step you can see where the two meet.
             height: kIctTopBarHeight,
             decoration: BoxDecoration(
-              border: Border(
-                  bottom: BorderSide(color: context.colors.borderColor)),
+              border:
+                  Border(bottom: BorderSide(color: context.colors.borderColor)),
             ),
             child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: accent.withOpacity(0.3)),
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
+              child: Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: accent.withOpacity(0.3)),
+                  ),
+                  child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                      width: 24,
+                      height: 24,
+                      colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
                 ),
-                child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                    width: 24,
-                    height: 24,
-                    colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
-              ),
-              const Gap(11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('SL Customs',
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800)),
-                    Text('ICT Console',
-                        style: TextStyle(
-                            color: accent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700)),
-                  ],
+                const Gap(11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('SL Customs',
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800)),
+                      Text('ICT Console',
+                          style: TextStyle(
+                              color: accent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                  ),
                 ),
-              ),
-            ]),
+              ]),
             ),
           ),
           const Gap(12),
@@ -2265,6 +2465,39 @@ class _IctRailTile extends StatelessWidget {
   }
 }
 
+/// A detail ICT may READ but not change.
+///
+/// ⚠️ The SAME shape the yard's own Edit Profile form uses for Job Role and
+/// Yard: a normal field, `readOnly` + `enabled: false`, with a helper line
+/// saying who does set it. An earlier version of this drew a custom bordered
+/// panel instead, which read as a different kind of control altogether and
+/// looked out of place among the real fields beside it.
+///
+/// The text keeps `textPrimary` rather than the muted colour a disabled field
+/// would default to — the value is a fact ICT needs to read, and greying it to
+/// near-invisible would be a worse trade than the small loss of "this is
+/// disabled" signal, which the helper line carries anyway.
+class _ReadOnlyDetail extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ReadOnlyDetail({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      initialValue: value.trim().isEmpty ? '—' : value,
+      readOnly: true,
+      enabled: false,
+      style: TextStyle(color: context.colors.textPrimary),
+      // ⚠️ No contentPadding of its own: it takes the theme's dense height,
+      // so it matches the editable fields beside it in the same row. Spelling
+      // out 14 here is what made this box taller than the Salary field.
+      decoration: InputDecoration(labelText: label),
+    );
+  }
+}
+
 class _DirectorateField extends ConsumerWidget {
   const _DirectorateField({
     required this.value,
@@ -2359,13 +2592,14 @@ class _LoadingField extends StatelessWidget {
         child: Align(
           alignment: Alignment.centerLeft,
           child: SizedBox(
-              width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2)),
         ),
       ),
     );
   }
 }
-
 
 /// A dropdown for the ICT dialogs, styled like every other form field in the
 /// app: [StyledDropdownFormField]'s paged popup on a tinted accent fill.
@@ -2421,8 +2655,10 @@ class _IctDialogDropdown extends StatelessWidget {
         isDense: true,
         menuWidth: 260,
         accentColor: accent,
+        // Matches the theme's dense vertical so a dropdown row sits at the
+        // same height as the text fields above it.
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         prefixIcon: Icon(icon, color: accent, size: 20),
         options: options,
         onChanged: onChanged ?? (_) {},

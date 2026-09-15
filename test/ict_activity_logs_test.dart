@@ -81,7 +81,14 @@ void main() {
       expect(dash, contains('length: $n,'),
           reason: 'every tab needs a slot, or the view throws');
       // The label now names a rail entry, not a Tab.
-      expect(dash, contains("_IctRailItem('Activity Logs'"));
+      // ⚠️ Whitespace-insensitive: `dart format` re-wraps this constructor
+      // when the lines around it change length, and an exact single-line
+      // pattern would then fail without the rail entry having moved at all.
+      expect(
+          RegExp(r"_IctRailItem\(\s*'Activity Logs'")
+              .hasMatch(dash.replaceAll(RegExp(r'\s+'), ' ')),
+          isTrue,
+          reason: 'the Activity Logs rail entry is missing');
       expect(dash, contains('ActivityLogsTab(accent: accent)'));
     });
 

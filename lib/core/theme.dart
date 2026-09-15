@@ -323,7 +323,16 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: colors.surfaceDark,
+        // ⚠️ The CARD colour, not `surfaceDark`.
+        //
+        // In light mode `surfaceDark` resolves to pure #FFFFFF while a card is
+        // #F7F9FC, so every text box sat on its card as a slightly brighter
+        // white rectangle — read as a faint pale outline around each field,
+        // which is what it looked like. They are the same colour now, and the
+        // border alone draws the field. Dark mode is unchanged in effect:
+        // there the two are #1a1764 and #1e1b7a, close enough that nothing
+        // visibly moves.
+        fillColor: colors.cardDark,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: colors.borderColor),
@@ -336,6 +345,20 @@ class AppTheme {
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: primaryGold, width: 2),
         ),
+        // ⚠️ ONE height for every field in the app.
+        //
+        // Without this each field sized itself from its own content, so a
+        // plain TextField, one carrying a helper line and a dropdown all came
+        // out different heights — the ICT forms visibly stepped up and down
+        // along a row. `isDense` with an explicit padding is what makes them
+        // agree, and it is also what makes them shorter.
+        // ⚠️ 11 vertical, not the 14 most call sites pass. With `isDense` this
+        // is what actually makes the boxes shorter — the fields that spell out
+        // their own `contentPadding: vertical: 14` still override it, so the
+        // ICT dialogs set theirs explicitly rather than relying on this.
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         labelStyle: TextStyle(color: colors.textSecondary),
         hintStyle: TextStyle(color: colors.textMuted),
       ),

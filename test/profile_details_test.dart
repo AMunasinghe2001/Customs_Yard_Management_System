@@ -156,8 +156,13 @@ void main() {
       final add = 'for (final key in kAssignablePostKeys)'.allMatches(ict).length;
       final legacyAware =
           'for (final e in kPostTitles.entries)'.allMatches(ict).length;
-      final editSet = 'if (kPostTitles.containsKey(selectedPost)) selectedPost,'
-          .allMatches(ict)
+      // ⚠️ Whitespace-insensitive. `dart format` wraps this condition onto
+      // two lines whenever the code around it changes width, so an exact
+      // single-line pattern fails for a cosmetic reason while the legacy-post
+      // rule it is guarding is still perfectly intact.
+      final editSet = RegExp(
+              r'if \(kPostTitles\.containsKey\(selectedPost\)\)\s*selectedPost,')
+          .allMatches(ict.replaceAll(RegExp(r'\s+'), ' '))
           .length;
       expect(add, 1, reason: 'the Add dialog offers only assignable posts');
       expect(editSet, 1,
@@ -229,8 +234,16 @@ void main() {
       expect(profileScreen, isNot(contains("label: 'Role',")));
     });
 
-    test('shows the expiry countdown', () {
-      expect(profileScreen, contains("_Field(\n                'Disables In'"));
+    test('shows the PASSWORD countdown, not the dormancy one', () {
+      // ⚠️ This used to assert 'Disables In', the account-dormancy countdown.
+      // That read "Never expires" for anyone who signs in regularly, which
+      // told the officer nothing they could act on. The password rotates every
+      // 90 days and locks them out when it lapses, so that is the date on the
+      // card now — the same number ICT's staff table shows as "Resets in N
+      // days", from the same field.
+      expect(
+          profileScreen, contains("_Field(\n                'Password Resets In'"));
+      expect(profileScreen, contains('daysUntilPasswordExpiry'));
     });
 
     test('groups the fields instead of stacking nine identical bars', () {

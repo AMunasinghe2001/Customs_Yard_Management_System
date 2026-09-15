@@ -92,8 +92,19 @@ void main() {
       expect(dlg, contains('accent.withOpacity(0.15)'));
       expect(ref, contains('headerAccentColor!.withOpacity(0.15)'),
           reason: 'the reference recipe this copies has changed');
-      expect(dlg.contains('context.colors.customsBlue,'), isFalse,
-          reason: 'the fixed navy header is back');
+      // ⚠️ Navy is no longer banned outright — the YARD header is that navy
+      // gradient, and the officer's own Edit Profile takes it via `yard:`.
+      // What must never come back is navy as the UNCONDITIONAL header, which
+      // is what made every dialog wear the same colour whatever portal opened
+      // it. So: if navy appears, it must sit behind the yard flag.
+      if (dlg.contains('context.colors.customsBlue,')) {
+        final navyAt = dlg.indexOf('context.colors.customsBlue,');
+        final yardAt = dlg.indexOf(': yard');
+        expect(yardAt, greaterThan(0),
+            reason: 'navy is in the header with no yard flag guarding it');
+        expect(yardAt, lessThan(navyAt),
+            reason: 'the navy gradient is not inside the yard branch');
+      }
       expect(dlg.contains('accent.withOpacity(0.92)'), isFalse,
           reason: 'the heavy full-strength bar is back');
     });
@@ -102,8 +113,14 @@ void main() {
       // Dark-on-tint, exactly as the reference reads.
       expect(dlg, contains('Icon(icon, color: accent'));
       final flat = dlg.replaceAll(RegExp(r'\s+'), ' ');
-      expect(flat,
-          contains('color: context.colors.textPrimary, fontSize: erp ? 17 : 22'));
+      // ⚠️ The title is the page's text colour on the tinted (directorate)
+      // header, and white on the yard's dark navy bar — navy text on navy
+      // would be unreadable. So the assertion is that textPrimary is the
+      // fallback, not that it is unconditional.
+      expect(
+          flat,
+          contains('color: yard && !isDark ? Colors.white '
+              ': context.colors.textPrimary, fontSize: erp ? 17 : 22'));
     });
 
     test('it closes with the shared red button', () {

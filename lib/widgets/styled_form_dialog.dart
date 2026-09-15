@@ -32,6 +32,24 @@ class StyledFormDialog extends StatelessWidget {
   /// drawn as a panel of the console rather than as an event.
   final bool erp;
 
+  /// The YARD's dialog header: the deep `customsBlue` gradient with the gold
+  /// accent on it, exactly as `PackageDetailsDialog` ("SR REGISTER ENTRY")
+  /// draws it.
+  ///
+  /// ⚠️ Also opt-in, and for the same reason [erp] is. There are three looks
+  /// in this app, not two:
+  ///
+  ///   * the yard's navy gradient bar  (this flag)
+  ///   * the directorates' 15% tint of their own team colour  (the default)
+  ///   * the ICT console's flat panel  ([erp])
+  ///
+  /// The default stays the tint because that is what the directorate popups
+  /// share. A yard screen that leaves this false gets `primaryGold` tinted at
+  /// 15% — which is the DIRECTORATE design wearing the yard's colour, and is
+  /// exactly how the officer's own Edit Profile came to look like a
+  /// directorate form.
+  final bool yard;
+
   const StyledFormDialog({
     super.key,
     required this.label,
@@ -42,6 +60,7 @@ class StyledFormDialog extends StatelessWidget {
     this.width = 460,
     this.headerAccentColor,
     this.erp = false,
+    this.yard = false,
   });
 
   @override
@@ -96,12 +115,30 @@ class StyledFormDialog extends StatelessWidget {
                   // the app does, and it is what makes Central Disposal's
                   // green and Top Management's teal read as the same design
                   // in two colours rather than two designs.
-                  : BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        accent.withOpacity(0.15),
-                        context.colors.cardDark,
-                      ]),
-                    ),
+                  : yard
+                      // ⚠️ The yard's own header, copied from the SR Register
+                      // Entry popup: a deep navy bar in light mode, the dark
+                      // surfaces in dark mode. The accent rides ON it rather
+                      // than tinting it.
+                      ? BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: isDark
+                                ? [
+                                    context.colors.surfaceDark,
+                                    context.colors.cardDark,
+                                  ]
+                                : [
+                                    context.colors.customsBlue,
+                                    context.colors.customsBlueDark,
+                                  ],
+                          ),
+                        )
+                      : BoxDecoration(
+                          gradient: LinearGradient(colors: [
+                            accent.withOpacity(0.15),
+                            context.colors.cardDark,
+                          ]),
+                        ),
               child: Row(
                 children: [
                   Container(
@@ -141,7 +178,13 @@ class StyledFormDialog extends StatelessWidget {
                             // header is a soft tint now, not a dark bar, so a
                             // white title would be unreadable on a light page
                             // — the reference popup reads dark-on-tint too.
-                            color: context.colors.textPrimary,
+                            //
+                            // The yard header IS a dark bar, so there the
+                            // title goes white in light mode, as the SR
+                            // Register Entry popup does.
+                            color: yard && !isDark
+                                ? Colors.white
+                                : context.colors.textPrimary,
                             fontSize: erp ? 17 : 22,
                             fontWeight: FontWeight.bold,
                           ),

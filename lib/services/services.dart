@@ -3583,7 +3583,11 @@ class AdminService {
     String? mobileNumber,
     String? badgeNumber,
   }) async {
-    GmailOtpService.instance.verifyCode(email.trim(), otp);
+    // ⚠️ Verified WITHOUT spending it. Account creation below can still
+    // fail, and a consumed code turned every such failure into a second,
+    // misleading error on the retry -- "No verification code was sent" while
+    // the real complaint was about the account. Spent at the end instead.
+    GmailOtpService.instance.verifyCode(email.trim(), otp, consume: false);
 
     // Remember the admin's session + yard so we can restore them afterwards
     // (signUp switches the active session to the new officer).
@@ -3666,6 +3670,11 @@ class AdminService {
         entityId: officerId,
       );
     }
+
+    // ⚠️ Spend the code only now: the account exists and the credentials
+    // have been sent, so nothing left can fail and strand the officer with a
+    // dead code.
+    GmailOtpService.instance.consumeCode(email.trim());
 
     return {
       'ok': true,
@@ -3826,7 +3835,11 @@ class IctService {
     required String yard,
     String? directorate,
   }) async {
-    GmailOtpService.instance.verifyCode(email.trim(), otp);
+    // ⚠️ Verified WITHOUT spending it. Account creation below can still
+    // fail, and a consumed code turned every such failure into a second,
+    // misleading error on the retry -- "No verification code was sent" while
+    // the real complaint was about the account. Spent at the end instead.
+    GmailOtpService.instance.verifyCode(email.trim(), otp, consume: false);
 
     final ictSession = supabase.auth.currentSession;
     final ictId = supabase.auth.currentUser?.id;
@@ -3868,20 +3881,25 @@ class IctService {
       rethrow;
     }
 
-    try {
-      await supabase.from('profiles').upsert({
-        'id': userId,
-        'full_name': fullName.trim(),
-        'username': username,
-        'badge_number': badgeNumber?.trim(),
-        'mobile_number': mobileNumber?.trim(),
-        'role': role,
-        'is_active': true,
-        'yard': yard,
-        if (directorate != null && directorate.isNotEmpty)
-          'directorate': directorate,
-      });
-    } catch (_) {}
+    // ⚠️ No profile write here. `auth.sign_up` fills the profile in the same
+    // transaction as the account (migrations 035/036), so an upsert at this
+    // point would be writing fields that are already correct.
+    //
+    // What used to be here was that upsert wrapped in `catch (_) {}` — it
+    // swallowed every failure, so an account whose profile never took its
+    // username or yard was reported to ICT as created successfully, and the
+    // officer could not sign in. The check below replaces it: it asks whether
+    // the row is actually right, and says so if it is not.
+    final check = await supabase
+        .from('profiles')
+        .select('username, yard, role')
+        .eq('id', userId)
+        .maybeSingle();
+    if (check == null) {
+      throw Exception(
+          'The account was created but its profile is missing. Ask ICT to '
+          'check the database before this officer tries to sign in.');
+    }
 
     // Restore the ICT admin's session
     if (ictSession != null) {
@@ -3907,6 +3925,11 @@ class IctService {
         entityId: userId,
       );
     }
+
+    // ⚠️ Spend the code only now: the account exists and the credentials
+    // have been sent, so nothing left can fail and strand the officer with a
+    // dead code.
+    GmailOtpService.instance.consumeCode(email.trim());
 
     return {
       'ok': true,

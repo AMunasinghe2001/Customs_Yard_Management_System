@@ -232,7 +232,16 @@ void main() {
       expect(dash, contains('length: $n,'),
           reason: 'the controller must have one slot per rail entry');
       // The label now names a rail entry, not a Tab.
-      expect(dash, contains("_IctRailItem('Directorate Access'"));
+      //
+      // ⚠️ Matched whitespace-insensitively. `dart format` re-wraps this
+      // constructor whenever the lines around it change length, so an exact
+      // single-line pattern fails for a purely cosmetic reason and says
+      // nothing about whether the rail entry is actually there.
+      expect(
+          RegExp(r"_IctRailItem\(\s*'Directorate Access'")
+              .hasMatch(dash.replaceAll(RegExp(r'\s+'), ' ')),
+          isTrue,
+          reason: 'the Directorate Access rail entry is missing');
       expect(dash, contains('DirectorateAccessTab(accent: accent)'));
     });
 

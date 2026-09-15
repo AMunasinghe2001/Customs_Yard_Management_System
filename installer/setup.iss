@@ -11,7 +11,11 @@
 
 #define AppName        "Sri Lanka Customs SR Management System"
 #define AppShortName   "SR Management System"
-#define AppVersion     "1.0.0"
+; ⚠️ Bump this for every release. The AppId below stays the SAME, which is
+; what makes Windows treat a new setup as an UPGRADE of the installed copy
+; rather than a second product: the officer runs it over the old one and
+; keeps their shortcuts, their install folder and their .env.
+#define AppVersion     "1.1.0"
 #define AppPublisher   "Sri Lanka Customs Department"
 #define AppExeName     "cus_yard_management.exe"
 #define BuildDir       "..\build\windows\x64\runner\Release"

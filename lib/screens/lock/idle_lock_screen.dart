@@ -151,137 +151,157 @@ class _IdleLockScreenState extends State<IdleLockScreen>
 
                   // ── The seal ──────────────────────────────────────────
                   Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 300,
-                          height: 300,
-                          child: AnimatedBuilder(
-                            animation:
-                                Listenable.merge([_breathe, _orbit]),
-                            builder: (context, child) {
-                              final breath = Curves.easeInOut
-                                  .transform(_breathe.value);
-                              return Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  // Halo + rings, painted together into ONE
-                                  // canvas.
-                                  //
-                                  // A gradient-filled Container cannot do this
-                                  // job: a radial fading to transparent still
-                                  // composites as a disc over the drifting
-                                  // background, which read as a dark circle
-                                  // parked behind the seal. Painting the glow
-                                  // as a blurred circle on the shared canvas
-                                  // lets the background show through it.
-                                  Positioned.fill(
-                                    child: CustomPaint(
-                                      painter: _SealHaloPainter(
-                                        color: accent,
-                                        breath: breath,
-                                        orbit: _orbit.value,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // ⚠️ 380 is the size this WANTS, not a size it takes
+                        // unconditionally. A fixed 380 overflowed a short
+                        // window by 5px — the column below it is
+                        // MainAxisSize.min inside a Center, so nothing was
+                        // going to shrink it. Roughly half the available
+                        // height leaves room for the title, the pill and the
+                        // hint underneath at any window size.
+                        final seal = math.min(380.0,
+                            math.max(220.0, constraints.maxHeight * 0.45));
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              // The rings are painted into THIS box, and the outer
+                              // one at radius 178 needs 356 across or it clips.
+                              width: seal,
+                              height: seal,
+                              child: AnimatedBuilder(
+                                animation: Listenable.merge([_breathe, _orbit]),
+                                builder: (context, child) {
+                                  final breath = Curves.easeInOut
+                                      .transform(_breathe.value);
+                                  return Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      // Halo + rings, painted together into ONE
+                                      // canvas.
+                                      //
+                                      // A gradient-filled Container cannot do this
+                                      // job: a radial fading to transparent still
+                                      // composites as a disc over the drifting
+                                      // background, which read as a dark circle
+                                      // parked behind the seal. Painting the glow
+                                      // as a blurred circle on the shared canvas
+                                      // lets the background show through it.
+                                      Positioned.fill(
+                                        child: CustomPaint(
+                                          painter: _SealHaloPainter(
+                                            color: accent,
+                                            breath: breath,
+                                            orbit: _orbit.value,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  Transform.scale(
-                                    scale: 0.97 + 0.05 * breath,
-                                    child: child,
+                                      Transform.scale(
+                                        scale: 0.97 + 0.05 * breath,
+                                        child: child,
+                                      ),
+                                    ],
+                                  );
+                                },
+                                // ⚠️ The knockout has to be repainted here too.
+                                //
+                                // The ship and the aeroplane in the crest are not
+                                // transparent: they are painted a flat #1a1764
+                                // and only READ as holes while the background
+                                // behind them is that colour (see brand_panel.dart
+                                // — a real transparent knockout does not survive
+                                // flutter_svg). This screen loaded the asset
+                                // straight through SvgPicture.asset, so the navy
+                                // stayed navy against a near-black page and the
+                                // two shapes showed as blue stickers on the seal.
+                                child: FutureBuilder<String>(
+                                  future: _crestSource,
+                                  builder: (context, snap) {
+                                    // Scales with the seal box so the crest keeps
+                                    // its proportion inside the rings at any
+                                    // window size.
+                                    final crest = seal * 0.53;
+                                    if (!snap.hasData) {
+                                      return SizedBox(
+                                          width: crest, height: crest);
+                                    }
+                                    return SvgPicture.string(
+                                      crestWithKnockout(
+                                          snap.data!, const Color(0xFF05060F)),
+                                      width: crest,
+                                      height: crest,
+                                      theme: SvgTheme(currentColor: accent),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 34),
+                            Text(
+                              'Sri Lanka Customs',
+                              style: TextStyle(
+                                color: accent,
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'SR Management System',
+                              style: TextStyle(
+                                  color: Color(0xFF8E93B0),
+                                  fontSize: 14,
+                                  letterSpacing: 0.4),
+                            ),
+                            const SizedBox(height: 46),
+                            // ── The lock notice ───────────────────────────
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 22, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.04),
+                                borderRadius: BorderRadius.circular(30),
+                                border: Border.all(
+                                    color: Colors.white.withOpacity(0.10)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.lock_outline_rounded,
+                                      size: 16, color: accent.withOpacity(0.9)),
+                                  const SizedBox(width: 10),
+                                  const Text(
+                                    'Locked after 5 minutes of inactivity',
+                                    style: TextStyle(
+                                        color: Color(0xFFB6BAD0),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600),
                                   ),
                                 ],
-                              );
-                            },
-                            // ⚠️ The knockout has to be repainted here too.
-                            //
-                            // The ship and the aeroplane in the crest are not
-                            // transparent: they are painted a flat #1a1764
-                            // and only READ as holes while the background
-                            // behind them is that colour (see brand_panel.dart
-                            // — a real transparent knockout does not survive
-                            // flutter_svg). This screen loaded the asset
-                            // straight through SvgPicture.asset, so the navy
-                            // stayed navy against a near-black page and the
-                            // two shapes showed as blue stickers on the seal.
-                            child: FutureBuilder<String>(
-                              future: _crestSource,
-                              builder: (context, snap) {
-                                if (!snap.hasData) {
-                                  return const SizedBox(width: 150, height: 150);
-                                }
-                                return SvgPicture.string(
-                                  crestWithKnockout(
-                                      snap.data!, const Color(0xFF05060F)),
-                                  width: 150,
-                                  height: 150,
-                                  theme: SvgTheme(currentColor: accent),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 34),
-                        Text(
-                          'Sri Lanka Customs',
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'SR Management System',
-                          style: TextStyle(
-                              color: Color(0xFF8E93B0),
-                              fontSize: 14,
-                              letterSpacing: 0.4),
-                        ),
-                        const SizedBox(height: 46),
-                        // ── The lock notice ───────────────────────────
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 22, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.04),
-                            borderRadius: BorderRadius.circular(30),
-                            border: Border.all(
-                                color: Colors.white.withOpacity(0.10)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.lock_outline_rounded,
-                                  size: 16, color: accent.withOpacity(0.9)),
-                              const SizedBox(width: 10),
-                              const Text(
-                                'Locked after 5 minutes of inactivity',
-                                style: TextStyle(
-                                    color: Color(0xFFB6BAD0),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600),
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        // Gently pulsing so the eye is drawn to the one thing
-                        // the user has to do.
-                        FadeTransition(
-                          opacity: Tween<double>(begin: 0.45, end: 1.0).animate(
-                            CurvedAnimation(
-                                parent: _breathe, curve: Curves.easeInOut),
-                          ),
-                          child: const Text(
-                            'Click anywhere to sign in again',
-                            style: TextStyle(
-                                color: Color(0xFF7E839C),
-                                fontSize: 13.5,
-                                letterSpacing: 0.3),
-                          ),
-                        ),
-                      ],
+                            ),
+                            const SizedBox(height: 18),
+                            // Gently pulsing so the eye is drawn to the one thing
+                            // the user has to do.
+                            FadeTransition(
+                              opacity:
+                                  Tween<double>(begin: 0.45, end: 1.0).animate(
+                                CurvedAnimation(
+                                    parent: _breathe, curve: Curves.easeInOut),
+                              ),
+                              child: const Text(
+                                'Click anywhere to sign in again',
+                                style: TextStyle(
+                                    color: Color(0xFF7E839C),
+                                    fontSize: 13.5,
+                                    letterSpacing: 0.3),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -361,40 +381,96 @@ class _SealHaloPainter extends CustomPainter {
     // covered by it.
     canvas.drawCircle(
       centre,
-      66 + 10 * breath,
+      88 + 12 * breath,
       Paint()
         ..blendMode = BlendMode.plus
         ..color = color.withOpacity(0.22 + 0.10 * breath)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 48 + 12 * breath),
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 60 + 14 * breath),
+    );
+
+    // ── The seat the crest sits on ──────────────────────────────────────
+    //
+    // ⚠️ THIS is what stops the ship and the plane reading as black patches.
+    //
+    // They are not transparent: they are painted the page colour (#05060F)
+    // and only LOOK like holes while what is behind them is that colour. The
+    // glow above adds light with BlendMode.plus, so the ring of page around
+    // the crest is brighter than #05060F while the shapes inside it stay
+    // exactly #05060F — and the eye reads that difference as two dark
+    // cut-outs stamped on a lit seal.
+    //
+    // A soft pool of the page colour, painted back OVER the glow and under
+    // the crest, takes the light out of the small area the crest covers, so
+    // the shapes match their surroundings again. Drawn normally rather than
+    // with `plus` so it subtracts light instead of adding it, and blurred
+    // hard so it has no visible edge — the glow still reads everywhere
+    // outside the seal, which is the part that should be lit.
+    // ⚠️ Sized to the CREST, not to the glow: radius 78 is a little under the
+    // crest's own half-width, so it darkens the disc the seal covers and
+    // stops there. At 104 it swallowed the halo as well, and the seal lost
+    // the light around it that makes it look lit at all.
+    //
+    // 0.72 rather than a full-strength pool, for the same reason: it has to
+    // take the ADDED light back out, not paint a black disc over a screen
+    // that is already nearly black.
+    canvas.drawCircle(
+      centre,
+      78,
+      Paint()
+        ..color = const Color(0xFF05060F).withOpacity(0.72)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 26),
     );
 
     // ── Arcs ────────────────────────────────────────────────────────────
-    _arc(canvas, centre, 110 + 5 * breath, orbit * 2 * math.pi, 0.34);
-    _arc(canvas, centre, 134 - 4 * breath, -orbit * 2 * math.pi * 0.6, 0.18);
+    // ⚠️ Bigger, to match the larger seal: 110/134 -> 146/178.
+    //
+    // Two BROKEN rings — a ring with a piece missing — turning in opposite
+    // directions at different speeds.
+    _arc(canvas, centre, 146 + 6 * breath, orbit * 2 * math.pi, 0.34);
+    _arc(canvas, centre, 178 - 5 * breath, -orbit * 2 * math.pi * 0.6, 0.18);
   }
 
-  /// One thin arc, bright at its head and fading along its tail so the
-  /// rotation is legible without a hard edge.
+  /// One arc — a ring with a piece missing — turning without ever stopping.
+  ///
+  /// ⚠️ It is the GRADIENT that used to make this look broken, not the gap.
+  ///
+  /// The arc always rotated smoothly. But the sweep was pinned to the arc's
+  /// own angle and faded to fully transparent along its length, so the bright
+  /// head sat at a fixed point ON the shape and the tail died out at the same
+  /// fixed point. Nothing appeared to travel; instead the line seemed to stop
+  /// at one place and light up again at another.
+  ///
+  /// Now the arc keeps its gap and its rotation, and the brightness is even
+  /// along it — so what the eye follows is the SHAPE going round, which is
+  /// continuous. It fades only at the two ends, over a short stretch, so the
+  /// ends are soft rather than cut square.
   void _arc(
       Canvas canvas, Offset centre, double radius, double angle, double alpha) {
     final rect = Rect.fromCircle(center: centre, radius: radius);
+
+    // The drawn portion of the circle: just over half, so the gap is obvious.
+    const sweep = math.pi * 1.15;
+    final frac = sweep / (2 * math.pi);
+
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round
       ..shader = SweepGradient(
+        // Soft at both ends, full through the middle. The stops are expressed
+        // as a fraction of the DRAWN arc, not of the whole circle, so the
+        // fade stays the same visual length whatever `sweep` is.
         colors: [
+          color.withOpacity(0),
           color.withOpacity(alpha),
-          color.withOpacity(alpha * 0.3),
+          color.withOpacity(alpha),
           color.withOpacity(0),
         ],
-        stops: const [0.0, 0.35, 1.0],
+        stops: [0.0, frac * 0.18, frac * 0.82, frac],
         transform: GradientRotation(angle),
       ).createShader(rect);
 
-    // Just over half the circle, so there is always a visible gap -- a full
-    // ring would look static however fast it span.
-    canvas.drawArc(rect, angle, math.pi * 1.15, false, paint);
+    canvas.drawArc(rect, angle, sweep, false, paint);
   }
 
   @override

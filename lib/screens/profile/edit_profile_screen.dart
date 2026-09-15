@@ -95,7 +95,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             profile.id,
             fullName: _nameCtrl!.text.trim(),
             username: _usernameCtrl!.text.trim(),
-            badgeNumber: _salaryCtrl!.text.trim(),
+            // ⚠️ The officer's OWN salary number, not the field's text. The
+            // field is read-only now, but posting its controller anyway would
+            // leave the value overwritable by anything that set that text —
+            // read-only in the UI is not the same as unwritable.
+            badgeNumber: profile.badgeNumber,
             mobileNumber:
                 _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
             // jobRole and yard are deliberately NOT sent: ICT owns them, the
@@ -331,6 +335,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           title: 'Edit Profile',
           icon: Icons.manage_accounts_rounded,
           width: 620,
+          // ⚠️ This is a YARD form — the officer's own profile, opened from
+          // the yard shell — so it takes the yard's navy header, the same one
+          // the SR Register Entry popup uses. Without this flag it fell back
+          // to the 15% accent tint, which is the DIRECTORATE design, and the
+          // dialog looked like it belonged to a directorate console.
+          yard: true,
           child: Form(
                 key: _formKey,
                 child: Column(
@@ -464,11 +474,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         },
                       ),
                       const Gap(10),
+                      // ⚠️ Read-only, like Job Role and Yard below it. The
+                      // salary number is the Department's identifier for the
+                      // officer, not a detail about them — ICT sets it when
+                      // the account is provisioned, and an officer editing
+                      // their own would break the one field that ties the
+                      // account to a real member of staff.
                       TextFormField(
                         controller: _salaryCtrl!,
+                        readOnly: true,
+                        enabled: false,
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Salary Number',
+                          helperText: 'Set by ICT',
                           contentPadding:
                               EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                         ),
@@ -757,7 +776,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
                 yard: _yardWithDirectorate(profile),
-                daysUntilExpiry: profile.daysUntilExpiry,
+                daysUntilPasswordExpiry: profile.daysUntilPasswordExpiry,
+                passwordExpired: profile.isPasswordExpired,
               ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideY(begin: 0.1),
             ],
           ),
@@ -935,7 +955,8 @@ class _ProfileDetailsCard extends StatelessWidget {
 
   /// Whole days until the account auto-deactivates, or null for an
   /// institutional directorate account that never expires.
-  final int? daysUntilExpiry;
+  final int daysUntilPasswordExpiry;
+  final bool passwordExpired;
 
   const _ProfileDetailsCard({
     required this.fullName,
@@ -946,7 +967,8 @@ class _ProfileDetailsCard extends StatelessWidget {
     required this.mobile,
     required this.jobRole,
     required this.yard,
-    required this.daysUntilExpiry,
+    required this.daysUntilPasswordExpiry,
+    required this.passwordExpired,
   });
 
   @override
@@ -954,14 +976,19 @@ class _ProfileDetailsCard extends StatelessWidget {
     final statusColor =
         isActive ? context.colors.successGreen : context.colors.dangerRed;
 
-    // The expiry countdown ICT's staff table shows, brought to the officer's
-    // own profile so they can see their account lapsing before it does.
-    final (String expiryValue, Color? expiryColor) = switch (daysUntilExpiry) {
-      null => ('Never expires', context.colors.textSecondary),
-      final d when d < 0 => ('Expired', context.colors.dangerRed),
-      final d when d <= 30 => ('$d days', context.colors.warningAmber),
-      final d => ('$d days', context.colors.textPrimary),
-    };
+    // ⚠️ How long the PASSWORD has left, not how long the account has.
+    //
+    // This tile used to count down `daysUntilExpiry` — account dormancy — and
+    // read "Never expires" for everyone who signs in regularly, which told
+    // the officer nothing they could act on. The password rotates every 90
+    // days and locks them out when it lapses, so that is the date worth
+    // knowing. It is the same number ICT's staff table shows as
+    // "Resets in N days", from the same field.
+    final (String expiryValue, Color? expiryColor) = passwordExpired
+        ? ('Expired', context.colors.dangerRed)
+        : daysUntilPasswordExpiry <= 14
+            ? ('$daysUntilPasswordExpiry days', context.colors.warningAmber)
+            : ('$daysUntilPasswordExpiry days', context.colors.textPrimary);
 
     return Container(
       width: double.infinity,
@@ -1018,7 +1045,7 @@ class _ProfileDetailsCard extends StatelessWidget {
                 color: statusColor,
               ),
               _Field(
-                'Disables In',
+                'Password Resets In',
                 expiryValue,
                 Icons.schedule_rounded,
                 color: expiryColor,
