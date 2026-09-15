@@ -525,21 +525,22 @@ class _AbandonedPackagesScreenState
                                 size: ColumnSize.S,
                                 fixedWidth: 110),
                             DataColumn2(
-                                label: Text('Abandoned Qty'),
+                                label: Text('Qty'),
                                 size: ColumnSize.S,
-                                fixedWidth: 130),
+                                fixedWidth: 70),
                             DataColumn2(
                                 label: Text('Post Status Activity'),
                                 size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Abandoned Date'),
-                                size: ColumnSize.M),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
                             DataColumn2(
                                 label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Center(child: Text('Appeal')),
                                 size: ColumnSize.S,
-                                fixedWidth: 130),
+                                fixedWidth: 140),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -562,8 +563,8 @@ class _AbandonedPackagesScreenState
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontSize: 12))),
                                     DataCell(Center(child: Text('${row.qty}'))),
-                                    DataCell(TooltipText(row.reason,
-                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(_PostStatusActivityChip(
+                                        label: row.reason)),
                                     DataCell(TooltipText(row.date != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.date!)
@@ -737,4 +738,39 @@ class _AbandonedRow {
   });
 
   String get itemName => item.itemName;
+}
+
+
+class _PostStatusActivityChip extends StatelessWidget {
+  final String label;
+  const _PostStatusActivityChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty || label.trim() == '—') {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final color = context.colors.warningAmber;
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
 }

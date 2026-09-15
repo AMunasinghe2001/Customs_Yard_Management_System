@@ -85,20 +85,45 @@ final storageChargeVisibleProvider =
   final pkg = ref.watch(packageByIdProvider(packageId)).valueOrNull;
   final rates = ref.watch(storageRateProvider).valueOrNull;
   if (pkg == null || rates == null) return null;
-  return pkg.warehouseEntries.isNotEmpty;
+  final isPerishable = pkg.items.any((i) => i.nature == kNaturePerishable);
+  return pkg.warehouseEntries.isNotEmpty || isPerishable;
 });
 
-/// Whether these goods reached a Top Management ruling after failing every
-/// tender — the Unsold route.
+/// Whether these goods reached a Top Management ruling or are awaiting
+/// a Top Management decision after failing tender — the Unsold route.
 ///
-/// Keyed through the forfeited record, because an unsold proposal is filed
-/// against that and not against the package.
-bool _isUnsoldDisposal(WidgetRef ref, PackageModel pkg) {
+/// Keyed through the forfeited record and tender sale item record.
+bool _isUnsoldDisposal(WidgetRef ref, PackageModel pkg,
+    [String? packageItemId]) {
   final proposals = ref.watch(unsoldProposalsProvider).valueOrNull;
-  if (proposals == null || proposals.isEmpty) return false;
   final byItem = ref.watch(forfeitedByItemProvider(pkg.id)).valueOrNull;
-  if (byItem == null) return false;
-  return byItem.values.any((f) => proposals.containsKey(f.id));
+  if (proposals != null && proposals.isNotEmpty && byItem != null) {
+    if (packageItemId != null) {
+      final fp = byItem[packageItemId];
+      if (fp != null && proposals.containsKey(fp.id)) return true;
+    } else {
+      if (byItem.values.any((f) => proposals.containsKey(f.id))) return true;
+    }
+  }
+
+  // Check if marked unsold in tender sale items (Awaiting Top Management or Unsold)
+  final saleItem = packageItemId != null
+      ? ref
+          .watch(saleItemForPackageItemProvider('${pkg.id}|$packageItemId'))
+          .valueOrNull
+      : ref.watch(saleItemForPackageProvider(pkg.id)).valueOrNull;
+  if (saleItem?.unsold == true) return true;
+
+  if (packageItemId == null && byItem != null) {
+    for (final itemId in byItem.keys) {
+      final si = ref
+          .watch(saleItemForPackageItemProvider('${pkg.id}|$itemId'))
+          .valueOrNull;
+      if (si?.unsold == true) return true;
+    }
+  }
+
+  return false;
 }
 
 /// Stands in for the figure on goods nobody is billed for.
@@ -210,7 +235,7 @@ class StorageChargeNote extends ConsumerWidget {
     // here reads as a bill that is owed. The same goods appear again under
     // each Final Outcome page, so the rule has to live with the figure
     // rather than with any one page.
-    if (_isUnsoldDisposal(ref, pkg)) {
+    if (_isUnsoldDisposal(ref, pkg, packageItemId)) {
       return _NotChargedNote(compact: compact, priceOnly: priceOnly);
     }
 
@@ -226,48 +251,79 @@ class StorageChargeNote extends ConsumerWidget {
       if (packageItemId == null) return true;
       return e.packageItemId == packageItemId;
     }).toList();
-    // Whether any of them is still accruing, which changes the wording
-    // below from "to date" to a closed figure.
-    final anyLive = entries.any((e) => !e.isReturned);
-    if (entries.isEmpty) return const SizedBox.shrink();
 
-    // Charged from the SR's ENTRY DATE, the same rule the Released Goods
-    // table uses, so this figure and that column cannot disagree.
-    //
-    // ⚠️ `calculatePackageCharge` returns ZERO for goods whose status is
-    // confiscated / forfeit / abandoned / destroyed -- the state has taken
-    // them, so there is no owner left to bill. That is the right rule for
-    // an INVOICE and the wrong answer for a VALUATION: 48 of the 168 goods
-    // that reach a valuation form carry exactly those statuses, so the note
-    // would simply never appear on the forms it was built for.
-    //
-    // So the days and the rate are computed here, and the figure is labelled
-    // for what it is: what the SPACE has cost, whether or not anybody will
-    // be billed for it. An officer pricing goods that have occupied a zone
-    // for 703 days needs that number either way.
+    final isPerishable = packageItemId != null
+        ? (pkg.items.where((i) => i.id == packageItemId).firstOrNull?.nature ==
+            kNaturePerishable)
+        : pkg.items.any((i) => i.nature == kNaturePerishable);
+
+    if (entries.isEmpty && !isPerishable) return const SizedBox.shrink();
+
     double total = 0;
     DateTime? since;
     DateTime? lastDay;
     var billable = true;
-    for (final e in entries) {
-      final start = pkg.entryDate ?? e.admittedAt;
-      if (since == null || start.isBefore(since)) since = start;
-      // ⚠️ A closed entry ends on the day it CLOSED, not today. An
-      // entry returned in 2024 has not been accruing since.
-      final ends = e.isReturned ? (e.returnedAt ?? DateTime.now()) : null;
-      final endOf = ends ?? DateTime.now();
-      if (lastDay == null || endOf.isAfter(lastDay)) lastDay = endOf;
-      final item =
-          pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
-      final status = (item?.status ?? '').trim().toLowerCase();
-      if (WarehouseEntryModel.isNoChargeStatus(status)) billable = false;
-      total += _spaceCost(
+    bool anyLive = false;
+
+    if (entries.isNotEmpty) {
+      anyLive = entries.any((e) => !e.isReturned);
+      for (final e in entries) {
+        final start = pkg.entryDate ?? e.admittedAt;
+        if (since == null || start.isBefore(since)) since = start;
+        // ⚠️ A closed entry ends on the day it CLOSED, not today. An
+        // entry returned in 2024 has not been accruing since.
+        final ends = e.isReturned ? (e.returnedAt ?? DateTime.now()) : null;
+        final endOf = ends ?? DateTime.now();
+        if (lastDay == null || endOf.isAfter(lastDay)) lastDay = endOf;
+        final item =
+            pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
+        final status = (item?.status ?? '').trim().toLowerCase();
+        if (WarehouseEntryModel.isNoChargeStatus(status)) billable = false;
+        total += _spaceCost(
+          from: start,
+          units: e.itemCount,
+          rates: rates,
+          until: ends,
+        );
+      }
+    } else {
+      // Perishable goods stored in yard without warehouse admission entries.
+      // Yard storage charges accrue from entry date until sold/completed.
+      final saleItem = packageItemId != null
+          ? ref
+              .watch(saleItemForPackageItemProvider('$id|$packageItemId'))
+              .valueOrNull
+          : ref.watch(saleItemForPackageProvider(id)).valueOrNull;
+
+      final start = pkg.entryDate ?? pkg.createdAt;
+      since = start;
+      final isDelivered = saleItem?.isDelivered == true;
+      final ends = isDelivered
+          ? (saleItem?.deliveredAt ?? saleItem?.soldAt ?? DateTime.now())
+          : null;
+      lastDay = ends ?? DateTime.now();
+      anyLive = !isDelivered;
+      billable = true;
+
+      final units = packageItemId != null
+          ? (pkg.items
+                  .where((i) => i.id == packageItemId)
+                  .firstOrNull
+                  ?.quantity ??
+              1)
+          : (pkg.items.isNotEmpty
+              ? pkg.items.fold<int>(
+                  0, (sum, i) => sum + (i.quantity > 0 ? i.quantity : 1))
+              : (pkg.totalItemCount > 0 ? pkg.totalItemCount : 1));
+
+      total = _spaceCost(
         from: start,
-        units: e.itemCount,
+        units: units,
         rates: rates,
         until: ends,
       );
     }
+
     if (total <= 0) return const SizedBox.shrink();
 
     final money = NumberFormat('#,##0.00');

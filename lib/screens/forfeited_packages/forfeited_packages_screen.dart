@@ -330,7 +330,7 @@ class _ForfeitedPackagesScreenState
                             DataColumn2(
                                 label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Goods Name'), size: ColumnSize.L),
+                                label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('HS Code'),
                                 size: ColumnSize.S,
@@ -343,21 +343,19 @@ class _ForfeitedPackagesScreenState
                                 label: Text('Post Status Activity'),
                                 size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Consignee'), size: ColumnSize.M),
-                            DataColumn2(
                                 label: Text('Forfeited Date'),
-                                size: ColumnSize.M),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
                             DataColumn2(
-                                label: Text('Appeal Deadline'),
-                                size: ColumnSize.M),
+                                label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Center(child: Text('Appeal')),
                                 size: ColumnSize.S,
-                                fixedWidth: 130),
+                                fixedWidth: 140),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
-                                fixedWidth: 70),
+                                fixedWidth: 55),
                           ],
                           rows: rows.map((row) {
                             // ⚠️ The record, the item and the entry, resolved
@@ -378,7 +376,6 @@ class _ForfeitedPackagesScreenState
                                 : pkg.packageDetails?.warehouseEntries
                                     .where((e) => e.id == row.entryId)
                                     .firstOrNull;
-                            final isExpired = pkg.isAppealExpired;
                             // Appeal holds are PER ITEM: the directorate can hold
                             // one item of a package while its siblings stay in the
                             // normal appeal window. heldItemIds names the specific
@@ -415,27 +412,10 @@ class _ForfeitedPackagesScreenState
                               // competing: nothing else on these pages
                               // marks a row from its left edge.
                               cells: [
-                                DataCell(Row(children: [
-                                  Container(
-                                    width: 3,
-                                    height: 26,
-                                    margin: const EdgeInsets.only(right: 8),
-                                    decoration: BoxDecoration(
-                                      color: isExpired
-                                          ? context.colors.dangerRed
-                                              .withOpacity(0.75)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: TooltipText(pkg.srNumber,
-                                        style: TextStyle(
-                                            color: context
-                                                .colors.accentLightBlue,
-                                            fontWeight: FontWeight.bold)),
-                                  ),
-                                ])),
+                                DataCell(TooltipText(pkg.srNumber,
+                                    style: TextStyle(
+                                        color: context.colors.accentLightBlue,
+                                        fontWeight: FontWeight.bold))),
                                 DataCell(TooltipText(row.itemName,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -448,27 +428,12 @@ class _ForfeitedPackagesScreenState
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 12))),
                                 DataCell(TooltipText('${row.qty}')),
-                                DataCell(TooltipText(row.reason,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        color: context.colors.textSecondary,
-                                        fontSize: 12,
-                                        fontStyle: FontStyle.italic))),
-                                DataCell(TooltipText(pkg.consigneeName,
-                                    overflow: TextOverflow.ellipsis)),
+                                DataCell(_PostStatusActivityChip(
+                                    label: row.reason)),
                                 DataCell(TooltipText(DateFormat('yyyy-MM-dd')
                                     .format(row.forfeitedDate))),
-                                DataCell(TooltipText(
-                                  DateFormat('yyyy-MM-dd')
-                                      .format(pkg.appealDeadline),
-                                  style: TextStyle(
-                                      color: isExpired
-                                          ? context.colors.dangerRed
-                                          : context.colors.textPrimary,
-                                      fontWeight: isExpired
-                                          ? FontWeight.bold
-                                          : FontWeight.normal),
-                                )),
+                                DataCell(TooltipText(pkg.consigneeName,
+                                    overflow: TextOverflow.ellipsis)),
                                 DataCell(Center(
                                   child: rowOnAppealHold
                                       // Appeal Directorate has placed a hold on
@@ -648,6 +613,41 @@ class _ForfeitedPackagesScreenState
                 orElse: () => const SizedBox.shrink(),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _PostStatusActivityChip extends StatelessWidget {
+  final String label;
+  const _PostStatusActivityChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty || label.trim() == '—') {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final color = context.colors.warningAmber;
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),

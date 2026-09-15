@@ -561,12 +561,7 @@ class _DetainedPackagesScreenState
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12))),
                               DataCell(Center(child: Text('${row.qty}'))),
-                              DataCell(TooltipText(row.reason,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.colors.textSecondary,
-                                      fontSize: 12,
-                                      fontStyle: FontStyle.italic))),
+                              DataCell(_PostStatusActivityChip(label: row.reason)),
                               DataCell(TooltipText(
                                   DateFormat('yyyy-MM-dd').format(row.date))),
                               DataCell(TooltipText(
@@ -705,6 +700,40 @@ class _DetainStatChip extends StatelessWidget {
               style:
                   TextStyle(color: context.colors.textSecondary, fontSize: 12)),
         ],
+      ),
+    );
+  }
+}
+
+class _PostStatusActivityChip extends StatelessWidget {
+  final String label;
+  const _PostStatusActivityChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty || label.trim() == '—') {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final color = context.colors.warningAmber;
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }

@@ -3266,10 +3266,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                             : 'No warehouse details',
                                         reason: isPerishable
                                             ? 'Perishable goods go straight '
-                                                'to disposal — they are never '
-                                                'warehoused and serve no '
-                                                'appeal window, so there are '
-                                                'no storage charges to show.'
+                                                'to disposal — they are stored '
+                                                'in the yard without warehouse '
+                                                'admission.'
                                             : null,
                                       ))
                                 : material.Container(
@@ -5202,32 +5201,15 @@ class _ItemStorageSection extends ConsumerWidget {
         .where((e) => e.packageItemId == null || e.packageItemId == item.id)
         .toList()
       ..sort((a, b) => a.admittedAt.compareTo(b.admittedAt));
-    if (entries.isEmpty) return const SizedBox.shrink();
+
+    final isPerishable = item.nature == kNaturePerishable;
+    if (entries.isEmpty && !isPerishable) return const SizedBox.shrink();
 
     final rates = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
     final live = entries.where((e) => !e.isReturned).toList();
     final money = NumberFormat('#,##0.00');
 
-    // Charges accrue per entry and stop when the goods leave, so the total is
-    // the sum over entries — live ones still climbing, closed ones fixed.
-    final charge = entries.fold<double>(
-        0, (a, e) => a + e.calculatePackageCharge(package.items, rates));
-    // ⚠️ And what the SPACE cost, which is a different question. Forfeited,
-    // confiscated, abandoned and destroyed goods are never billed — that is
-    // a billing rule, not a statement that they were free to keep. They
-    // occupied a zone for the same days as anything else, and every
-    // valuation, committee figure and sale decision is taken against that
-    // cost. Showing "No charge" and nothing else hid it entirely.
-    final spaceCost = entries.fold<double>(
-        0,
-        (a, e) => a +
-            spaceCostFor(
-              from: e.admittedAt,
-              units: e.itemCount,
-              rates: rates,
-              until: e.returnedAt,
-            ));
     // ⚠️ Unsold goods carry NO figure at all — see storage_charge_note.dart.
     // Top Management has ruled on them after every sale route failed, so
     // nobody is billed and nobody is pricing them against the days any
@@ -5235,10 +5217,58 @@ class _ItemStorageSection extends ConsumerWidget {
     // the rule travels with the figure rather than with a page.
     final proposals = ref.watch(unsoldProposalsProvider).valueOrNull;
     final byItem = ref.watch(forfeitedByItemProvider(package.id)).valueOrNull;
-    final unsoldDisposal = proposals != null &&
+    final hasProposal = proposals != null &&
         proposals.isNotEmpty &&
         byItem != null &&
         byItem.values.any((f) => proposals.containsKey(f.id));
+
+    final TenderSaleItemModel? saleItem = ref
+        .watch(saleItemForPackageItemProvider('${package.id}|${item.id}'))
+        .valueOrNull;
+
+    final unsoldDisposal = hasProposal || saleItem?.unsold == true;
+
+    final isDelivered = saleItem?.isDelivered == true;
+    final DateTime perishableStart = package.entryDate ?? package.createdAt;
+    final DateTime? perishableEnd = isDelivered
+        ? (saleItem?.deliveredAt ?? saleItem?.soldAt ?? DateTime.now())
+        : null;
+    final int perishableUnits = item.quantity > 0 ? item.quantity : 1;
+    final double perishableSpaceCost = isPerishable && entries.isEmpty
+        ? spaceCostFor(
+            from: perishableStart,
+            units: perishableUnits,
+            rates: rates,
+            until: perishableEnd,
+          )
+        : 0.0;
+
+    // Charges accrue per entry and stop when the goods leave, so the total is
+    // the sum over entries — live ones still climbing, closed ones fixed.
+    final charge = entries.isNotEmpty
+        ? entries.fold<double>(
+            0, (a, e) => a + e.calculatePackageCharge(package.items, rates))
+        : (saleItem?.sold == true ? perishableSpaceCost : 0.0);
+
+    // ⚠️ And what the SPACE cost, which is a different question. Forfeited,
+    // confiscated, abandoned and destroyed goods are never billed — that is
+    // a billing rule, not a statement that they were free to keep. They
+    // occupied a zone for the same days as anything else, and every
+    // valuation, committee figure and sale decision is taken against that
+    // cost. Showing "No charge" and nothing else hid it entirely.
+    final spaceCost = entries.isNotEmpty
+        ? entries.fold<double>(
+            0,
+            (a, e) =>
+                a +
+                spaceCostFor(
+                  from: e.admittedAt,
+                  units: e.itemCount,
+                  rates: rates,
+                  until: e.returnedAt,
+                ))
+        : perishableSpaceCost;
+
     final billed = charge > 0;
 
     return Padding(
@@ -5281,16 +5311,75 @@ class _ItemStorageSection extends ConsumerWidget {
                   ? 'No warehouse charge — storage is not billed on unsold '
                       'goods.'
                   : !billed && spaceCost > 0
-                      ? 'Not billed — these goods were taken by the State. '
-                          'This is what the space they occupied has cost.'
-                      : live.isEmpty
-                          ? 'These goods have left the warehouse.'
-                          : 'Charges accrue until the goods are delivered '
-                              'out.',
+                      ? (isPerishable && entries.isEmpty
+                          ? 'Perishable goods held in yard — space cost accrued so far.'
+                          : 'Not billed — these goods were taken by the State. '
+                              'This is what the space they occupied has cost.')
+                      : (entries.isEmpty && isPerishable)
+                          ? (isDelivered
+                              ? 'Perishable goods delivered — storage charges billed for yard stay.'
+                              : saleItem?.sold == true
+                                  ? 'Perishable goods sold — storage charges accrue until delivery.'
+                                  : 'Charges accrue until the goods are sold or delivered out.')
+                          : live.isEmpty
+                              ? 'These goods have left the warehouse.'
+                              : 'Charges accrue until the goods are delivered '
+                                  'out.',
               style: material.TextStyle(
                   fontSize: 10.5, color: context.colors.textMuted),
             ),
             const Gap(10),
+            if (entries.isEmpty && isPerishable) ...[
+              material.Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceDark,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: context.colors.borderColor),
+                ),
+                child: Row(children: [
+                  Icon(Icons.yard_outlined,
+                      size: 16, color: context.colors.warningAmber),
+                  const Gap(8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        material.Text(
+                          'Stored in Yard',
+                          style: material.TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: context.colors.textPrimary,
+                          ),
+                        ),
+                        const Gap(2),
+                        material.Text(
+                          'Admitted: ${fmtDate(perishableStart)}'
+                          '${isDelivered ? ' · Delivered: ${fmtDate(perishableEnd!)}' : saleItem?.sold == true ? ' · Sold: ${fmtDate(saleItem!.soldAt!)} (accruing to delivery)' : ' · Active in Yard'}'
+                          ' · Units: $perishableUnits',
+                          style: material.TextStyle(
+                            fontSize: 11,
+                            color: context.colors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!unsoldDisposal && perishableSpaceCost > 0)
+                    material.Text(
+                      'LKR ${money.format(perishableSpaceCost)}',
+                      style: material.TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: billed
+                            ? context.colors.primaryGold
+                            : context.colors.textSecondary,
+                      ),
+                    ),
+                ]),
+              ),
+            ],
             for (final e in entries) ...[
               _ItemStorageEntryRow(
                 entry: e,

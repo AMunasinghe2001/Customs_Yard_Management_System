@@ -37,6 +37,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _srNumberCtrl = TextEditingController();
+  // ⚠️ So picking a Register (SR/OA) can hand focus straight to the number
+  // field afterwards. Without this the officer chose SR or OA, then had to
+  // click into the number box separately before they could type or fix it —
+  // two clicks to do one thing.
+  final _srNumberFocus = FocusNode();
   // Registration mode: 'new' = a fresh SR entry (default), 'old' = migrating a
   // legacy package — captures its previous SR number in [_oldSrNumberCtrl].
   String _entryMode = 'new';
@@ -342,11 +347,43 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  /// Fills a starting point for "Old SR Number" when Old Entry is chosen.
+  ///
+  /// ⚠️ NOT a real serial the way [_generateNextSr] mints one. The old number
+  /// belongs to a PAST register this app has no record of, so there is
+  /// nothing to count against — only the yard and the current year are known
+  /// for certain. This fills in `<YARD PREFIX>/SR/01/<CURRENT YEAR>` as a
+  /// template the officer edits down to the real number, using the signed-in
+  /// yard so the prefix is never typed by hand.
+  ///
+  /// The field stays fully editable and this never runs over something the
+  /// officer already typed — switching modes back and forth, or loading an
+  /// existing package, must not erase a real old number in favour of a guess.
+  void _prefillOldSrTemplate() {
+    if (_oldSrNumberCtrl.text.trim().isNotEmpty) return;
+    final prefix = yardSrPrefix(_selectedYard ?? AppSession.currentYard);
+    if (prefix.isEmpty) return;
+    // ⚠️ composeSrNumber, the SAME builder the New Entry number comes from —
+    // not a hand-assembled string. The first version left the directorate
+    // segment off (`GL1/SR/01/2026` instead of `CED/GL1/SR/01/2026`), so the
+    // template did not match the shape the officer sees everywhere else on
+    // this form, or the shape `_loadBySrNumber` and the duplicate-SR check
+    // actually expect. Reusing the builder means the two can never drift
+    // apart again.
+    _oldSrNumberCtrl.text = composeSrNumber(
+      yardPrefix: prefix,
+      serial: 1,
+      year: DateTime.now().year,
+      directorateCode: AppSession.currentDirectorate,
+    );
+  }
+
   @override
   void dispose() {
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
     _srNumberCtrl.dispose();
+    _srNumberFocus.dispose();
     _oldSrNumberCtrl.dispose();
     _originCtrl.dispose();
     _valueCtrl.dispose();
@@ -729,8 +766,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                     StyledDropdownOption('new', 'New Entry'),
                                     StyledDropdownOption('old', 'Old Entry'),
                                   ],
-                                  onChanged: (v) =>
-                                      setState(() => _entryMode = v ?? 'new'),
+                                  onChanged: (v) {
+                                    setState(() => _entryMode = v ?? 'new');
+                                    // Give the officer a starting point rather
+                                    // than a blank required field — see
+                                    // _prefillOldSrTemplate for why this is a
+                                    // template, not a generated serial.
+                                    if (_entryMode == 'old') {
+                                      _prefillOldSrTemplate();
+                                    }
+                                  },
                                 ),
                                 const Gap(12),
                                 if (_isUpdate)
@@ -831,6 +876,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                           } else {
                                             _generateNextSr();
                                           }
+                                          // ⚠️ Hand focus to the number field
+                                          // right after the pick, so the
+                                          // officer can start typing without
+                                          // an extra click into the box.
+                                          // Selects the current text too, so
+                                          // typing replaces the generated
+                                          // number rather than landing in the
+                                          // middle of it.
+                                          WidgetsBinding.instance
+                                              .addPostFrameCallback((_) {
+                                            if (!mounted) return;
+                                            _srNumberFocus.requestFocus();
+                                            _srNumberCtrl.selection =
+                                                TextSelection(
+                                              baseOffset: 0,
+                                              extentOffset:
+                                                  _srNumberCtrl.text.length,
+                                            );
+                                          });
                                         },
                                       ),
                                     ),
@@ -839,6 +903,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                       flex: 2,
                                       child: TextFormField(
                                         controller: _srNumberCtrl,
+                                        focusNode: _srNumberFocus,
                                         inputFormatters: [
                                           FilteringTextInputFormatter.allow(
                                               RegExp(r'[a-zA-Z0-9/ ]')),
@@ -889,11 +954,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 const Gap(16),
                                 Row(children: [
                                   Expanded(
-                                      child: _CusdecAutocompleteField(
+                                      child: TextFormField(
                                           controller: _cusdecCtrl,
                                           decoration: _fieldDecoration(
                                               labelText: 'Cusdec No *'),
-                                          validator: _requiredValidator)),
+                                          validator: _requiredValidator,
+                                          textCapitalization:
+                                              TextCapitalization.characters)),
                                   const Gap(12),
                                   Expanded(
                                       child: TextFormField(
@@ -1878,184 +1945,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 
 // ─── Helper Widgets ───
 
-/// Cusdec No input with prefix autocomplete. Common Cusdec numbers start with a
-/// fixed prefix (CBHQI / ECC / I) followed by a space and a number. As the user
-/// types, matching prefixes are suggested; picking one fills "<PREFIX> " so they
-/// only type the digits. It's still a free-text field — any other format can be
-/// typed directly (the suggestions just never match, so no menu shows).
-class _CusdecAutocompleteField extends StatefulWidget {
-  final TextEditingController controller;
-  final InputDecoration decoration;
-  final String? Function(String?)? validator;
 
-  const _CusdecAutocompleteField({
-    required this.controller,
-    required this.decoration,
-    this.validator,
-  });
-
-  static const List<String> _prefixes = ['CBHQI', 'CBMVI', 'ECC', 'I'];
-
-  @override
-  State<_CusdecAutocompleteField> createState() =>
-      _CusdecAutocompleteFieldState();
-}
-
-class _CusdecAutocompleteFieldState extends State<_CusdecAutocompleteField> {
-  final FocusNode _focusNode = FocusNode();
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RawAutocomplete<String>(
-      textEditingController: widget.controller,
-      focusNode: _focusNode,
-      optionsBuilder: (TextEditingValue value) {
-        final text = value.text.trimLeft();
-        if (text.isEmpty) return const Iterable<String>.empty();
-        // Once a space (i.e. the number part) is typed, stop suggesting.
-        if (text.contains(' ')) return const Iterable<String>.empty();
-        final upper = text.toUpperCase();
-        final matches = _CusdecAutocompleteField._prefixes
-            .where((p) => p.startsWith(upper) && p != upper)
-            .map((p) => '$p ') // trailing space → caret lands on the number
-            .toList();
-        return matches;
-      },
-      onSelected: (selection) {
-        widget.controller.text = selection;
-        widget.controller.selection =
-            TextSelection.collapsed(offset: selection.length);
-      },
-      fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
-        return TextFormField(
-          controller: textController,
-          focusNode: focusNode,
-          decoration: widget.decoration,
-          validator: widget.validator,
-          textCapitalization: TextCapitalization.characters,
-          onFieldSubmitted: (_) => onFieldSubmitted(),
-        );
-      },
-      optionsViewBuilder: (context, onSelected, options) {
-        final opts = options.toList();
-        // The index RawAutocomplete highlights as the user presses ↑/↓ (Enter
-        // then selects it). We mirror it visually and keep it scrolled into view.
-        final highlighted = AutocompleteHighlightedOption.of(context);
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(10),
-            color: context.colors.surfaceDark,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 320),
-              child: _CusdecOptionsList(
-                options: opts,
-                highlightedIndex: highlighted,
-                onSelected: onSelected,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// The suggestion list for the Cusdec autocomplete. Highlights the option that
-/// RawAutocomplete has selected via ↑/↓ and scrolls it into view, so keyboard
-/// navigation is visible; Enter selects the highlighted one, tap selects any.
-class _CusdecOptionsList extends StatefulWidget {
-  final List<String> options;
-  final int highlightedIndex;
-  final AutocompleteOnSelected<String> onSelected;
-
-  const _CusdecOptionsList({
-    required this.options,
-    required this.highlightedIndex,
-    required this.onSelected,
-  });
-
-  @override
-  State<_CusdecOptionsList> createState() => _CusdecOptionsListState();
-}
-
-class _CusdecOptionsListState extends State<_CusdecOptionsList> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void didUpdateWidget(_CusdecOptionsList old) {
-    super.didUpdateWidget(old);
-    if (old.highlightedIndex != widget.highlightedIndex) {
-      // Keep the highlighted row visible as the user arrows through the list.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollController.hasClients) return;
-        const rowHeight = 48.0;
-        final target = widget.highlightedIndex * rowHeight;
-        _scrollController.animateTo(
-          target.clamp(0.0, _scrollController.position.maxScrollExtent),
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-        );
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.zero,
-      shrinkWrap: true,
-      itemCount: widget.options.length,
-      itemBuilder: (context, i) {
-        final option = widget.options[i];
-        final isHighlighted = i == widget.highlightedIndex;
-        return InkWell(
-          onTap: () => widget.onSelected(option),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: isHighlighted
-                  ? context.colors.primaryGold.withOpacity(0.15)
-                  : null,
-              border: Border(
-                bottom: BorderSide(
-                    color: context.colors.borderColor.withOpacity(0.5)),
-              ),
-            ),
-            child: Row(children: [
-              Icon(Icons.tag_rounded,
-                  size: 16, color: context.colors.primaryGold),
-              const Gap(10),
-              Text(option.trim(),
-                  style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14)),
-              const Gap(8),
-              Text('+ number',
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 12)),
-            ]),
-          ),
-        );
-      },
-    );
-  }
-}
 
 class _QrCodePage extends StatelessWidget {
   final PackageModel? package;
