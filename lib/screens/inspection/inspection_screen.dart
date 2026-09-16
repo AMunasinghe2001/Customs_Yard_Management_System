@@ -76,6 +76,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   final _descCtrl = TextEditingController();
   final _reasonCtrlMain = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _formScrollController = ScrollController();
 
   final _dateMask = MaskTextInputFormatter(
     mask: '####-##-##',
@@ -180,7 +181,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               row.unitOfMeasureCtrl.text = 'Cartons';
               row.qtyCtrl.text = (item.innerQuantity ?? 1).toString();
               row.innerUnitCtrl.text = item.unitOfMeasure;
-              row.innerQtyCtrl.text = item.quantity.toString();
+              // ⚠️ Back OUT of the total, since `quantity` now holds
+              // cartons × per-carton. Showing the total here would make the
+              // form read "20 Cartons of 1176 Pieces each" and, on the next
+              // save, multiply it again.
+              final cartons = item.innerQuantity ?? 1;
+              row.innerQtyCtrl.text =
+                  (cartons > 0 ? (item.quantity ~/ cartons) : item.quantity)
+                      .toString();
             } else {
               row.qtyCtrl.text = item.quantity.toString();
               row.unitOfMeasureCtrl.text = item.unitOfMeasure;
@@ -401,6 +409,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _descCtrl.dispose();
     _reasonCtrlMain.dispose();
     _notesCtrl.dispose();
+    _formScrollController.dispose();
     super.dispose();
   }
 
@@ -409,7 +418,28 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
     if (!_formKey.currentState!.validate()) {
-      _scheduleValidationHide();
+      _formScrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+              Gap(8),
+              Expanded(
+                child: Text(
+                    'Please fill all required fields highlighted in red above.'),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 4),
+          backgroundColor: context.colors.dangerRed,
+        ));
+      }
       return;
     }
     // Duplicate-SR guard: reject an SR that already exists UNLESS we're editing
@@ -458,8 +488,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 // Cartons are stored "inverted": the operational quantity/unit
                 // become the INNER contents (e.g. 1176 Pieces), and the outer
                 // packaging (20 Cartons) is kept in innerUnit/innerQuantity.
+                //
+                // ⚠️ CARTONS × PER-CARTON, not the per-carton figure alone.
+                // `innerQtyCtrl` is "how many in ONE carton" -- the form's own
+                // label says so -- so storing it raw recorded 20 cartons of 60
+                // pieces as 60 pieces. Every count downstream reads `quantity`:
+                // the warehouse charge, the zone capacity, the Qty column on
+                // every table. They were all short by the carton count.
                 quantity: r.unitOfMeasureCtrl.text == 'Cartons'
-                    ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                    ? ((int.tryParse(r.qtyCtrl.text) ?? 1) *
+                        (int.tryParse(r.innerQtyCtrl.text) ?? 1))
                     : (int.tryParse(r.qtyCtrl.text) ?? 1),
                 unitOfMeasure: r.unitOfMeasureCtrl.text == 'Cartons'
                     ? r.innerUnitCtrl.text
@@ -743,6 +781,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 controller: _tabController,
                 children: [
                   SingleChildScrollView(
+                    controller: _formScrollController,
                     padding: const EdgeInsets.all(28),
                     child: Form(
                       key: _formKey,
@@ -1530,6 +1569,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
               ? tempItem.reasons!
               : 'System Assigned',
           itemCount: tempItem.quantity,
+          admittedAt: saved.entryDate,
         );
       }
 

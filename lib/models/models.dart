@@ -228,6 +228,7 @@ class PackageModel {
   }
 
   PackageModel copyWith({
+    String? id,
     String? srNumber,
     String? oldSrNumber,
     String? caseNumber,
@@ -258,7 +259,7 @@ class PackageModel {
     List<WarehouseEntryModel>? warehouseEntries,
   }) {
     return PackageModel(
-      id: id,
+      id: id ?? this.id,
       srNumber: srNumber ?? this.srNumber,
       oldSrNumber: oldSrNumber ?? this.oldSrNumber,
       caseNumber: caseNumber ?? this.caseNumber,

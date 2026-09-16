@@ -23,6 +23,7 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/storage_charge_note.dart';
+import '../../widgets/qty_cell.dart';
 
 /// Item statuses whose goods have permanently left the yard — these must not
 /// appear in (or be counted by) the Warehouses view. Forfeit / Abandoned /
@@ -561,16 +562,20 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               : (e.isPackageConfiscated
                                   ? 'confiscated'
                                   : 'held');
-                          if (pkg != null && e.packageItemId != null) {
-                            final item = pkg.items
-                                    .where((i) => i.id == e.packageItemId)
-                                    .firstOrNull ??
-                                (pkg.items.length == 1
-                                    ? pkg.items.first
-                                    : null);
-                            if (item != null && !e.isReturned) {
-                              status = item.status;
-                            }
+                          // ⚠️ Hoisted out of the `if` below: the Qty cell
+                          // needs it too, to say what packaging the count
+                          // arrived in.
+                          final rowItem =
+                              (pkg != null && e.packageItemId != null)
+                                  ? (pkg.items
+                                          .where((i) => i.id == e.packageItemId)
+                                          .firstOrNull ??
+                                      (pkg.items.length == 1
+                                          ? pkg.items.first
+                                          : null))
+                                  : null;
+                          if (rowItem != null && !e.isReturned) {
+                            status = rowItem.status;
                           }
                           final isItemConfiscated =
                               WarehouseEntryModel.isNoChargeStatus(
@@ -701,11 +706,8 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                   overflow: TextOverflow.ellipsis,
                                 );
                               })),
-                              DataCell(TooltipText('${e.itemCount}',
-                                  style: TextStyle(
-                                      color: isItemConfiscated
-                                          ? context.colors.textMuted
-                                          : null))),
+                              DataCell(QtyCell(
+                                  item: rowItem, overrideQty: e.itemCount)),
                               DataCell(Center(
                                   child: Text(
                                 unsoldRuling

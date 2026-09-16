@@ -18,7 +18,8 @@ bool _isForfeitStatus(String? status) {
   final normalized = status.trim().toLowerCase();
   return normalized == 'forfiet' ||
       normalized == 'forfeit' ||
-      normalized == 'forfeited';
+      normalized == 'forfeited' ||
+      normalized == 'confiscated';
 }
 
 String _normalizeLoginIdentifier(String identifier) => identifier.trim();
@@ -741,6 +742,18 @@ class PackageService {
         .eq('id', id)
         .maybeSingle();
     if (data == null) return null;
+    final entries = (data['warehouse_entries'] as List?) ?? [];
+    final items = (data['package_items'] as List?) ?? [];
+    if (entries.isEmpty && items.isNotEmpty) {
+      await syncMissingWarehouseAndForfeitEntries();
+      final refreshed = await supabase
+          .from('packages')
+          .select(
+              '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)')
+          .eq('id', id)
+          .maybeSingle();
+      if (refreshed != null) return PackageModel.fromJson(refreshed);
+    }
     return PackageModel.fromJson(data);
   }
 
@@ -1554,6 +1567,8 @@ class PackageService {
     final effectiveYard =
         yard ?? (AppSession.isYardBound ? AppSession.currentYard : null);
 
+    await syncMissingWarehouseAndForfeitEntries();
+
     // Apply the same filters to either query (rows or count).
     PgQuery applyFilters(PgQuery q) {
       if (effectiveYard != null && effectiveYard.isNotEmpty) {
@@ -1727,13 +1742,50 @@ class PackageService {
         .maybeSingle();
     final created = PackageModel.fromJson(refreshedData ?? {});
 
+    // Auto-ensure warehouse entries exist for all items
+    List<PackageCategory>? categories;
+    List<WarehouseModel>? warehouses;
+    for (final item in created.items) {
+      if (item.id.isEmpty) continue;
+      final hasEntry =
+          created.warehouseEntries.any((we) => we.packageItemId == item.id);
+      if (!hasEntry) {
+        categories ??= await PackageCategoryService().getCategories();
+        warehouses ??= await WarehouseService().getWarehouses();
+        final itemCat = (item.category ?? '').trim().toLowerCase();
+        final cat = categories
+            .where((c) => c.name.trim().toLowerCase() == itemCat)
+            .firstOrNull;
+        String? targetWhId = cat?.targetWarehouseId;
+        String? targetZone = cat?.targetZone;
+        if (targetWhId == null || targetWhId.isEmpty) {
+          if (warehouses.isNotEmpty) {
+            targetWhId = warehouses.first.id;
+          }
+        }
+        if (targetWhId != null && targetWhId.isNotEmpty) {
+          await WarehouseService().addEntry(
+            packageId: created.id,
+            packageItemId: item.id,
+            warehouseId: targetWhId,
+            zone: targetZone,
+            holdReason: (item.reasons != null && item.reasons!.isNotEmpty)
+                ? item.reasons!
+                : (created.reason ?? 'Admitted to warehouse'),
+            itemCount: item.quantity,
+            admittedAt: created.entryDate,
+          );
+        }
+      }
+    }
+
     // Sync to Forfeited Packages if applicable
     final hasForfeit = _isForfeitStatus(pkg.status) ||
         items.any((i) => _isForfeitStatus(i.status));
     if (hasForfeit) {
       final existingForfeited = await supabase
           .from('forfeited_packages')
-          .select('id')
+          .select('id, source, yard')
           .eq('package_id', created.id)
           .maybeSingle();
       if (existingForfeited == null) {
@@ -1743,9 +1795,18 @@ class PackageService {
           consigneeName: created.consigneeName,
           reason: created.reason ?? 'Forfeited item added',
           entryDate: created.entryDate,
+          yard: effectiveYard,
         );
+      } else if (existingForfeited['source'] == null ||
+          existingForfeited['source'] != 'forfeit' ||
+          existingForfeited['yard'] == null) {
+        await supabase.from('forfeited_packages').update({
+          'source': 'forfeit',
+          'yard': effectiveYard,
+        }).eq('id', existingForfeited['id']);
       }
     }
+
 
     if (user != null) {
       await AuditLogService().recordLog(
@@ -1841,6 +1902,53 @@ class PackageService {
         return PackageModel.fromJson({}); // Fallback or handle null
       final result = PackageModel.fromJson(refreshed);
 
+      // Auto-ensure warehouse entries exist for all items that lack one
+      List<PackageCategory>? categories;
+      List<WarehouseModel>? warehouses;
+      for (final item in result.items) {
+        if (item.id.isEmpty) continue;
+        final hasEntry =
+            result.warehouseEntries.any((we) => we.packageItemId == item.id);
+        if (!hasEntry) {
+          categories ??= await PackageCategoryService().getCategories();
+          warehouses ??= await WarehouseService().getWarehouses();
+          final itemCat = (item.category ?? '').trim().toLowerCase();
+          final cat = categories
+              .where((c) =>
+                  c.name.trim().toLowerCase() == itemCat)
+              .firstOrNull;
+          String? targetWhId = cat?.targetWarehouseId;
+          String? targetZone = cat?.targetZone;
+          if (targetWhId == null || targetWhId.isEmpty) {
+            if (warehouses.isNotEmpty) {
+              targetWhId = warehouses.first.id;
+            }
+          }
+          if (targetWhId != null && targetWhId.isNotEmpty) {
+            await WarehouseService().addEntry(
+              packageId: result.id,
+              packageItemId: item.id,
+              warehouseId: targetWhId,
+              zone: targetZone,
+              holdReason: (item.reasons != null && item.reasons!.isNotEmpty)
+                  ? item.reasons!
+                  : (result.reason ?? 'Admitted to warehouse'),
+              itemCount: item.quantity,
+              admittedAt: result.entryDate,
+            );
+          } else {
+            // ⚠️ Not silent. With no category target for this yard and no
+            // warehouse to fall back on there is nowhere to admit the goods,
+            // and saying nothing is what let items reach the table with no
+            // Storage & Movement section at all.
+            AppLog.warn(
+                'No target warehouse for item ${item.id} '
+                '(${item.category}) of ${result.srNumber} — not admitted',
+                tag: 'sync');
+          }
+        }
+      }
+
       // Re-anchor any EXISTING forfeited record to the (possibly edited) Entry
       // Date — independent of hasForfeit below, so simply editing the Entry Date
       // on an already-forfeited package updates its forfeited date + 30-day
@@ -1872,7 +1980,7 @@ class PackageService {
       if (hasForfeit) {
         final existingForfeited = await supabase
             .from('forfeited_packages')
-            .select('id')
+            .select('id, source, yard')
             .eq('package_id', result.id)
             .maybeSingle();
         if (existingForfeited == null) {
@@ -1882,7 +1990,15 @@ class PackageService {
             consigneeName: result.consigneeName,
             reason: result.reason ?? 'Item marked as forfeited',
             entryDate: result.entryDate,
+            yard: effectiveYard,
           );
+        } else if (existingForfeited['source'] == null ||
+            existingForfeited['source'] != 'forfeit' ||
+            existingForfeited['yard'] == null) {
+          await supabase.from('forfeited_packages').update({
+            'source': 'forfeit',
+            'yard': effectiveYard,
+          }).eq('id', existingForfeited['id']);
         }
       } else {
         // Remove if no items are forfeited anymore
@@ -1894,9 +2010,178 @@ class PackageService {
 
       return result;
     } else {
-      // If no ID is provided, create a new record even if sr_number exists
-      // (This requires that the UNIQUE constraint on sr_number is removed from the DB)
+      // If no ID is provided, check if a package with this SR number already exists
+      // (e.g. from an earlier save attempt or retry) and update it instead of failing
+      // on the unique constraint.
+      final existing = await getPackageBySrNumber(pkg.srNumber);
+      if (existing != null) {
+        return upsertPackage(
+          pkg.copyWith(id: existing.id),
+          items,
+          yard: effectiveYard,
+        );
+      }
       return createPackage(pkg, items, yard: effectiveYard);
+    }
+  }
+
+  /// Self-healing background sync: repairs any packages that have items
+  /// without warehouse entries, or forfeit items without matching forfeited_packages rows.
+  Future<void> syncMissingWarehouseAndForfeitEntries() async {
+    try {
+      final effectiveYard = AppSession.currentYard.isNotEmpty
+          ? AppSession.currentYard
+          : 'GL1';
+
+      final packagesData = await supabase
+          .from('packages')
+          .select(
+              'id, sr_number, consignee_name, reason, entry_date, status, created_at, yard, package_items(*), warehouse_entries(id, package_item_id, is_returned)');
+
+      if (packagesData == null || (packagesData as List).isEmpty) return;
+
+      List<PackageCategory>? categories;
+      List<WarehouseModel>? warehouses;
+
+      // ⚠️ Per PACKAGE, not one try around the whole loop. A single failing
+      // package used to abort the repair for every package after it, and the
+      // outer catch only warned -- so one bad row could leave an arbitrary
+      // number of others unrepaired with nothing said. Two SRs sat without a
+      // warehouse entry or a forfeited row for exactly this reason.
+      for (final rawPkg in (packagesData as List)) {
+       try {
+        final pkg = rawPkg as Map<String, dynamic>;
+        final pkgId = pkg['id']?.toString() ?? '';
+        final srNumber = pkg['sr_number']?.toString() ?? '';
+        final consigneeName = pkg['consignee_name']?.toString() ?? '';
+        final reason = pkg['reason']?.toString() ?? 'Admitted';
+        final entryDate = parseDbDate(pkg['entry_date']) ??
+            parseDbDate(pkg['created_at']) ??
+            DateTime.now();
+        final rawYard = pkg['yard']?.toString();
+        final pkgYard = (rawYard != null && rawYard.isNotEmpty)
+            ? rawYard
+            : effectiveYard;
+
+        if (rawYard == null || rawYard.isEmpty) {
+          await supabase
+              .from('packages')
+              .update({'yard': pkgYard}).eq('id', pkgId);
+        }
+
+        final rawItems = (pkg['package_items'] as List?) ?? [];
+        final rawEntries = (pkg['warehouse_entries'] as List?) ?? [];
+
+        // Check for missing warehouse entries
+        for (final rawItem in rawItems) {
+          final itemMap = rawItem as Map<String, dynamic>;
+          final itemId = itemMap['id']?.toString() ?? '';
+          final itemQty =
+              int.tryParse(itemMap['quantity']?.toString() ?? '1') ?? 1;
+          final itemCategory = itemMap['category']?.toString() ?? '';
+          final itemReasons = itemMap['reasons']?.toString();
+
+          final hasEntry =
+              rawEntries.any((we) => we['package_item_id'] == itemId);
+          if (!hasEntry && itemId.isNotEmpty) {
+            categories ??= await PackageCategoryService().getCategories();
+            warehouses ??= await WarehouseService().getWarehouses();
+
+            final itemCat = itemCategory.trim().toLowerCase();
+            final cat = categories
+                .where((c) => c.name.trim().toLowerCase() == itemCat)
+                .firstOrNull;
+            String? targetWhId = cat?.targetWarehouseId;
+            String? targetZone = cat?.targetZone;
+
+            if (targetWhId == null || targetWhId.isEmpty) {
+              if (warehouses.isNotEmpty) {
+                targetWhId = warehouses.first.id;
+              }
+            }
+
+            // ⚠️ `.select()`, so a refused insert is not mistaken for a
+            // repair that happened. This wrote blind, and a row the policy
+            // rejected left the item exactly as unrepaired as before while
+            // the sync moved on reporting nothing.
+            if (targetWhId != null && targetWhId.isNotEmpty) {
+              final wrote = await supabase
+                  .from('warehouse_entries')
+                  .insert({
+                    'package_id': pkgId,
+                    'package_item_id': itemId,
+                    'yard': pkgYard,
+                    'warehouse_id': targetWhId,
+                    'zone': targetZone,
+                    'hold_reason':
+                        (itemReasons != null && itemReasons.isNotEmpty)
+                            ? itemReasons
+                            : reason,
+                    'item_count': itemQty,
+                    'daily_rate': 0.0,
+                    'admitted_at': entryDate.toIso8601String(),
+                  })
+                  .select('id');
+              if ((wrote as List).isEmpty) {
+                AppLog.warn(
+                    'Auto-sync could not write a warehouse entry for item '
+                    '$itemId of $srNumber (refused by policy)',
+                    tag: 'sync');
+              }
+            } else {
+              // ⚠️ Said out loud. This branch is why an item can sit in no
+              // warehouse at all: no category target for this yard AND no
+              // warehouse to fall back on. It used to be an empty `if` with
+              // no else, so the item was skipped in silence.
+              AppLog.warn(
+                  'Auto-sync found no target warehouse for item $itemId '
+                  '($itemCategory) of $srNumber — it stays unwarehoused',
+                  tag: 'sync');
+            }
+          }
+        }
+
+        // Check if package has forfeit items or status
+        final hasForfeit = _isForfeitStatus(pkg['status']?.toString()) ||
+            rawItems
+                .any((i) => _isForfeitStatus((i as Map)['status']?.toString()));
+
+        if (hasForfeit && pkgId.isNotEmpty) {
+          final existingFp = await supabase
+              .from('forfeited_packages')
+              .select('id, source, yard')
+              .eq('package_id', pkgId)
+              .maybeSingle();
+
+          if (existingFp == null) {
+            await ForfeitedPackageService().createForfeitedPackage(
+              packageId: pkgId,
+              srNumber: srNumber,
+              consigneeName: consigneeName,
+              reason: reason,
+              entryDate: entryDate,
+              yard: pkgYard,
+            );
+          } else if (existingFp['source'] == null ||
+              existingFp['source'] != 'forfeit' ||
+              existingFp['yard'] == null) {
+            await supabase.from('forfeited_packages').update({
+              'source': 'forfeit',
+              'yard': pkgYard,
+            }).eq('id', existingFp['id']);
+          }
+        }
+       } catch (e) {
+        // This package could not be repaired; the next one still can.
+        AppLog.warn('Auto-sync skipped one package: $e',
+            error: e, tag: 'sync');
+       }
+      }
+    } catch (e) {
+      AppLog.warn(
+          'Auto-sync missing warehouse/forfeit entries failed: $e',
+          error: e,
+          tag: 'sync');
     }
   }
 
@@ -2050,6 +2335,7 @@ class WarehouseService {
     DateTime? dateEnd,
     String? year,
   }) async {
+    await PackageService().syncMissingWarehouseAndForfeitEntries();
     // A physical warehouse may hold goods from more than one yard. Scope the
     // query itself (not merely the rendered list) so GL2 never fetches GL1's
     // entry ids, even if a view policy is changed later.
@@ -2365,21 +2651,45 @@ class WarehouseService {
     String? zone,
     required String holdReason,
     required int itemCount,
+    DateTime? admittedAt,
   }) async {
     final rate = 0.0;
 
-    await supabase.from('warehouse_entries').insert({
-      'package_id': packageId,
-      'yard': AppSession.currentYard,
-      'package_item_id': packageItemId, // Added
-      'warehouse_id': warehouseId,
-      'zone': zone,
-      'hold_reason': holdReason,
-      'item_count': itemCount,
-      'daily_rate': rate,
-      'admitted_by': supabase.auth.currentUser?.id,
-      'admitted_at': DateTime.now().toIso8601String(),
-    });
+    // ⚠️ The yard is REQUIRED, and empty is not a yard. `warehouse_entries`
+    // carries a RESTRICTIVE per-yard policy, so an empty string is refused by
+    // the database -- but from a background sync that refusal is swallowed and
+    // the goods simply never reach a warehouse. Two SRs were admitted with no
+    // warehouse entry that way, and nothing anywhere said so.
+    final entryYard = AppSession.currentYard;
+    if (entryYard.isEmpty) {
+      throw StateError(
+          'Cannot admit goods to a warehouse without a yard — the session has '
+          'no yard set. Sign in again and retry.');
+    }
+
+    // ⚠️ `.select()` so a blocked insert is VISIBLE. Without it an insert the
+    // policy refuses returns quietly and the caller reports success.
+    final inserted = await supabase
+        .from('warehouse_entries')
+        .insert({
+          'package_id': packageId,
+          'yard': entryYard,
+          'package_item_id': packageItemId, // Added
+          'warehouse_id': warehouseId,
+          'zone': zone,
+          'hold_reason': holdReason,
+          'item_count': itemCount,
+          'daily_rate': rate,
+          'admitted_by': supabase.auth.currentUser?.id,
+          'admitted_at': (admittedAt ?? DateTime.now()).toIso8601String(),
+        })
+
+        .select('id');
+    if ((inserted as List).isEmpty) {
+      throw StateError(
+          'The warehouse entry was not written — this yard may not admit '
+          'goods for package $packageId.');
+    }
 
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -4779,6 +5089,7 @@ class ForfeitedPackageService {
     /// The Post Status Activity chip, or 'all'.
     String activity = 'all',
   }) async {
+    await PackageService().syncMissingWarehouseAndForfeitEntries();
     PgQuery narrow(PgQuery q) {
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
@@ -4867,6 +5178,7 @@ class ForfeitedPackageService {
   /// The header used to fold them from the raw package list, which includes
   /// records that produce no forfeit row at all.
   Future<({int total, int actionable})> getForfeitCounts() async {
+    await PackageService().syncMissingWarehouseAndForfeitEntries();
     final total = await AuthService._withNetworkRetry(
         () => supabase.from('forfeit_rows').count());
     final actionable = await AuthService._withNetworkRetry(() =>
@@ -5070,22 +5382,26 @@ class ForfeitedPackageService {
     required String consigneeName,
     required String reason,
     DateTime? entryDate,
+    String? yard,
   }) async {
     final forfeitedAt = entryDate ?? DateTime.now();
     final appealDeadline = forfeitedAt.add(const Duration(days: 30));
+    final effectiveYard = (yard != null && yard.isNotEmpty)
+        ? yard
+        : AppSession.currentYard;
     final data = await supabase
         .from('forfeited_packages')
         .insert({
           'package_id': packageId,
-          'yard': AppSession.currentYard,
+          'yard': effectiveYard,
+          'source': 'forfeit',
           'sr_number': srNumber,
           'consignee_name': consigneeName,
           'forfeited_at': forfeitedAt.toIso8601String(),
           'appeal_deadline': appealDeadline.toIso8601String(),
           'reason': reason,
         })
-        .select(
-            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .select('*, packages(*, package_items(*))')
         .limit(1)
         .maybeSingle();
 

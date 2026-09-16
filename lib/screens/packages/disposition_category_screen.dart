@@ -23,6 +23,7 @@ import '../executive/unsold_shared.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/perishable_row.dart';
+import '../../widgets/qty_cell.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
 /// Re-exported / Other). Reads warehouse entries tagged "[FINAL:<TAG>]".
@@ -526,8 +527,11 @@ class _DispositionCategoryScreenState
                                       })(),
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(fontSize: 12))),
-                                    DataCell(TooltipText(
-                                        '${row.entry?.itemCount ?? row.item?.quantity ?? 0}')),
+                                    DataCell(QtyCell(
+                                        item: row.item,
+                                        overrideQty: row.entry?.itemCount ??
+                                            row.item?.quantity ??
+                                            0)),
                                     DataCell(TooltipText(row.entry?.returnedAt != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.entry!.returnedAt!)

@@ -29,6 +29,7 @@ import '../disposal/disposal_shared.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/send_disposal_request_button.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/qty_cell.dart';
 
 /// One perishable item, with the package it belongs to.
 class PerishableRow {
@@ -612,8 +613,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                           : '—',
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(fontSize: 12))),
-                                  DataCell(Center(
-                                      child: Text('${r.item.quantity}'))),
+                                  DataCell(QtyCell(item: r.item)),
                                   DataCell(
                                       _PostStatusActivityChip(label: activity)),
                                   DataCell(TooltipText(DateFormat('yyyy-MM-dd')

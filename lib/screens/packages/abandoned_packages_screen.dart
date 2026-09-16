@@ -23,6 +23,7 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/send_disposal_request_button.dart';
+import '../../widgets/qty_cell.dart';
 
 final abandonedPackageSearchProvider = StateProvider<String>((ref) => '');
 final abandonedPackageReasonFilterProvider =
@@ -562,7 +563,7 @@ class _AbandonedPackagesScreenState
                                             : '—',
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontSize: 12))),
-                                    DataCell(Center(child: Text('${row.qty}'))),
+                                    DataCell(QtyCell(item: row.item, overrideQty: row.qty)),
                                     DataCell(_PostStatusActivityChip(
                                         label: row.reason)),
                                     DataCell(TooltipText(row.date != null

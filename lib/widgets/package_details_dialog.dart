@@ -6884,7 +6884,14 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         row.unitOfMeasureCtrl.text = 'Cartons';
         row.qtyCtrl.text = (hi.innerQuantity ?? 1).toString();
         row.innerUnitCtrl.text = hi.unitOfMeasure;
-        row.innerQtyCtrl.text = hi.quantity.toString();
+        // ⚠️ Back OUT of the total. `quantity` holds cartons x per-carton,
+        // and this box asks for ONE carton's contents -- showing the total
+        // here made "5 Cartons of 5 Pieces each" out of 5 pieces in 5
+        // cartons, and the next save stored that reading as fact.
+        final hiCartons = hi.innerQuantity ?? 1;
+        row.innerQtyCtrl.text =
+            (hiCartons > 0 ? (hi.quantity ~/ hiCartons) : hi.quantity)
+                .toString();
       } else {
         row.qtyCtrl.text = hi.quantity.toString();
         row.unitOfMeasureCtrl.text = hi.unitOfMeasure;
@@ -6944,7 +6951,11 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
           row.unitOfMeasureCtrl.text = 'Cartons';
           row.qtyCtrl.text = (item.innerQuantity ?? 1).toString();
           row.innerUnitCtrl.text = item.unitOfMeasure;
-          row.innerQtyCtrl.text = item.quantity.toString();
+          // ⚠️ Back OUT of the total -- see the highlighted-item branch above.
+          final cartons = item.innerQuantity ?? 1;
+          row.innerQtyCtrl.text =
+              (cartons > 0 ? (item.quantity ~/ cartons) : item.quantity)
+                  .toString();
         } else {
           row.qtyCtrl.text = item.quantity.toString();
           row.unitOfMeasureCtrl.text = item.unitOfMeasure;
@@ -7073,8 +7084,13 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                   : row.goodsDescriptionCtrl.text.trim(),
               // Cartons stored inverted: quantity/unit hold the inner contents;
               // packaging (Cartons + count) goes to innerUnit/innerQuantity.
+              // ⚠️ CARTONS x PER-CARTON. `innerQtyCtrl` is one carton's
+              // contents, so storing it raw recorded 5 cartons of 5 pieces
+              // as 5 pieces -- and every charge, capacity and Qty column
+              // downstream reads this number.
               quantity: row.unitOfMeasureCtrl.text == 'Cartons'
-                  ? (int.tryParse(row.innerQtyCtrl.text) ?? 1)
+                  ? ((int.tryParse(row.qtyCtrl.text) ?? 1) *
+                      (int.tryParse(row.innerQtyCtrl.text) ?? 1))
                   : (int.tryParse(row.qtyCtrl.text) ?? 1),
               unitValue: double.tryParse(row.valueCtrl.text) ?? 0,
               hsCode: row.hsCodeCtrl.text.trim().isEmpty
@@ -7109,8 +7125,10 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                   goodsDescription: r.goodsDescriptionCtrl.text.trim().isEmpty
                       ? null
                       : r.goodsDescriptionCtrl.text.trim(),
+                  // ⚠️ CARTONS x PER-CARTON -- see the sibling save above.
                   quantity: r.unitOfMeasureCtrl.text == 'Cartons'
-                      ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                      ? ((int.tryParse(r.qtyCtrl.text) ?? 1) *
+                          (int.tryParse(r.innerQtyCtrl.text) ?? 1))
                       : (int.tryParse(r.qtyCtrl.text) ?? 1),
                   unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
                   hsCode: r.hsCodeCtrl.text.trim().isEmpty
@@ -7168,6 +7186,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
       ref.read(packagesRefreshTriggerProvider.notifier).trigger();
       ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
+      ref.invalidate(forfeitedPackagesProvider);
+      ref.invalidate(forfeitCountsProvider);
       ref.invalidate(dashboardStatsProvider); // Dashboard stats refresh
       ref.invalidate(recentPackagesProvider); // Recent inspections refresh
       ref.invalidate(allWarehouseEntriesProvider);
@@ -8933,7 +8953,10 @@ bool _hasFinalDisposition(PackageModel pkg, String itemId) {
 
 bool _isForfeitStatusLocal(String? s) {
   final v = (s ?? '').trim().toLowerCase();
-  return v == 'forfeit' || v == 'forfeited' || v == 'forfiet';
+  return v == 'forfeit' ||
+      v == 'forfeited' ||
+      v == 'forfiet' ||
+      v == 'confiscated';
 }
 
 /// Receipt/Notes are stored combined as "Receipt No: <no> | Notes: <notes>".

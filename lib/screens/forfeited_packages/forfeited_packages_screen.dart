@@ -22,6 +22,7 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/send_disposal_request_button.dart';
+import '../../widgets/qty_cell.dart';
 
 class _StatChip extends StatelessWidget {
   final String label;
@@ -427,7 +428,8 @@ class _ForfeitedPackagesScreenState
                                         : '—',
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 12))),
-                                DataCell(TooltipText('${row.qty}')),
+                                DataCell(QtyCell(
+                                    item: rowItem, overrideQty: row.qty)),
                                 DataCell(_PostStatusActivityChip(
                                     label: row.reason)),
                                 DataCell(TooltipText(DateFormat('yyyy-MM-dd')
