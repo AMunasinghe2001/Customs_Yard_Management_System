@@ -141,6 +141,25 @@ String? docTypeOfSrNumber(String? srNumber) {
   return isSrDocType(seg) ? seg : null;
 }
 
+/// The register a warehouse belongs to: `OA` for an open area, `SR` for a
+/// covered warehouse.
+///
+/// ⚠️ Read from the CODE, not the name. Codes are the controlled field --
+/// `warehouses.code` is unique and is what the yard prints on a label --
+/// while names are free text an officer can retype ("Open Area 01", "open
+/// area 1", "OA-1"). The seeded codes are `OA 01`, `W01`, `W02`, `W 03`, so
+/// the register is the leading letters with spaces removed.
+///
+/// Falls back to the name only when a code is missing entirely.
+String docTypeOfWarehouse({String? code, String? name}) {
+  final c = (code ?? '').replaceAll(' ', '').toUpperCase();
+  if (c.isNotEmpty) return c.startsWith('OA') ? 'OA' : kDefaultSrDocType;
+  final n = (name ?? '').replaceAll(' ', '').toUpperCase();
+  return n.startsWith('OPENAREA') || n.startsWith('OA')
+      ? 'OA'
+      : kDefaultSrDocType;
+}
+
 /// Builds the full SR number from its parts.
 ///
 /// [directorateCode] may be null or unmapped — an account created before

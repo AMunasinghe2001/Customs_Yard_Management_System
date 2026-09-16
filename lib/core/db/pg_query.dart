@@ -702,6 +702,15 @@ class PgQuery implements Future<dynamic> {
     // and let the caller re-read if it needs the related rows.
     final plain = _fields.where((f) => !f.isEmbed).toList();
     if (plain.isEmpty) return '*';
+    // ⚠️ A `*` among OTHER fields is still a star, not a column name.
+    // `.select('*, packages(*)')` on an insert reached here as two fields, so
+    // the single-field shortcut above missed it and the star fell through to
+    // _quoteIdent -- emitting `returning "*"`, which Postgres reads as a
+    // column literally named `*` and rejects with
+    // `column "*" does not exist`. That killed every write whose call site
+    // asked for embeds back, including createForfeitedPackage: registering a
+    // forfeited SR failed at the moment the package was saved.
+    if (plain.any((f) => f.isStar)) return '*';
     return plain
         .map((f) => f.alias == null
             ? _quoteIdent(f.name)

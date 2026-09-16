@@ -59,10 +59,16 @@ void main() {
       expect(form, contains('} else {\n                                            _generateNextSr();'));
     });
 
-    test('minting a NEW number still counts within one register', () {
-      // The two rules coexist: a fresh number is scoped, a swap is not.
+    test('minting a NEW number counts BOTH registers', () {
+      // ⚠️ This used to assert the opposite -- that a fresh number was scoped
+      // to its own register. That rule produced two packages numbered 10 in
+      // one year (OA/10 then SR/10), so the serial is now the yard's single
+      // running count and a swap keeps whatever serial was minted from it.
       final services = _read('lib/services/services.dart');
-      expect(services, contains("parts[1].trim().toUpperCase() != type"));
+      expect(services,
+          contains('kSrDocTypes.contains(parts[1].trim().toUpperCase())'));
+      expect(services.contains("parts[1].trim().toUpperCase() != type"), isFalse,
+          reason: 'the scan is scoped to one register again');
     });
   });
 

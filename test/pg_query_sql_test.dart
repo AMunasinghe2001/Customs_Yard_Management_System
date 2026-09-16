@@ -389,4 +389,46 @@ void main() {
       expect('@'.allMatches(sql).length, greaterThanOrEqualTo(3));
     });
   });
+
+  group('RETURNING on a write', () {
+    // ⚠️ THE BUG, reported from the app: registering an SR whose goods are
+    // marked Forfeit died with `Exception: column "*" does not exist`, and
+    // the package was never saved. createForfeitedPackage asks for its
+    // embeds back -- `.select('*, packages(*, package_items(*)))'` -- which
+    // reaches the RETURNING builder as SEVERAL fields, so the
+    // "exactly one field and it is a star" shortcut missed it and the star
+    // fell through to the identifier quoter: `returning "*"`. Postgres reads
+    // that as a column literally named `*`.
+
+    test('a star among embeds still returns every column', () {
+      final sql = PgQuery('forfeited_packages')
+          .insert({'package_id': 'p', 'sr_number': 'SR/1'})
+          .select('*, packages(*, package_items(*))')
+          .debugSql();
+      expect(sql, contains('returning *'));
+      expect(sql.contains('returning "*"'), isFalse,
+          reason: 'the star is quoted as a column name again');
+    });
+
+    test('a lone star still returns every column', () {
+      final sql = PgQuery('packages')
+          .insert({'sr_number': 'SR/1'})
+          .select('*')
+          .debugSql();
+      expect(sql, contains('returning *'));
+    });
+
+    test('named columns are still listed, and quoted', () {
+      final sql = PgQuery('packages')
+          .insert({'sr_number': 'SR/1'})
+          .select('id, sr_number')
+          .debugSql();
+      expect(sql, contains('returning "id", "sr_number"'));
+    });
+
+    test('a write that asks for nothing back has no RETURNING', () {
+      final sql = PgQuery('packages').insert({'sr_number': 'SR/1'}).debugSql();
+      expect(sql.contains('returning'), isFalse);
+    });
+  });
 }

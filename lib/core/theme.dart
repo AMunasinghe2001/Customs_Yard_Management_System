@@ -11,7 +11,8 @@ extension AppThemeExt on BuildContext {
 /// Use `context.showSuccess('Saved')` instead of hand-rolling a SnackBar — this
 /// keeps the colour right everywhere (success was sometimes blue/navy before).
 extension AppSnackBar on BuildContext {
-  void _showSnack(String message, Color bg, IconData icon) {
+  void _showSnack(String message, Color bg, IconData icon,
+      {Color textColor = Colors.white}) {
     final messenger = ScaffoldMessenger.of(this);
     // A wide, floating toast that spans the page width (small side margins) so
     // every success/error/info message looks the same — matching the data-save
@@ -20,17 +21,19 @@ extension AppSnackBar on BuildContext {
     messenger.showSnackBar(SnackBar(
       backgroundColor: bg,
       behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       elevation: 6,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       content: Row(children: [
-        Icon(icon, color: Colors.white, size: 18),
+        Icon(icon, color: textColor, size: 20),
         const SizedBox(width: 10),
         Expanded(
           child: Text(message,
-              style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  color: textColor,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600)),
         ),
       ]),
     ));
@@ -44,9 +47,13 @@ extension AppSnackBar on BuildContext {
   void showError(String message) =>
       _showSnack(message, colors.dangerRed, Icons.error_rounded);
 
-  /// Gold informational toast.
+  /// Warning / Amber-Orange toast.
+  void showWarning(String message) =>
+      _showSnack(message, colors.heldOrange, Icons.warning_amber_rounded);
+
+  /// Informational toast with high-contrast vibrant blue.
   void showInfo(String message) =>
-      _showSnack(message, colors.primaryGold, Icons.info_rounded);
+      _showSnack(message, const Color(0xFF0277BD), Icons.info_rounded);
 }
 
 // Custom theme extension to hold our specific semantic colors

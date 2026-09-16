@@ -130,10 +130,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           _isUpdate = false;
           _loadedSrNumber = null;
         });
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('SR "$sr" not found – filling as new entry.'),
-              backgroundColor: context.colors.customsBlue));
+        if (mounted) {
+          context.showInfo('SR "$sr" not found – filling as new entry.');
+        }
         return;
       }
       _originCtrl.text = pkg.originCountry ?? '';
@@ -234,15 +233,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           _items.add(_ItemRow());
         }
       });
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('SR "$sr" loaded – you can edit and save.'),
-            backgroundColor: context.colors.successGreen));
+      if (mounted) context.showSuccess('SR "$sr" loaded – you can edit and save.');
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Lookup error: $e'),
-            backgroundColor: context.colors.dangerRed));
+      if (mounted) context.showError('Lookup error: $e');
     } finally {
       setState(() => _isLookingUp = false);
     }
@@ -424,21 +417,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         curve: Curves.easeOutCubic,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
-              Gap(8),
-              Expanded(
-                child: Text(
-                    'Please fill all required fields highlighted in red above.'),
-              ),
-            ],
-          ),
-          duration: const Duration(seconds: 4),
-          backgroundColor: context.colors.dangerRed,
-        ));
+        context.showError(
+            'Please fill all required fields highlighted in red above.');
       }
       return;
     }
@@ -623,6 +603,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // Fresh form — don't show validation errors until the user tries to
       // submit again (they linger as red "Required" from the previous entry).
       _showValidationErrors = false;
+      _isUpdate = false;
+      _loadedSrNumber = null;
     });
     _generateNextSr();
   }
@@ -693,11 +675,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     if (idx == 1 && !canGoToWarehouse) {
                       _checkPackage();
                     } else if (idx == 2 && !canGoToQr) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: const Text(
-                            'Please complete warehouse confirmation first'),
-                        backgroundColor: context.colors.heldOrange,
-                      ));
+                      context.showWarning(
+                          'Please complete warehouse confirmation first');
                     }
                   },
                   tabs: [
@@ -824,27 +803,72 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 if (_isUpdate)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 8),
+                                        horizontal: 14, vertical: 8),
                                     margin: const EdgeInsets.only(bottom: 12),
                                     decoration: BoxDecoration(
                                       color: context.colors.primaryGold
-                                          .withOpacity(0.1),
+                                          .withOpacity(0.12),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                           color: context.colors.primaryGold
                                               .withOpacity(0.4)),
                                     ),
-                                    child: Row(children: [
-                                      Icon(Icons.edit_rounded,
-                                          color: context.colors.primaryGold,
-                                          size: 16),
-                                      const Gap(8),
-                                      Text(
-                                          'Editing existing SR entry – changes will update the record.',
-                                          style: TextStyle(
-                                              color: context.colors.primaryGold,
-                                              fontSize: 13)),
-                                    ]),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit_rounded,
+                                            color: context.colors.primaryGold,
+                                            size: 16),
+                                        const Gap(8),
+                                        Expanded(
+                                          child: Text(
+                                              'Editing existing SR (${_loadedSrNumber ?? ''}) – changes will update the record.',
+                                              style: TextStyle(
+                                                  color: context
+                                                      .colors.primaryGold,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500)),
+                                        ),
+                                        const Gap(8),
+                                        InkWell(
+                                          onTap: _reset,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: context.colors.dangerRed
+                                                  .withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                  color: context.colors.dangerRed
+                                                      .withOpacity(0.4)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.close_rounded,
+                                                    size: 14,
+                                                    color: context
+                                                        .colors.dangerRed),
+                                                const Gap(4),
+                                                Text(
+                                                  'Cancel Edit',
+                                                  style: TextStyle(
+                                                    color: context
+                                                        .colors.dangerRed,
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -956,32 +980,53 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                           labelText: 'SR Number *',
                                           hintText:
                                               'e.g. GL1/SR/01/2025 or GL1/OA/01/2025',
-                                          suffixIcon: Tooltip(
-                                            message: isOfficer
-                                                ? 'Loading existing SR entries is restricted to administrators only'
-                                                : '',
-                                            child: IconButton(
-                                              icon: _isLookingUp
-                                                  ? SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                              strokeWidth: 2,
-                                                              color: context
-                                                                  .colors
-                                                                  .primaryGold))
-                                                  : Icon(Icons.search_rounded,
-                                                      color: isOfficer
-                                                          ? context
-                                                              .colors.textMuted
-                                                          : context.colors
-                                                              .primaryGold),
-                                              onPressed:
-                                                  (isOfficer || _isLookingUp)
+                                          suffixIcon: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (_isUpdate)
+                                                Tooltip(
+                                                  message:
+                                                      'Cancel edit and reset to new entry',
+                                                  child: IconButton(
+                                                    icon: Icon(
+                                                        Icons.close_rounded,
+                                                        size: 18,
+                                                        color: context.colors
+                                                            .dangerRed),
+                                                    onPressed: _reset,
+                                                  ),
+                                                ),
+                                              Tooltip(
+                                                message: isOfficer
+                                                    ? 'Loading existing SR entries is restricted to administrators only'
+                                                    : 'Search and load SR entry',
+                                                child: IconButton(
+                                                  icon: _isLookingUp
+                                                      ? SizedBox(
+                                                          width: 16,
+                                                          height: 16,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                                  strokeWidth:
+                                                                      2,
+                                                                  color: context
+                                                                      .colors
+                                                                      .primaryGold))
+                                                      : Icon(
+                                                          Icons.search_rounded,
+                                                          color: isOfficer
+                                                              ? context.colors
+                                                                  .textMuted
+                                                                  : context
+                                                                      .colors
+                                                                      .primaryGold),
+                                                  onPressed: (isOfficer ||
+                                                          _isLookingUp)
                                                       ? null
                                                       : _loadBySrNumber,
-                                            ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         validator: _requiredValidator,
@@ -1333,6 +1378,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     onPackageSaved: (pkg) {
                       setState(() {
                         _warehouseConfirmedPackage = pkg;
+                        // ⚠️ The package now EXISTS, so the form is editing it
+                        // rather than creating it. Without this the officer
+                        // could not go back to change a warehouse: Next ran
+                        // the duplicate-SR guard, found the package that this
+                        // very step had just written, and refused with "A
+                        // package with SR ... already exists" — blocking the
+                        // edit on the strength of its own save.
+                        _isUpdate = true;
+                        _loadedSrNumber = pkg.srNumber;
                       });
                       _tabController.animateTo(2);
                     },
@@ -1420,6 +1474,41 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
   /// Items are grouped by the zone they would land in, because several goods
   /// of one SR can share a zone — checking them one at a time would let a
   /// consignment slip past that its total does not fit.
+  /// Why the SR number's register does not match the chosen warehouses, or
+  /// null when they agree.
+  ///
+  /// Open areas take `OA` numbers, covered warehouses take `SR`. Returns the
+  /// message to show the officer, naming the number it should be.
+  Future<String?> _findRegisterMismatch() async {
+    final data = widget.tempPackageData;
+    final items = widget.tempPackageItems;
+    if (data == null || items == null || items.isEmpty) return null;
+
+    final current = docTypeOfSrNumber(data.srNumber);
+    // A number whose shape names no register is not this check's business.
+    if (current == null) return null;
+
+    final warehouses = await ref.read(warehousesProvider.future);
+    for (int i = 0; i < items.length; i++) {
+      final id = _itemWarehouseSelections[i];
+      if (id == null) continue;
+      final w = warehouses.where((x) => x.id == id).firstOrNull;
+      if (w == null) continue;
+      final needed = docTypeOfWarehouse(code: w.code, name: w.name);
+      if (needed == current) continue;
+
+      final should = withSrDocType(data.srNumber, needed);
+      return needed == 'OA'
+          ? 'Goods ${i + 1} is going to ${w.name}, an open area, so the SR '
+              'number must be an OA number. Change the Register to OA '
+              '(it becomes $should) and try again.'
+          : 'Goods ${i + 1} is going to ${w.name}, a covered warehouse, so '
+              'the SR number must be an SR number. Change the Register to SR '
+              '(it becomes $should) and try again.';
+    }
+    return null;
+  }
+
   Future<List<_CapacityProblem>> _findCapacityProblems() async {
     final items = widget.tempPackageItems;
     if (items == null || items.isEmpty) return const [];
@@ -1487,16 +1576,32 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     if (widget.tempPackageItems != null) {
       for (int i = 0; i < widget.tempPackageItems!.length; i++) {
         if (_itemWarehouseSelections[i] == null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Please select a warehouse for Goods ${i + 1}')));
+          context.showError('Please select a warehouse for Goods ${i + 1}');
           return;
         }
       }
     }
 
     if (widget.tempPackageData == null || widget.tempPackageItems == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Package data not found')));
+      context.showError('Package data not found');
+      return;
+    }
+
+    // ── Register check ──────────────────────────────────────────────────────
+    // ⚠️ An SR number's register must match where the goods actually go: goods
+    // admitted to an OPEN AREA belong to the OA register, everything else to
+    // SR. The form lets the officer pick the register up front and the
+    // warehouse later, so the two can disagree — and nothing downstream would
+    // ever notice, leaving an `SR/...` number on goods sitting in an open
+    // area. The number is on the paper file and the label; it cannot be
+    // corrected afterwards without reissuing both.
+    //
+    // This REFUSES rather than silently renumbering: the number may already
+    // have been written down, so which one is wrong is the officer's call.
+    final mismatch = await _findRegisterMismatch();
+    if (mismatch != null) {
+      if (!mounted) return;
+      context.showError(mismatch);
       return;
     }
 
@@ -1576,9 +1681,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       if (mounted) {
         setState(() => _warehouseSent = true);
         widget.onPackageSaved(saved);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('✅ All items sent to respective warehouses'),
-            backgroundColor: context.colors.successGreen));
+        context.showSuccess('All items sent to respective warehouses');
       }
     } catch (e) {
       String userMessage = 'Error: $e';
@@ -1602,20 +1705,11 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
         userMessage = 'Please ensure all items have a warehouse selected.';
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(userMessage),
-            duration: const Duration(seconds: 6),
-            action: SnackBarAction(
-              label: 'DISMISS',
-              textColor: Colors.white,
-              onPressed: () {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              },
-            ),
-            backgroundColor: context.colors.dangerRed));
-      }
+      // ⚠️ The SHARED toast, like every other message in the app: floating,
+      // rounded, and gone on its own after 3s. This one was a square
+      // full-width bar that sat there until the officer pressed DISMISS, so a
+      // failure stayed pinned over the page it had just failed on.
+      if (mounted) context.showError(userMessage);
     } finally {
       if (mounted) setState(() => _isSending = false);
     }

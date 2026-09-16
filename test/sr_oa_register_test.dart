@@ -4,10 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/directorates.dart';
 import 'package:cus_yard_management/core/yards.dart';
 
-/// A yard keeps more than one register. `SR` and `OA` share a yard and a year
-/// but run INDEPENDENT serials: the number after `SR/87` is `SR/88`, never
-/// `OA/88`, and an OA number can never continue an SR one. Everything below
-/// pins that separation, and the fact that an OA number is otherwise an
+/// A yard keeps more than one register. `SR` and `OA` share a yard, a year AND
+/// a serial run: the register says which book a number was written in, while
+/// the serial is the yard's single running count, so the number after
+/// `OA/10/2026` is `SR/11/2026` if the next goods go to a warehouse.
+///
+/// Everything below pins that, and the fact that an OA number is otherwise an
 /// ordinary number the rest of the app reads exactly like an SR one.
 void main() {
   group('composing a number names its register', () {
@@ -105,16 +107,22 @@ void main() {
     });
   });
 
-  group('the serial run is scoped to one register', () {
+  group('one serial run, shared by both registers', () {
+    // ⚠️ THE RULE CHANGED, on the officer's report: OA/10/2026 was registered
+    // and the form then offered SR/10/2026, so the yard had two packages
+    // numbered 10 in the same year with only the register letters telling
+    // them apart on a paper file. The serial is now the yard's single running
+    // count and the register says which book the number was written in.
+    //
     // getNextSrNumber's scan, lifted out so the rule can be tested without a
-    // database: the highest serial IN THIS REGISTER, for this yard.
-    int nextSerial(List<String> existing, String yardPrefix, String docType) {
+    // database: the highest serial for this yard, in EITHER register.
+    int nextSerial(List<String> existing, String yardPrefix) {
       var next = 1;
       for (final sr in existing) {
         final parts = stripDirectoratePrefix(sr).split('/');
         if (parts.length < 4) continue;
         if (parts[0].toUpperCase() != yardPrefix.toUpperCase()) continue;
-        if (parts[1].trim().toUpperCase() != docType.toUpperCase()) continue;
+        if (!isSrDocType(parts[1])) continue;
         final n = int.tryParse(parts[2].trim());
         if (n != null && n >= next) next = n + 1;
       }
@@ -129,40 +137,47 @@ void main() {
       'CED/GL1/OA/02/2026',
     ];
 
-    test('SR continues the SR run', () {
-      expect(nextSerial(existing, 'GL1', 'SR'), 88);
+    test('an OA number raises the next SR number', () {
+      // The reported case, in miniature.
+      expect(nextSerial(['CED/GL1/SR/09/2026', 'CED/GL1/OA/10/2026'], 'GL1'),
+          11);
     });
 
-    test('OA continues the OA run, NOT the SR one', () {
-      // The bug this guards: an OA number handed out as 88 because the scan
-      // counted every number in the yard regardless of register.
-      expect(nextSerial(existing, 'GL1', 'OA'), 3);
+    test('both registers continue the same run', () {
+      expect(nextSerial(existing, 'GL1'), 88);
     });
 
-    test('the first number in an empty register starts at 1', () {
-      expect(nextSerial(['CED/GL1/SR/87/2026'], 'GL1', 'OA'), 1);
+    test('the first number of the year starts at 1', () {
+      expect(nextSerial(const [], 'GL1'), 1);
     });
 
-    test('another yard\'s numbers never feed either run', () {
-      expect(nextSerial(['CED/NNR/OA/40/2026', ...existing], 'GL1', 'OA'), 3);
+    test("another yard's numbers never feed the run", () {
+      expect(nextSerial(['CED/NNR/OA/400/2026', ...existing], 'GL1'), 88);
     });
 
     test('the unprefixed legacy shape still counts', () {
-      expect(nextSerial(['GL1/OA/09/2026', ...existing], 'GL1', 'OA'), 10);
+      expect(nextSerial(['GL1/OA/90/2026', ...existing], 'GL1'), 91);
     });
 
-    test('getNextSrNumber really scopes its scan the same way', () {
+    test('a segment that names no register is ignored', () {
+      // Guards the loosened check: it must accept SR and OA, not anything.
+      expect(nextSerial(['CED/GL1/XX/900/2026', ...existing], 'GL1'), 88);
+    });
+
+    test('getNextSrNumber really scans the same way', () {
       // nextSerial above is a lifted copy, so it would keep passing if the
-      // real scan lost its register guard. Pin the production code too.
+      // real scan went back to one register.
       final src = File('lib/services/services.dart').readAsStringSync();
       final scan = src.substring(src.indexOf('Future<String> getNextSrNumber'));
       final body = scan.substring(0, scan.indexOf('composeSrNumber'));
-      expect(body, contains(r"ilike('sr_number', '%$prefix/$type/%/$year')"),
-          reason: 'the query must ask for ONE register');
-      expect(body, contains("parts[1].trim().toUpperCase() != type"),
-          reason: "the scan must reject the other register number set");
+      expect(body, contains(r"ilike('sr_number', '%$prefix/%/%/$year')"),
+          reason: 'the query must ask for BOTH registers');
+      expect(body, contains('kSrDocTypes.contains(parts[1].trim().toUpperCase())'),
+          reason: 'the scan must accept either register, but only a register');
+      expect(body.contains('!= type'), isFalse,
+          reason: 'the scan rejects the other register again');
       expect(scan, contains('docType: type'),
-          reason: 'the number must be minted in the register it was counted in');
+          reason: 'the number is still minted in the register that was asked for');
     });
   });
 }
