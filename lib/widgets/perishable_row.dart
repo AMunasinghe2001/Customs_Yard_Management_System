@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:gap/gap.dart';
 
 import '../core/theme.dart';
 import '../models/models.dart';
@@ -59,27 +58,31 @@ class PerishableFilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = perishableAccent(context);
-    return GestureDetector(
-      onTap: () => onChanged(!selected),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        decoration: BoxDecoration(
-          color: selected ? accent.withOpacity(0.15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border:
-              Border.all(color: selected ? accent : context.colors.borderColor),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(selected ? Icons.check_rounded : Icons.eco_rounded,
-              size: 15,
-              color: selected ? accent : context.colors.textSecondary),
-          const Gap(6),
-          Text('Perishable',
-              style: TextStyle(
-                  color: selected ? accent : context.colors.textSecondary,
-                  fontSize: 12.5,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
-        ]),
+    final fg = selected ? accent : context.colors.textSecondary;
+
+    // ⚠️ An OutlinedButton.icon, with the SAME numbers the Date Filter and
+    // the All / Delivered / Pending buttons beside it use: font 12, icon 16,
+    // horizontal padding 12, radius 8. It used to be a hand-rolled Container
+    // on the segmented-chip metrics (padding 14/9, radius 10, icon 15,
+    // 12.5pt), which is a different control's shape — so it sat visibly
+    // shorter and rounder than every button it shared the row with, and a
+    // Wrap's `spacing` could not hide it because the gap is only equal when
+    // the boxes are.
+    return OutlinedButton.icon(
+      onPressed: () => onChanged(!selected),
+      icon: Icon(selected ? Icons.check_rounded : Icons.eco_rounded,
+          size: 16, color: fg),
+      label: Text('Perishable',
+          style: TextStyle(
+              color: fg,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
+      style: OutlinedButton.styleFrom(
+        backgroundColor:
+            selected ? accent.withOpacity(0.15) : Colors.transparent,
+        side: BorderSide(color: selected ? accent : context.colors.borderColor),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }

@@ -93,12 +93,22 @@ class HandoverCell extends ConsumerStatefulWidget {
   /// after a second fetch this cell would otherwise have to make.
   final bool? delivered;
   final HandoverEntryKind kind;
+
+  /// The item behind this row, for goods that have NO warehouse entry.
+  ///
+  /// ⚠️ A perishable released straight out of the yard never had one -- the
+  /// page skips warehousing by design -- so the entry-keyed write cannot
+  /// reach it. With this set, the cell records the act on the item instead
+  /// (`package_item_handovers`, migration 041). Without it, such a row had
+  /// no button at all, which is why they all sat reading "Delivered".
+  final String? itemId;
   const HandoverCell({
     required this.entry,
     required this.kind,
     this.delivered,
     this.package,
     this.rates,
+    this.itemId,
   });
 
   @override
@@ -112,7 +122,11 @@ class HandoverCellState extends ConsumerState<HandoverCell> {
   Future<void> _mark() async {
     final entry = widget.entry;
     final id = entry?.id;
-    if (id == null || entry == null) return;
+    // No warehouse entry: the act is recorded on the item itself.
+    if (id == null || entry == null) {
+      await _markItem();
+      return;
+    }
 
     // ⚠️ The FORM first. A hand-over is not a click: storage has been
     // accruing since the goods arrived, the owner pays it, the officer
@@ -175,13 +189,51 @@ class HandoverCellState extends ConsumerState<HandoverCell> {
     }
   }
 
+  /// The entry-less path: goods that were never warehouse-admitted.
+  ///
+  /// ⚠️ No charge form. The storage charge is computed from a warehouse
+  /// entry's admitted_at and daily_rate, and these goods have neither --
+  /// they were never stored, so there is nothing to bill for. Asking for a
+  /// figure here would invite one to be invented.
+  Future<void> _markItem() async {
+    final itemId = widget.itemId;
+    if (itemId == null) return;
+    final kind = switch (widget.kind) {
+      HandoverEntryKind.released => 'released',
+      _ => null,
+    };
+    if (kind == null) return;
+
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(disposalServiceProvider)
+          .markItemHandover(itemId, kind: kind, handedAt: DateTime.now());
+      if (mounted) setState(() => _optimistic = true);
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Marked as Delivered'),
+          backgroundColor: context.colors.successGreen,
+        ));
+      }
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e, action: 'Confirming delivery');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final delivered = _optimistic ?? widget.delivered ?? false;
     // Only a yard confirms a hand-over; Central Disposal watches.
     final profile = ref.watch(currentProfileProvider);
-    final canEdit =
-        profile != null && !profile.isDisposal && widget.entry != null;
+    // ⚠️ An entry OR an item. Requiring an entry is what left every
+    // entry-less release with a pill and no button behind it.
+    final canEdit = profile != null &&
+        !profile.isDisposal &&
+        (widget.entry != null || widget.itemId != null);
     return Tooltip(
       message: delivered
           ? widget.kind.done

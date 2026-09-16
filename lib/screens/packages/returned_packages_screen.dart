@@ -19,6 +19,7 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
 import '../../widgets/handover_cell.dart';
+import '../../widgets/perishable_row.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 
@@ -39,7 +40,8 @@ class _ReturnedPackagesScreenState
     extends ConsumerState<ReturnedPackagesScreen> {
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
-  int _page = 0; // current client-side page of the filtered rows
+  int _page = 0;
+  bool? _perishableOnly; // current client-side page of the filtered rows
 
   // ⚠️ `_latestReturnedEntry`, `_isReleaseEntry`, `_returnedItemName` and
   // `_extractReceiptNo` all moved into the `disposition_rows` view (source 4,
@@ -59,20 +61,31 @@ class _ReturnedPackagesScreenState
     for (final r in result.rows) {
       final pkg = result.packages[r.packageId];
       if (pkg == null) continue;
-      final entry =
-          pkg.warehouseEntries.where((e) => e.id == r.entryId).firstOrNull;
-      // Every released row comes from an entry; one that cannot be resolved
-      // was deleted between the two queries.
-      if (entry == null) continue;
+      final entry = r.entryId == null
+          ? null
+          : pkg.warehouseEntries.where((e) => e.id == r.entryId).firstOrNull;
+      final item = r.itemId == null
+          ? null
+          : pkg.items.where((i) => i.id == r.itemId).firstOrNull;
       out.add(_ReturnedRow(
         package: pkg,
         entry: entry,
+        item: item,
+        itemId: r.itemId,
         itemName: r.itemName,
-        // Parsed by the view now, so the search box can match it in SQL.
+        hsCode: r.hsCode,
+        quantity: r.quantity,
         receiptNo: r.receiptNo,
-        receiptDate: _extractReceiptDate(entry.returnNotes),
-        delivered: r.delivered,
-        deliveredAt: r.deliveredAt,
+        receiptDate: entry != null ? _extractReceiptDate(entry.returnNotes) : null,
+        happenedAt: r.happenedAt,
+        // ⚠️ The entry's answer, else the ITEM's. Goods released with no
+        // warehouse entry have no entry-level flag to read, and the view
+        // returns null for them -- which the table used to paint as
+        // "Delivered". `item_handover_done` is the record of the act for
+        // exactly those goods (migration 041).
+        delivered: r.delivered ?? r.itemHandoverDone,
+        deliveredAt: r.deliveredAt ?? r.itemHandoverAt,
+        isPerishable: r.isPerishable,
       ));
     }
     return out;
@@ -138,6 +151,7 @@ class _ReturnedPackagesScreenState
       dateEnd: dateRange?.end,
       year: _yearFilter,
       holdReason: rFilter,
+      perishableOnly: _perishableOnly,
     );
     final page = ref.watch(dispositionPageWithPackagesProvider(query));
 
@@ -384,6 +398,22 @@ class _ReturnedPackagesScreenState
                               .state = v ?? 'all',
                         ),
 
+                        if (ref
+                                .watch(dispositionHasPerishablesProvider((
+                                  finalTag: 'RELEASED',
+                                  yard: ref
+                                      .watch(currentProfileProvider)
+                                      ?.yard,
+                                )))
+                                .valueOrNull ==
+                            true)
+                          PerishableFilterChip(
+                            selected: _perishableOnly == true,
+                            onChanged: (v) => setState(() {
+                              _perishableOnly = v ? true : null;
+                              _page = 0;
+                            }),
+                          ),
                       ],
                     ),
                   ],
@@ -483,7 +513,17 @@ class _ReturnedPackagesScreenState
                                       fixedWidth: 55),
                                 ],
                                 rows: pageRows
-                                    .map((row) => DataRow(cells: [
+                                    .map((row) => DataRow(
+                                            // The same faint wash the Sold /
+                                            // Destroyed / Re-exported tables
+                                            // carry, so a perishable is
+                                            // findable at a glance on every
+                                            // disposition page rather than on
+                                            // all but this one.
+                                            color: WidgetStateProperty.all(
+                                                perishableRowColor(
+                                                    context, row.isPerishable)),
+                                            cells: [
                                           DataCell(TooltipText(
                                               row.package.srNumber,
                                               style: TextStyle(
@@ -494,12 +534,15 @@ class _ReturnedPackagesScreenState
                                           DataCell(TooltipText(row.itemName,
                                               overflow: TextOverflow.ellipsis)),
                                           DataCell(TooltipText((() {
-                                            final hs = row.package.items
-                                                .where((i) =>
-                                                    i.id ==
-                                                    row.entry.packageItemId)
-                                                .firstOrNull
-                                                ?.hsCode;
+                                            final hs = row.hsCode ??
+                                                (row.entry != null
+                                                    ? row.package.items
+                                                        .where((i) =>
+                                                            i.id ==
+                                                            row.entry!.packageItemId)
+                                                        .firstOrNull
+                                                        ?.hsCode
+                                                    : row.item?.hsCode);
                                             return (hs != null && hs.isNotEmpty)
                                                 ? hs
                                                 : '—';
@@ -509,26 +552,30 @@ class _ReturnedPackagesScreenState
                                                   fontSize: 12))),
                                           DataCell(Center(
                                               child: Text(
-                                                  '${row.entry.itemCount}'))),
+                                                  '${row.entry?.itemCount ?? row.item?.quantity ?? row.quantity}'))),
                                           // Entry Date (SR form) — falls back to the
                                           // warehouse admit date.
                                           DataCell(TooltipText((() {
                                             final d = row.package.entryDate ??
-                                                row.entry.admittedAt;
+                                                row.entry?.admittedAt ??
+                                                row.package.createdAt;
                                             return DateFormat('yyyy-MM-dd')
                                                 .format(d);
                                           })())),
-                                          // Release Date = the entry's returned date.
-                                          DataCell(TooltipText(row
-                                                      .entry.returnedAt !=
-                                                  null
-                                              ? DateFormat('yyyy-MM-dd')
-                                                  .format(row.entry.returnedAt!)
-                                              : '—')),
+                                          // Release Date = the entry's returned date or disposition date.
+                                          DataCell(TooltipText((() {
+                                            final d = row.entry?.returnedAt ??
+                                                row.happenedAt;
+                                            return d != null
+                                                ? DateFormat('yyyy-MM-dd')
+                                                    .format(d)
+                                                : '—';
+                                          })())),
                                           // Warehouse charge from the SR Entry Date →
                                           // Release Date (not the warehouse admit date).
                                           DataCell(TooltipText((() {
                                             final e = row.entry;
+                                            if (e == null) return '—';
                                             final chargeStart =
                                                 row.package.entryDate ??
                                                     e.admittedAt;
@@ -559,7 +606,20 @@ class _ReturnedPackagesScreenState
                                           DataCell(Center(
                                             child: HandoverCell(
                                               entry: row.entry,
-                                              delivered: row.delivered,
+                                              // ⚠️ false, never "true when
+                                              // there is no entry". A
+                                              // perishable released straight
+                                              // out of the yard has no
+                                              // warehouse entry by design,
+                                              // so that rule marked every
+                                              // one of them Handed Over on
+                                              // arrival -- with no button
+                                              // left to press. Releasing is
+                                              // the DECISION; the hand-over
+                                              // is a later act the yard
+                                              // confirms here.
+                                              delivered: row.delivered ?? false,
+                                              itemId: row.itemId,
                                               kind: HandoverEntryKind.released,
                                               // ⚠️ The package and the
                                               // rate history, so the button
@@ -589,6 +649,8 @@ class _ReturnedPackagesScreenState
                                                   storageRate:
                                                       storageRateHistory,
                                                   highlightEntry: row.entry,
+                                                  highlightItemId:
+                                                      row.item?.id ?? row.itemId,
                                                   useLegacySummary: true,
                                                   // ⚠️ The same section
                                                   // Re-exported Goods
@@ -604,7 +666,8 @@ class _ReturnedPackagesScreenState
                                                     kind:
                                                         HandoverKind.released,
                                                     decidedAt:
-                                                        row.entry.returnedAt,
+                                                        row.entry?.returnedAt ??
+                                                            row.happenedAt,
                                                     delivered:
                                                         row.delivered ?? false,
                                                     deliveredAt:
@@ -676,10 +739,15 @@ class _MiniStat extends StatelessWidget {
 
 class _ReturnedRow {
   final PackageModel package;
-  final WarehouseEntryModel entry;
+  final WarehouseEntryModel? entry;
+  final PackageItem? item;
+  final String? itemId;
   final String itemName;
+  final String? hsCode;
+  final int quantity;
   final String? receiptNo;
   final String? receiptDate;
+  final DateTime? happenedAt;
 
   /// Has the owner actually collected the goods?
   ///
@@ -689,14 +757,21 @@ class _ReturnedRow {
   /// could still be storing every one of them.
   final bool? delivered;
   final DateTime? deliveredAt;
+  final bool isPerishable;
 
   const _ReturnedRow({
     required this.package,
-    required this.entry,
+    this.entry,
+    this.item,
+    this.itemId,
     required this.itemName,
+    this.hsCode,
+    required this.quantity,
     this.receiptNo,
     this.receiptDate,
+    this.happenedAt,
     this.delivered,
     this.deliveredAt,
+    this.isPerishable = false,
   });
 }

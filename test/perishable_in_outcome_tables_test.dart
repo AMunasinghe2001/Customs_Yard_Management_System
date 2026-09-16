@@ -230,4 +230,85 @@ void main() {
       expect(shared.contains('warningAmber.withOpacity(0.06)'), isTrue);
     });
   });
+
+  group('every disposition page carries the perishable marks', () {
+    final released =
+        File('lib/screens/packages/returned_packages_screen.dart')
+            .readAsStringSync();
+    final view =
+        File('postgres/70_disposition_rows_released_status.sql')
+            .readAsStringSync();
+
+    String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('the view that REPLACES disposition_rows keeps is_perishable', () {
+      // The regression this locks: postgres/70 drops and recreates
+      // disposition_rows outright. Migration 016 had added is_perishable by
+      // re-wrapping whatever the view was at the time, and a plain
+      // `create view` silently drops that column again -- taking the chip
+      // off Sold, Destroyed, Re-exported and Released all at once, with no
+      // error anywhere, because the only symptom is a count query that
+      // now returns zero.
+      expect(flat(view), contains('public.item_is_perishable(r.item_id) as is_perishable'));
+    });
+
+    test('Released washes its perishable rows like its neighbours', () {
+      // It had the chip and the flag already, so the filter worked -- but
+      // the rows it returned looked identical to ordinary goods, which is
+      // the one page where that was true.
+      expect(flat(released),
+          contains('color: WidgetStateProperty.all( perishableRowColor( context, row.isPerishable))'));
+    });
+
+    test('Released offers the narrowing chip too', () {
+      expect(released, contains('PerishableFilterChip'));
+      expect(released, contains('_perishableOnly = v ? true : null'));
+    });
+  });
+
+  group('the perishable button is one of the row, not a guest in it', () {
+    final helper = File('lib/widgets/perishable_row.dart').readAsStringSync();
+
+    String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('it is built from the same control as its neighbours', () {
+      // ⚠️ It was a hand-rolled Container on the SEGMENTED-CHIP metrics
+      // (padding 14/9, radius 10, icon 15, 12.5pt) sitting in a row of
+      // OutlinedButtons (padding 12, radius 8, icon 16, 12pt) -- a different
+      // control's shape, so it came out visibly shorter and rounder, and a
+      // Wrap's `spacing` cannot even out the gaps when the boxes differ.
+      expect(helper, contains('OutlinedButton.icon'));
+      expect(helper.contains('vertical: 9'), isFalse,
+          reason: 'the chip is back on its own padding');
+      final f = flat(helper);
+      expect(f, contains('fontSize: 12,'));
+      expect(f, contains('BorderRadius.circular(8)'));
+      expect(f, contains('EdgeInsets.symmetric(horizontal: 12)'));
+    });
+
+    test('it is the LAST control in every filter row', () {
+      // One position across all four pages, so the reader finds it in the
+      // same place whichever outcome they are looking at.
+      for (final path in [
+        'lib/screens/packages/disposition_category_screen.dart',
+        'lib/screens/packages/returned_packages_screen.dart',
+        'lib/screens/packages/unsold_packages_screen.dart',
+      ]) {
+        final src = File(path).readAsStringSync();
+        final chip = src.indexOf('PerishableFilterChip(');
+        expect(chip, greaterThan(-1), reason: '$path has no chip');
+        final date = src.indexOf('DateFilterButton(');
+        if (date > -1) {
+          expect(date, lessThan(chip),
+              reason: '$path still draws the chip before the date filter');
+        }
+        // Nothing but the closing of the children list may follow it.
+        final after = src.substring(chip);
+        expect(after.contains('_deliveryFilterChip('), isFalse,
+            reason: '$path draws a delivery button after the chip');
+        expect(after.contains('OutcomeFilter('), isFalse,
+            reason: '$path draws the outcome filter after the chip');
+      }
+    });
+  });
 }

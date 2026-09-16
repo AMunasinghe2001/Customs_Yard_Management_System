@@ -965,10 +965,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   Expanded(
                                       child: TextFormField(
                                           controller: _cusdecDateCtrl,
-                                          readOnly: true,
-                                          onTap: () => _selectDate(
-                                              _cusdecDateCtrl,
-                                              lastDate: DateTime.now()),
                                           inputFormatters: [
                                             MaskTextInputFormatter(
                                               mask: '####-##-##',
@@ -1002,10 +998,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   Expanded(
                                       child: TextFormField(
                                           controller: _entryDateCtrl,
-                                          readOnly: true,
-                                          onTap: () => _selectDate(
-                                              _entryDateCtrl,
-                                              lastDate: DateTime.now()),
                                           inputFormatters: [
                                             MaskTextInputFormatter(
                                               mask: '####-##-##',

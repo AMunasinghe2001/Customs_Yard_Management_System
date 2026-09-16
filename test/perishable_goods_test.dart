@@ -364,6 +364,15 @@ void main() {
     // like a different product from the ones either side of it.
 
     testWidgets('search, year and yard sit on ONE row', (tester) async {
+      // ⚠️ A viewport wide enough for the table, like every other widget
+      // test in this file. The default 800px is narrower than the table's
+      // fixed columns now total (829px with HS Code), and data_table_2
+      // asserts rather than clipping -- so the toolbar these tests are
+      // actually about never gets a chance to lay out.
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       await tester.pumpWidget(_harness(
         packages: [
           _pkg([_item('Milk', nature: kNaturePerishable)])
@@ -391,6 +400,15 @@ void main() {
 
     testWidgets('the controls are not boxed in a bordered card',
         (tester) async {
+      // ⚠️ A viewport wide enough for the table, like every other widget
+      // test in this file. The default 800px is narrower than the table's
+      // fixed columns now total (829px with HS Code), and data_table_2
+      // asserts rather than clipping -- so the toolbar these tests are
+      // actually about never gets a chance to lay out.
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       await tester.pumpWidget(_harness(
         packages: [
           _pkg([_item('Milk', nature: kNaturePerishable)])
@@ -415,6 +433,15 @@ void main() {
     });
 
     testWidgets('the search box matches the other tabs', (tester) async {
+      // ⚠️ A viewport wide enough for the table, like every other widget
+      // test in this file. The default 800px is narrower than the table's
+      // fixed columns now total (829px with HS Code), and data_table_2
+      // asserts rather than clipping -- so the toolbar these tests are
+      // actually about never gets a chance to lay out.
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       // DisposalSearch elsewhere: 14px radius, gold border, gold search icon,
       // a clear button once something is typed.
       final src = _read('lib/screens/packages/perishable_goods_screen.dart');

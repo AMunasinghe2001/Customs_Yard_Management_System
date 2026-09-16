@@ -739,17 +739,18 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               DataCell(Center(
                                   child: Text(
                                       DateFormat('dd/MM/yy')
-                                          .format(e.admittedAt),
+                                          .format(pkg?.entryDate ?? e.admittedAt),
                                       style: TextStyle(
                                           color: isItemConfiscated
                                               ? context.colors.textMuted
                                               : null)))),
-                              // The 30-day appeal window runs from the date
-                              // the goods were admitted, which is exactly
-                              // this row's date.
+                              // The 30-day appeal window runs from the
+                              // package's entry date (which the admin may
+                              // have corrected), falling back to the
+                              // warehouse admission timestamp.
                               DataCell(Center(
                                   child: AppealStateChip(
-                                      entryDate: e.admittedAt,
+                                      entryDate: pkg?.entryDate ?? e.admittedAt,
                                       // A recorded appeal decision releases
                                       // the goods early; a hold keeps them
                                       // frozen past the deadline.

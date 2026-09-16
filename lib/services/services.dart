@@ -9045,6 +9045,39 @@ class DisposalService {
         ));
   }
 
+  /// Record the hand-over of an item that never had a warehouse entry.
+  ///
+  /// ⚠️ For goods released or destroyed straight out of Perishable Goods,
+  /// which skips warehousing by design. [toggleReleasedDelivery] keys on
+  /// `warehouse_entries.id` and raises 'no warehouse_entry with id %' for
+  /// these, and `destruction_items` needs a forfeited row and a destruction
+  /// batch they do not have -- so the act is recorded on the item instead,
+  /// in `package_item_handovers` (migration 041).
+  ///
+  /// [kind] is 'released' or 'destroyed', and must match the item's own
+  /// status: the function refuses to record the hand-over of goods that are
+  /// not actually finished.
+  Future<void> markItemHandover(
+    String itemId, {
+    required String kind,
+    String? receiptNo,
+    double? charge,
+    DateTime? handedAt,
+    String? notes,
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'yard_mark_item_handover',
+          params: {
+            'p_item_id': itemId,
+            'p_kind': kind,
+            'p_receipt_no': receiptNo,
+            'p_charge': charge,
+            'p_handed_at': handedAt?.toIso8601String(),
+            'p_notes': notes,
+          },
+        ));
+  }
+
   /// Flip a FINAL OUTCOME's hand-over flag (yard OR Central Disposal).
   ///
   /// ⚠️ Delivering also CLOSES THE WAREHOUSE ENTRY, inside the same statement

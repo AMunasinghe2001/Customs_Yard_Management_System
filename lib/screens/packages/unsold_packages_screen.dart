@@ -217,28 +217,6 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        // ⚠️ Perishables reach this table by a different
-                        // route entirely — one special tender sale, no
-                        // re-valuation, no committee — and nothing else on
-                        // the row says so.
-                        // ⚠️ Only where this page HAS perishables. Each
-                        // Final Outcome page is its own population —
-                        // Converted has one, Auction has none — so the
-                        // chip follows the data rather than the page name.
-                        if (ref
-                                .watch(unsoldHasPerishablesProvider((
-                                  yard: myYardForQuery,
-                                  proposal: widget.proposalFilter,
-                                )))
-                                .valueOrNull ==
-                            true)
-                          PerishableFilterChip(
-                            selected: _perishableOnly == true,
-                            onChanged: (v) => setState(() {
-                              _perishableOnly = v ? true : null;
-                              _page = 0;
-                            }),
-                          ),
                         DateFilterButton(
                           dateRange: _dateRange,
                           year: _yearFilter,
@@ -263,6 +241,28 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                             outcomes: kUnsoldProposals,
                             onChanged: (v) => setState(() {
                               _outcomeFilter = v;
+                              _page = 0;
+                            }),
+                          ),
+                        // ⚠️ Perishables reach this table by a different
+                        // route entirely — one special tender sale, no
+                        // re-valuation, no committee — and nothing else on
+                        // the row says so.
+                        // ⚠️ Only where this page HAS perishables. Each
+                        // Final Outcome page is its own population —
+                        // Converted has one, Auction has none — so the
+                        // chip follows the data rather than the page name.
+                        if (ref
+                                .watch(unsoldHasPerishablesProvider((
+                                  yard: myYardForQuery,
+                                  proposal: widget.proposalFilter,
+                                )))
+                                .valueOrNull ==
+                            true)
+                          PerishableFilterChip(
+                            selected: _perishableOnly == true,
+                            onChanged: (v) => setState(() {
+                              _perishableOnly = v ? true : null;
                               _page = 0;
                             }),
                           ),

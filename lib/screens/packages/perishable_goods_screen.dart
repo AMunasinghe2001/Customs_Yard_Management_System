@@ -116,6 +116,35 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
     super.dispose();
   }
 
+  Future<void> _requestSingleDisposal(PackageModel pkg, String disposition,
+      {required String itemId, WarehouseEntryModel? entry}) async {
+    try {
+      final key = entry != null
+          ? '${pkg.id}:$itemId:${entry.id}:perishable'
+          : '${pkg.id}:$itemId:perishable';
+      await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
+        requestDate: DateTime.now(),
+        dispositions: {key: disposition},
+      );
+      ref.read(disposalRequestsRefreshProvider.notifier).trigger();
+      ref.invalidate(livePackagesProvider);
+      ref.invalidate(perishablePageProvider);
+      ref.invalidate(sentPerishableKeysProvider);
+      ref.invalidate(requestableForfeitedPackagesProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.successGreen,
+          content: Text('Disposal request sent for ${pkg.srNumber} '
+              '(${disposition == "sale" ? "Sale" : "Destruction"}).'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnack(context, e);
+      }
+    }
+  }
+
   /// The search box, built once and placed differently by each portal.
   ///
   /// ⚠️ On the YARD it overrides NOTHING and takes the app's own
@@ -228,8 +257,9 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
         const <String, double>{};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    final accent =
-        widget.readOnly ? context.colors.successGreen : context.colors.primaryGold;
+    final accent = widget.readOnly
+        ? context.colors.successGreen
+        : context.colors.primaryGold;
 
     final body = Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -373,60 +403,60 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-              _searchBox(context),
-              const Gap(8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  DateFilterButton(
-                    dateRange: _dateRange,
-                    year: _yearFilter,
-                    // ⚠️ Its own query: one page cannot know which years
-                    // the table covers.
-                    years: srYears(
-                        ref.watch(perishableYearsProvider).valueOrNull ??
-                            const <String>[]),
-                    onChanged: (range, year) => setState(() {
-                      _dateRange = range;
-                      _yearFilter = year;
-                      _page = 0;
-                    }),
-                  ),
-                  const SizedBox(width: 8),
-                  StyledDropdownButton<String>(
-                    value: _activity == 'all' ? null : _activity,
-                    allLabel: 'Post Status Activity',
-                    icon: Icons.label_outline_rounded,
-                    menuWidth: 320,
-                    // ⚠️ EVERY activity, unfiltered. A perishable is
-                    // registered under whatever activity the officer chose,
-                    // and the list is not narrowed for this page -- see the
-                    // SR form, which offers them all here for the same
-                    // reason.
-                    options: kAllPostStatusActivities
-                        .map((a) => StyledDropdownOption(a, a))
-                        .toList(),
-                    onChanged: (v) => setState(() {
-                      _activity = v ?? 'all';
-                      _page = 0;
-                    }),
-                  ),
-                  const SizedBox(width: 8),
-                  OutcomeFilter(
-                    value: _outcomeFilter,
-                    // Every ruling the DG can make, plus a sale -- which on
-                    // this page is an ending of its own.
-                    outcomes: kUnsoldProposals,
-                    includeSold: true,
-                    onChanged: (v) => setState(() {
-                      _outcomeFilter = v;
-                      _page = 0;
-                    }),
-                  ),
-                ],
-              ),
+                    _searchBox(context),
+                    const Gap(8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        DateFilterButton(
+                          dateRange: _dateRange,
+                          year: _yearFilter,
+                          // ⚠️ Its own query: one page cannot know which years
+                          // the table covers.
+                          years: srYears(
+                              ref.watch(perishableYearsProvider).valueOrNull ??
+                                  const <String>[]),
+                          onChanged: (range, year) => setState(() {
+                            _dateRange = range;
+                            _yearFilter = year;
+                            _page = 0;
+                          }),
+                        ),
+                        const SizedBox(width: 8),
+                        StyledDropdownButton<String>(
+                          value: _activity == 'all' ? null : _activity,
+                          allLabel: 'Post Status Activity',
+                          icon: Icons.label_outline_rounded,
+                          menuWidth: 320,
+                          // ⚠️ EVERY activity, unfiltered. A perishable is
+                          // registered under whatever activity the officer chose,
+                          // and the list is not narrowed for this page -- see the
+                          // SR form, which offers them all here for the same
+                          // reason.
+                          options: kAllPostStatusActivities
+                              .map((a) => StyledDropdownOption(a, a))
+                              .toList(),
+                          onChanged: (v) => setState(() {
+                            _activity = v ?? 'all';
+                            _page = 0;
+                          }),
+                        ),
+                        const SizedBox(width: 8),
+                        OutcomeFilter(
+                          value: _outcomeFilter,
+                          // Every ruling the DG can make, plus a sale -- which on
+                          // this page is an ending of its own.
+                          outcomes: kUnsoldProposals,
+                          includeSold: true,
+                          onChanged: (v) => setState(() {
+                            _outcomeFilter = v;
+                            _page = 0;
+                          }),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               )
@@ -441,8 +471,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                         color: context.colors.primaryGold)),
                 error: (e, _) => ErrorView(
                     error: e,
-                    onRetry: () =>
-                        ref.refresh(perishablePageProvider(query))),
+                    onRetry: () => ref.refresh(perishablePageProvider(query))),
                 data: (result) {
                   // Filtered, sorted and paged by the database. Nothing left
                   // to narrow here.
@@ -482,11 +511,11 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                               // actually needs, so it scrolled sideways on
                               // a window it would have fitted.
                               //
-                              // The fixed columns come to 614 on the
-                              // yard's view (Qty 70 + Entry Date 120 +
-                              // Valuation 150 + Final Outcome 214 +
-                              // Details 60) and 744 with Central
-                              // Disposal's extra Yard column. 820 clears
+                              // The fixed columns come to 699 on the
+                              // yard's view (HS Code 110 + Qty 70 +
+                              // Entry Date 110 + Valuation 140 +
+                              // Status 214 + Details 55) and 829 with
+                              // Central Disposal's extra Yard column. 820 clears
                               // the larger of the two and leaves the three
                               // proportional columns — SR Number, Goods
                               // Name, Consignee — room to be readable,
@@ -509,43 +538,34 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                     label: Text('Goods Name'),
                                     size: ColumnSize.M),
                                 const DataColumn2(
+                                    label: Text('HS Code'),
+                                    size: ColumnSize.S,
+                                    fixedWidth: 110),
+                                const DataColumn2(
                                     label: Text('Qty'),
                                     size: ColumnSize.S,
                                     fixedWidth: 70),
                                 const DataColumn2(
-                                    label: Text('Consignee'),
+                                    label: Text('Post Status Activity'),
                                     size: ColumnSize.M),
                                 const DataColumn2(
                                     label: Text('Entry Date'),
                                     size: ColumnSize.S,
-                                    fixedWidth: 120),
+                                    fixedWidth: 110),
+                                const DataColumn2(
+                                    label: Text('Consignee'),
+                                    size: ColumnSize.M),
                                 if (widget.readOnly)
                                   const DataColumn2(
                                       label: Text('Yard'),
                                       size: ColumnSize.S,
                                       fixedWidth: 130),
-                                // ⚠️ What the goods were PRICED at for
-                                // their special sale. A perishable runs
-                                // exactly one, and the figure it ran at
-                                // decided whether it sold -- the table
-                                // listed the outcome and never the price
-                                // behind it.
                                 const DataColumn2(
                                     label: Center(child: Text('Valuation')),
                                     size: ColumnSize.S,
                                     fixedWidth: 140),
-                                // ⚠️ No "Waiting" column. A countdown here read
-                                // as an appeal window running down -- and a
-                                // perishable has NO appeal window; that is the
-                                // whole point of the nature. Nothing is being
-                                // waited out, so nothing should be counted.
-                                //
-                                // The DG's ruling, once there is one. Both the
-                                // yard and Central Disposal read the SAME chip
-                                // the Top Management portal shows, so the three
-                                // cannot describe one outcome differently.
                                 const DataColumn2(
-                                    label: Center(child: Text('Final Outcome')),
+                                    label: Center(child: Text('Status')),
                                     size: ColumnSize.S,
                                     // The shared constant, so this column and
                                     // the Destroyed/Delivered ones stay in
@@ -554,121 +574,112 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                 const DataColumn2(
                                     label: Center(child: Text('Details')),
                                     size: ColumnSize.S,
-                                    fixedWidth: 60),
+                                    fixedWidth: 55),
                               ],
-                              rows: pageRows
-                                  .map((r) => DataRow(cells: [
-                                        DataCell(TooltipText(r.package.srNumber,
-                                            style: TextStyle(
-                                                color: context
-                                                    .colors.accentLightBlue,
-                                                fontWeight: FontWeight.w600))),
-                                        DataCell(TooltipText(r.item.itemName,
-                                            overflow: TextOverflow.ellipsis)),
-                                        DataCell(
-                                            TooltipText('${r.item.quantity}')),
-                                        DataCell(TooltipText(
-                                            r.package.consigneeName,
-                                            overflow: TextOverflow.ellipsis)),
-                                        DataCell(TooltipText(
-                                            DateFormat('yyyy-MM-dd').format(
-                                                r.package.entryDate ??
-                                                    r.package.createdAt))),
-                                        if (widget.readOnly)
-                                          DataCell(TooltipText(
-                                              yardName(yardOfSrNumber(
-                                                  r.package.srNumber)),
-                                              overflow: TextOverflow.ellipsis)),
-                                        // ⚠️ The price its ONE special sale
-                                        // ran at. Read from the same
-                                        // per-item forfeited row the popup
-                                        // uses, so the two cannot disagree.
-                                        DataCell(Center(
-                                          child: _PerishValuationCell(
-                                              unitCost:
-                                                  valuations[r.item.id],
-                                              qty: r.item.quantity),
-                                        )),
-                                        DataCell(Center(
-                                            child: _PerishableOutcomeChip(
-                                                proposal: outcomes[r.item.id],
-                                                soldPrice: result
-                                                    .soldPriceByItem[r.item.id],
-                                                sent: result
-                                                        .sentByItem[r.item.id] ??
-                                                    false,
-                                                markedUnsold: result
-                                                        .markedUnsoldByItem[
-                                                    r.item.id] ??
-                                                    false))),
-                                        DataCell(Center(
-                                          child: IconButton(
-                                            icon: Icon(
-                                                Icons.info_outline_rounded,
-                                                color: context
-                                                    .colors.accentLightBlue,
-                                                size: 18),
-                                            onPressed: () {
-                                              // ⚠️ The ONE round these goods
-                                              // ran. A perishable gets a
-                                              // single special tender sale
-                                              // -- no re-valuation, no
-                                              // second round -- and the
-                                              // popup showed nothing of it,
-                                              // so the price the sale was
-                                              // held at appeared nowhere.
-                                              //
-                                              // The section labels it
-                                              // "Special Tender Sale" and
-                                              // draws no bids, because a
-                                              // perishable takes none.
-                                              final fp = ref
-                                                  .read(forfeitedByItemProvider(
-                                                      r.package.id))
-                                                  .valueOrNull?[r.item.id];
-                                              // ⚠️ showAppDialog, not the raw
-                                              // showDialog. The shared helper
-                                              // is what puts the dark blurred
-                                              // barrier behind every other
-                                              // popup in the app; this was
-                                              // the ONE call site that had
-                                              // slipped past it, so this
-                                              // dialog alone opened over a
-                                              // plain, unblurred page.
-                                              showAppDialog(
-                                              context: context,
-                                              builder: (_) =>
-                                                  PackageDetailsDialog(
-                                                package: r.package,
-                                                storageRate: storageRate,
-                                                highlightItemId: r.item.id,
-                                                useLegacySummary: true,
-                                                tenderHistoryFor: fp,
-                                                valuationQty: r.item.quantity,
-                                                // ⚠️ Central Disposal tints
-                                                // every one of its dialogs
-                                                // with the portal's green.
-                                                // This page passed none, so
-                                                // it fell back to the default
-                                                // indigo and was the only
-                                                // popup in that portal
-                                                // wearing another colour.
-                                                headerAccentColor:
-                                                    widget.readOnly
-                                                        ? context.colors
-                                                            .successGreen
-                                                        : null,
-                                                yardLabel: widget.readOnly
-                                                    ? yardName(yardOfSrNumber(
-                                                        r.package.srNumber))
-                                                    : null,
-                                              ),
-                                              );
-                                            },
+                              rows: pageRows.map((r) {
+                                final hasOutcome = outcomes[r.item.id] != null;
+                                final isSold =
+                                    result.soldPriceByItem[r.item.id] != null;
+                                final isSent =
+                                    result.sentByItem[r.item.id] ?? false;
+                                final isMarkedUnsold =
+                                    result.markedUnsoldByItem[r.item.id] ??
+                                        false;
+                                final isInYard = !hasOutcome &&
+                                    !isSold &&
+                                    !isSent &&
+                                    !isMarkedUnsold;
+                                final canDispose = !widget.readOnly && isInYard;
+                                final activity =
+                                    (r.item.reasons?.trim().isNotEmpty ?? false)
+                                        ? r.item.reasons!.trim()
+                                        : (r.package.reason
+                                                    ?.trim()
+                                                    .isNotEmpty ??
+                                                false
+                                            ? r.package.reason!.trim()
+                                            : '—');
+                                return DataRow(cells: [
+                                  DataCell(TooltipText(r.package.srNumber,
+                                      style: TextStyle(
+                                          color: context.colors.accentLightBlue,
+                                          fontWeight: FontWeight.w600))),
+                                  DataCell(TooltipText(r.item.itemName,
+                                      overflow: TextOverflow.ellipsis)),
+                                  DataCell(TooltipText(
+                                      (r.item.hsCode?.isNotEmpty ?? false)
+                                          ? r.item.hsCode!
+                                          : '—',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12))),
+                                  DataCell(Center(
+                                      child: Text('${r.item.quantity}'))),
+                                  DataCell(
+                                      _PostStatusActivityChip(label: activity)),
+                                  DataCell(TooltipText(DateFormat('yyyy-MM-dd')
+                                      .format(r.package.entryDate ??
+                                          r.package.createdAt))),
+                                  DataCell(TooltipText(r.package.consigneeName,
+                                      overflow: TextOverflow.ellipsis)),
+                                  if (widget.readOnly)
+                                    DataCell(TooltipText(
+                                        yardName(
+                                            yardOfSrNumber(r.package.srNumber)),
+                                        overflow: TextOverflow.ellipsis)),
+                                  DataCell(Center(
+                                    child: _PerishValuationCell(
+                                        unitCost: valuations[r.item.id],
+                                        qty: r.item.quantity),
+                                  )),
+                                  DataCell(Center(
+                                      child: _PerishableOutcomeChip(
+                                          proposal: outcomes[r.item.id],
+                                          soldPrice:
+                                              result.soldPriceByItem[r.item.id],
+                                          sent: isSent,
+                                          markedUnsold: isMarkedUnsold,
+                                          status: r.item.status))),
+                                  DataCell(Center(
+                                    child: IconButton(
+                                      icon: Icon(Icons.info_outline_rounded,
+                                          color: context.colors.accentLightBlue,
+                                          size: 18),
+                                      onPressed: () {
+                                        final fp = ref
+                                            .read(forfeitedByItemProvider(
+                                                r.package.id))
+                                            .valueOrNull?[r.item.id];
+                                        showAppDialog(
+                                          context: context,
+                                          builder: (_) => PackageDetailsDialog(
+                                            package: r.package,
+                                            storageRate: storageRate,
+                                            highlightItemId: r.item.id,
+                                            useLegacySummary: true,
+                                            tenderHistoryFor: fp,
+                                            valuationQty: r.item.quantity,
+                                            forceFinalDisposition: canDispose,
+                                            allowFinalDisposition: canDispose,
+                                            onSaleOrDestroyRequest: canDispose
+                                                ? (disposition) =>
+                                                    _requestSingleDisposal(
+                                                        r.package, disposition,
+                                                        itemId: r.item.id)
+                                                : null,
+                                            headerAccentColor: widget.readOnly
+                                                ? context.colors.successGreen
+                                                : null,
+                                            yardLabel: widget.readOnly
+                                                ? yardName(yardOfSrNumber(
+                                                    r.package.srNumber))
+                                                : null,
                                           ),
-                                        )),
-                                      ]))
-                                  .toList(),
+                                        );
+                                      },
+                                    ),
+                                  )),
+                                ]);
+                              }).toList(),
                             ),
                           ),
                         ),
@@ -788,8 +799,7 @@ class _PerishValuationCell extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 fontSize: 12)),
         Text('@ ${money.format(unit)} × $n',
-            style:
-                TextStyle(fontSize: 10, color: context.colors.textMuted)),
+            style: TextStyle(fontSize: 10, color: context.colors.textMuted)),
       ],
     );
   }
@@ -801,15 +811,69 @@ class _PerishableOutcomeChip extends StatelessWidget {
   final bool sent;
   final bool markedUnsold;
 
+  /// The item's own [PackageItem.status] — 'Perishable' while it is still
+  /// awaiting disposal, or a terminal value once a Final Disposition has been
+  /// recorded directly from this page (RELEASE / DESTROY / RE-EXPORT / OTHER).
+  ///
+  /// ⚠️ DEFENSIVE ONLY. Migrations 039 and 040 remove a finalised item
+  /// (RELEASED / DESTROYED / RE-EXPORTED / OTHER / SOLD) from this page's own
+  /// query entirely — it belongs on its own outcome table now, the same as
+  /// any other package's, and should never reach this widget in normal
+  /// operation. This branch exists so that IF a stale cache or a future
+  /// direct link ever hands the chip a finalised item anyway, it reads as
+  /// what it is rather than falling through to the same "In Yard" the page
+  /// shows for something nobody has touched — which is the reported bug, and
+  /// the whole reason this field exists.
+  final String status;
+
   const _PerishableOutcomeChip({
     required this.proposal,
     required this.soldPrice,
     required this.sent,
     required this.markedUnsold,
+    required this.status,
   });
 
   @override
   Widget build(BuildContext context) {
+    switch (status.toLowerCase()) {
+      case 'released':
+        return statusPill(
+          context,
+          color: context.colors.successGreen,
+          icon: Icons.check_circle_outline_rounded,
+          label: 'Released',
+          tooltip: 'Final Disposition: released to the owner',
+        );
+      case 'destroyed':
+        return statusPill(
+          context,
+          color: context.colors.dangerRed,
+          icon: Icons.delete_outline_rounded,
+          label: 'Destroyed',
+          tooltip: 'Final Disposition: destroyed',
+        );
+      case 're-exported':
+        return statusPill(
+          context,
+          color: context.colors.accentLightBlue,
+          icon: Icons.flight_takeoff_rounded,
+          label: 'Re-exported',
+          tooltip: 'Final Disposition: re-exported to origin',
+        );
+      case 'other':
+        return statusPill(
+          context,
+          color: context.colors.textSecondary,
+          icon: Icons.more_horiz_rounded,
+          label: 'Other',
+          tooltip: 'Final Disposition: recorded as a custom outcome',
+        );
+    }
+
+    // ⚠️ Also defensive now, for the same reason as the switch above: 040
+    // excludes SOLD from this page's own query, so a sale should already be
+    // on Sold Goods by the time any row reaches this widget.
     final sold = soldPrice;
     if (sold != null) {
       return statusPill(
@@ -862,6 +926,40 @@ class _PerishableOutcomeChip extends StatelessWidget {
       icon: Icons.inventory_2_outlined,
       label: 'In Yard',
       tooltip: 'Held in the yard — not yet sent for disposal',
+    );
+  }
+}
+
+class _PostStatusActivityChip extends StatelessWidget {
+  final String label;
+  const _PostStatusActivityChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty || label.trim() == '—') {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final color = context.colors.warningAmber;
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1157,6 +1157,22 @@ class DispositionRow {
   /// The one date the page sorts on, whichever source the row came from.
   final DateTime happenedAt;
 
+  /// The hand-over recorded on the ITEM, for goods that never had a warehouse
+  /// entry to carry one.
+  ///
+  /// ⚠️ A perishable released or destroyed straight out of the yard skips
+  /// warehousing by design, so [delivered] -- which the view resolves from a
+  /// warehouse entry, a sale or a destruction -- is null for it, and there is
+  /// no row anywhere to flip. `package_item_handovers` (migration 041) is
+  /// that row, and this is its answer. False, never null: the table starts
+  /// empty and an absent record means "not yet handed over", which is exactly
+  /// what the officer needs to see a button for.
+  final bool itemHandoverDone;
+
+  /// The day that item-level hand-over was recorded, and its receipt.
+  final DateTime? itemHandoverAt;
+  final String? itemHandoverReceipt;
+
   const DispositionRow({
     required this.rowKey,
     this.isPerishable = false,
@@ -1179,6 +1195,9 @@ class DispositionRow {
     this.isDestroyed,
     this.delivered,
     this.deliveredAt,
+    this.itemHandoverDone = false,
+    this.itemHandoverAt,
+    this.itemHandoverReceipt,
     required this.happenedAt,
   });
 
@@ -1204,6 +1223,9 @@ class DispositionRow {
         isDestroyed: json['is_destroyed'] as bool?,
         delivered: json['delivered'] as bool?,
         deliveredAt: parseDbDate(json['delivered_at']),
+        itemHandoverDone: json['item_handover_done'] as bool? ?? false,
+        itemHandoverAt: parseDbDate(json['item_handover_at']),
+        itemHandoverReceipt: json['item_handover_receipt']?.toString(),
         happenedAt: parseDbDate(json['happened_at']) ?? DateTime(1970),
       );
 

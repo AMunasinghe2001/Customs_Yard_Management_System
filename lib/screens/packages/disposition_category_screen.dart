@@ -143,6 +143,7 @@ class _DispositionCategoryScreenState
         fromTopManagement: r.isTopManagement,
         delivered: r.delivered,
         deliveredAt: r.deliveredAt,
+        isDestroyedFlag: r.isDestroyed,
       ));
     }
     return out;
@@ -293,33 +294,6 @@ class _DispositionCategoryScreenState
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         
-                        // ⚠️ Perishables reach these tables alongside
-                        // everything else, and a reader scanning the page
-                        // cannot tell them apart — yet they follow a
-                        // different route entirely: ONE special tender
-                        // sale, no re-valuation, no committee.
-                        // ⚠️ Only where this page HAS perishables. On
-                        // Destroyed there are none today, and a chip that
-                        // can only empty the table is worse than none:
-                        // left on, the page reads "0 Destroyed", which
-                        // looks like nothing was ever destroyed rather
-                        // than like a filter matched nothing.
-                        if (ref
-                                .watch(dispositionHasPerishablesProvider((
-                                  finalTag: widget.finalTag,
-                                  yard: ref
-                                      .watch(currentProfileProvider)
-                                      ?.yard,
-                                )))
-                                .valueOrNull ==
-                            true)
-                          PerishableFilterChip(
-                            selected: _perishableOnly == true,
-                            onChanged: (v) => setState(() {
-                              _perishableOnly = v ? true : null;
-                              _page = 0;
-                            }),
-                          ),
                         DateFilterButton(
                           dateRange: _dateRange,
                           year: _yearFilter,
@@ -347,6 +321,33 @@ class _DispositionCategoryScreenState
                           _deliveryFilterChip(
                               'Pending', false, Icons.schedule_rounded),
                         ],
+                        // ⚠️ Perishables reach these tables alongside
+                        // everything else, and a reader scanning the page
+                        // cannot tell them apart — yet they follow a
+                        // different route entirely: ONE special tender
+                        // sale, no re-valuation, no committee.
+                        // ⚠️ Only where this page HAS perishables. On
+                        // Destroyed there are none today, and a chip that
+                        // can only empty the table is worse than none:
+                        // left on, the page reads "0 Destroyed", which
+                        // looks like nothing was ever destroyed rather
+                        // than like a filter matched nothing.
+                        if (ref
+                                .watch(dispositionHasPerishablesProvider((
+                                  finalTag: widget.finalTag,
+                                  yard: ref
+                                      .watch(currentProfileProvider)
+                                      ?.yard,
+                                )))
+                                .valueOrNull ==
+                            true)
+                          PerishableFilterChip(
+                            selected: _perishableOnly == true,
+                            onChanged: (v) => setState(() {
+                              _perishableOnly = v ? true : null;
+                              _page = 0;
+                            }),
+                          ),
                       ],
                     ),
                   ],
@@ -929,6 +930,11 @@ class _CategoryRow {
   /// The day it was handed over, when one was recorded.
   final DateTime? deliveredAt;
 
+  /// Whether the destruction was CARRIED OUT, straight from the view's
+  /// `is_destroyed` — which reads `destruction_items`, the record of the act
+  /// itself, not the status that merely routed the row to this page.
+  final bool? isDestroyedFlag;
+
   const _CategoryRow({
     required this.package,
     this.entry,
@@ -941,14 +947,32 @@ class _CategoryRow {
     this.fromTopManagement = false,
     this.delivered,
     this.deliveredAt,
+    this.isDestroyedFlag,
     this.isPerishable = false,
   });
 
+  /// Whether the destruction has actually been CARRIED OUT.
+  ///
+  /// ⚠️ NOT "is this row on the Destroyed page". Those are two different
+  /// questions and treating them as one is what put goods on this page
+  /// already marked Destroyed the moment they arrived, with no Mark
+  /// Destroyed button left to press.
+  ///
+  /// `package_items.status = 'destroyed'` is how a Final Disposition of
+  /// Destroy ROUTES an item here -- it is the decision, recorded the instant
+  /// the officer picks it, and it is the same field that moves the row off
+  /// Perishable Goods. The destruction itself happens later and is recorded
+  /// on `destruction_items`, which is what the view's `is_destroyed` reads.
+  /// So the status is the wrong witness: it is true for every row on this
+  /// page by construction.
+  ///
+  /// Falls back to the tag only when the view said nothing at all.
   bool get isDestroyed {
+    final fromView = isDestroyedFlag;
+    if (fromView != null) return fromView;
     final notes = (entry?.returnNotes ?? '').trim().toUpperCase();
-    if (notes.startsWith('[FINAL:DESTROYED]') || notes.startsWith('[DESTROYED]')) return true;
-    if (item?.status?.toLowerCase() == 'destroyed') return true;
-    return false;
+    return notes.startsWith('[FINAL:DESTROYED]') ||
+        notes.startsWith('[DESTROYED]');
   }
 }
 

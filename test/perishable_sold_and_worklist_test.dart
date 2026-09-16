@@ -77,8 +77,12 @@ void main() {
     });
 
     test('the perishable table passes the price through', () {
-      expect(perishable, contains('soldPrice: result'));
-      expect(perishable, contains('.soldPriceByItem[r.item.id]'));
+      // ⚠️ Whitespace-insensitive: `dart format` rewraps this constructor
+      // call whenever a nearby line (e.g. a new named parameter) changes its
+      // width, and an exact "soldPrice: result" match then fails for a purely
+      // cosmetic reason while the wiring itself is unchanged.
+      final f = flat(perishable);
+      expect(f, contains('soldPrice: result.soldPriceByItem[r.item.id]'));
     });
 
     test('the popup draws the outcome instead of hiding it', () {
