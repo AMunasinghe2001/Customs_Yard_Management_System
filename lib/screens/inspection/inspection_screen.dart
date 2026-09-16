@@ -165,6 +165,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             : pkg.status;
         _isUpdate = true;
         _loadedSrNumber = sr;
+        _savedPackageId = pkg.id;
         _items.clear();
         if (pkg.items != null && pkg.items!.isNotEmpty) {
           for (final item in pkg.items!) {
@@ -489,8 +490,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               ))
           .toList();
 
+      final pkgId = (_isUpdate && _loadedSrNumber == _srNumberCtrl.text.trim())
+          ? (_savedPackageId ?? '')
+          : '';
+
       final pkg = PackageModel(
-        id: '',
+        id: pkgId,
         srNumber: _srNumberCtrl.text.trim(),
         // Old Entry mode: keep the legacy SR number; NULL for new entries.
         oldSrNumber:
@@ -534,7 +539,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _violations = [];
         _resultPanelKey = UniqueKey();
         _suggestedWarehouseId = null;
-        _savedPackageId = null;
       });
       _tabController.animateTo(1);
     } catch (e) {
@@ -1559,13 +1563,16 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       }
 
       if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(userMessage),
-            duration: const Duration(seconds: 5),
+            duration: const Duration(seconds: 6),
             action: SnackBarAction(
-              label: 'RETRY',
+              label: 'DISMISS',
               textColor: Colors.white,
-              onPressed: _sendToWarehouse,
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              },
             ),
             backgroundColor: context.colors.dangerRed));
       }
@@ -1743,6 +1750,13 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
               const Gap(12),
               ...List.generate(widget.tempPackageItems!.length, (index) {
                 final item = widget.tempPackageItems![index];
+                final cats = ref.watch(packageCategoriesProvider).valueOrNull ?? [];
+                final zones = ref.watch(warehouseZonesProvider).valueOrNull ?? [];
+                final occupancy = ref.watch(zoneOccupancyProvider).valueOrNull ?? {};
+                final cat = cats.where((c) => c.name == item.category).firstOrNull;
+                final targetZoneName = (cat?.targetZone ?? '').trim();
+                final selectedWarehouseId = _itemWarehouseSelections[index];
+
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Container(
@@ -1796,13 +1810,10 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                               ],
                             ),
                           ),
-                        const Gap(12),
+                        const Gap(10),
                         warehousesAsync.when(
                           loading: () => const LinearProgressIndicator(),
                           error: (e, _) {
-                            // Usually a transient network/DNS hiccup — the app
-                            // reached other data fine. Offer a Retry rather than
-                            // dead-ending the whole SR entry.
                             final isNetwork = e
                                     .toString()
                                     .contains('SocketException') ||
@@ -1845,51 +1856,160 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                               ],
                             );
                           },
-                          data: (ws) => Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: ws.map((w) {
-                              final isSelected =
-                                  _itemWarehouseSelections[index] == w.id;
-                              final hasAutoSelection =
-                                  _itemWarehouseSelections[index] != null;
+                          data: (ws) {
+                            // Location summary badge for currently selected warehouse + zone
+                            Widget? locationBadge;
+                            if (selectedWarehouseId != null) {
+                              final selectedWh = ws
+                                  .where((w) => w.id == selectedWarehouseId)
+                                  .firstOrNull;
+                              final whDisplay = selectedWh != null
+                                  ? _formatWarehouseName(selectedWh.name)
+                                  : selectedWarehouseId;
+                              final zoneObj = targetZoneName.isNotEmpty
+                                  ? zones
+                                      .where((z) =>
+                                          z.warehouseId == selectedWarehouseId &&
+                                          z.name.trim().toLowerCase() ==
+                                              targetZoneName.toLowerCase())
+                                      .firstOrNull
+                                  : null;
+                              final occ = zoneObj != null
+                                  ? occupancy[zoneObj.id]
+                                  : null;
+                              final free = occ?.free ?? zoneObj?.capacity ?? 0;
+                              final isFull = zoneObj != null && free <= 0;
 
-                              return InkWell(
-                                onTap: () => setState(() =>
-                                    _itemWarehouseSelections[index] = w.id),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? context.colors.primaryGold
-                                            .withOpacity(0.15)
-                                        : context.colors.surfaceDark,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? context.colors.primaryGold
-                                          : context.colors.borderColor,
-                                      width: isSelected ? 1.5 : 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _formatWarehouseName(w.name)
-                                        .replaceFirst('GL1/SR/', ''),
-                                    style: TextStyle(
-                                      color: isSelected
-                                          ? context.colors.primaryGold
-                                          : context.colors.textSecondary,
-                                      fontSize: 12,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
+                              locationBadge = Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: isFull
+                                      ? context.colors.dangerRed
+                                          .withOpacity(0.12)
+                                      : context.colors.primaryGold
+                                          .withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isFull
+                                        ? context.colors.dangerRed
+                                            .withOpacity(0.4)
+                                        : context.colors.primaryGold
+                                            .withOpacity(0.3),
                                   ),
                                 ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isFull
+                                          ? Icons.warning_amber_rounded
+                                          : Icons.route_rounded,
+                                      size: 14,
+                                      color: isFull
+                                          ? context.colors.dangerRed
+                                          : context.colors.primaryGold,
+                                    ),
+                                    const Gap(6),
+                                    Text(
+                                      whDisplay +
+                                          (targetZoneName.isNotEmpty
+                                              ? ' | Zone $targetZoneName'
+                                              : '') +
+                                          (zoneObj != null
+                                              ? (isFull
+                                                  ? ' (FULL)'
+                                                  : ' ($free free)')
+                                              : ''),
+                                      style: TextStyle(
+                                        color: isFull
+                                            ? context.colors.dangerRed
+                                            : context.colors.primaryGold,
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
-                            }).toList(),
-                          ),
+                            }
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (locationBadge != null) locationBadge,
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: ws.map((w) {
+                                    final isSelected =
+                                        _itemWarehouseSelections[index] == w.id;
+                                    final isTargetWarehouse =
+                                        cat?.targetWarehouseId == w.id;
+                                    final hasZone = isTargetWarehouse &&
+                                        targetZoneName.isNotEmpty;
+                                    final whName =
+                                        _formatWarehouseName(w.name)
+                                            .replaceFirst('GL1/SR/', '');
+
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () => setState(() =>
+                                          _itemWarehouseSelections[index] =
+                                              w.id),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? context.colors.primaryGold
+                                                  .withOpacity(0.15)
+                                              : context.colors.surfaceDark,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? context.colors.primaryGold
+                                                : context.colors.borderColor,
+                                            width: isSelected ? 1.5 : 1,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.warehouse_outlined,
+                                              size: 14,
+                                              color: isSelected
+                                                  ? context.colors.primaryGold
+                                                  : context.colors.textMuted,
+                                            ),
+                                            const Gap(6),
+                                            Text(
+                                              hasZone
+                                                  ? '$whName • Zone $targetZoneName'
+                                                  : whName,
+                                              style: TextStyle(
+                                                color: isSelected
+                                                    ? context.colors.primaryGold
+                                                    : context
+                                                        .colors.textSecondary,
+                                                fontSize: 12,
+                                                fontWeight: isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -1897,25 +2017,42 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                 );
               }),
             ],
-            const Gap(14),
+            const Gap(16),
             if (!_warehouseSent)
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 48,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: context.colors.heldOrange,
-                      foregroundColor: Colors.white),
+                    backgroundColor: context.colors.primaryGold,
+                    foregroundColor: context.colors.primaryNavy,
+                    elevation: 1,
+                    shadowColor: context.colors.primaryGold.withOpacity(0.3),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                  ),
                   icon: _isSending
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.send_rounded),
-                  label: Text(_isSending
-                      ? 'Saving Entries...'
-                      : 'Complete & Send to Warehouses'),
+                            strokeWidth: 2,
+                            color: context.colors.primaryNavy,
+                          ),
+                        )
+                      : const Icon(Icons.send_rounded, size: 18),
+                  label: Text(
+                    _isSending
+                        ? 'Saving Entries...'
+                        : 'Complete & Send to Warehouses',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                   onPressed: _isSending ? null : _sendToWarehouse,
                 ),
               ),
@@ -2458,7 +2595,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                 controller: widget.row.valueCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'Value *',
+                    labelText: 'Value',
                     isDense: true,
                     helperText: ' ',
                     prefixText: 'LKR '),
@@ -2469,9 +2606,11 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 ],
                 validator: (v) {
                   if (!widget.showValidationErrors) return null;
-                  if (v == null || v.trim().isEmpty) return 'Required';
-                  final parsed = double.tryParse(v.trim());
-                  if (parsed == null || parsed <= 0) return 'Enter a value';
+                  final t = (v ?? '').trim();
+                  if (t.isEmpty) return null; // defaults to 0
+                  final parsed = double.tryParse(t);
+                  if (parsed == null) return 'Enter a valid number';
+                  if (parsed < 0) return 'Cannot be negative';
                   return null;
                 },
                 onChanged: (_) => widget.onChanged(),
