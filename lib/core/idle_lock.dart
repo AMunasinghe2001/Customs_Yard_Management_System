@@ -78,12 +78,98 @@ class LockedSessionMemory {
   static bool isSamePerson(String? uid) =>
       userId != null && uid != null && userId == uid;
 
+  /// Screens that currently have unsaved work, keyed by a stable id.
+  ///
+  /// ⚠️ A REGISTRY the lock drains, not a copy kept up to date as the officer
+  /// types. The lock fires from a timer with no reference to whatever widget
+  /// is on screen, and a form cannot know in advance that it is about to be
+  /// locked -- so each form registers a callback that reads its own fields,
+  /// and [captureOpenForms] calls them at the moment of locking. Saving on
+  /// every keystroke instead would copy a whole form on each character typed.
+  ///
+  /// Entries are removed on dispose, so a form the officer has left behind
+  /// cannot be restored over a different page later.
+  static final Map<String, Map<String, dynamic> Function()> _openForms = {};
+
+  /// Registers [read] as the way to snapshot the form identified by [id].
+  static void registerForm(
+          String id, Map<String, dynamic> Function() read) =>
+      _openForms[id] = read;
+
+  /// Forgets a form, on dispose.
+  static void unregisterForm(String id) => _openForms.remove(id);
+
+  /// Snapshots every open form. Called once, by the lock.
+  static void captureOpenForms() {
+    for (final entry in _openForms.entries) {
+      try {
+        formState[entry.key] = entry.value();
+      } catch (_) {
+        // A form that cannot describe itself must not stop the lock: the
+        // screen still has to go up, with or without this one field.
+      }
+    }
+  }
+
+  /// The saved fields for [id], consumed so a later visit to the same page
+  /// starts clean rather than re-filling a form the officer has since
+  /// finished with.
+  static Map<String, dynamic>? takeForm(String id) => formState.remove(id);
+
   /// Drops everything. Called when a DIFFERENT user signs in, and after a
   /// resume has been used, so stale work cannot reappear later.
+  ///
+  /// ⚠️ [_openForms] is NOT cleared here: those are live widgets that are
+  /// still mounted and will unregister themselves on dispose. Dropping them
+  /// would leave the next lock with nothing to snapshot.
   static void clear() {
     userId = null;
     route = null;
     formState.clear();
+  }
+}
+
+/// Restores a screen's half-finished work after an idle lock, and offers its
+/// own work back to the next lock.
+///
+/// ⚠️ The officer's work is the thing the lock must not cost them. The lock
+/// exists so an unattended PC holds no live session -- not so that twenty
+/// minutes of typing is thrown away -- and before this, coming back to a
+/// half-filled form found every field empty.
+///
+/// A screen mixes this in, gives a stable [formStateId], and implements the
+/// two halves: [readFormState] describes its fields, [writeFormState] puts
+/// them back. Restoration happens once, in [initState]'s frame, and the saved
+/// copy is consumed so a later visit starts clean.
+mixin LockRestorableForm<T extends StatefulWidget> on State<T> {
+  /// Stable across a lock -- a route, not an object identity. Two screens
+  /// must not share one id, or each would restore the other's fields.
+  String get formStateId;
+
+  /// This form's fields, as plain JSON-able values.
+  Map<String, dynamic> readFormState();
+
+  /// Puts [saved] back into this form's fields.
+  void writeFormState(Map<String, dynamic> saved);
+
+  @override
+  void initState() {
+    super.initState();
+    LockedSessionMemory.registerForm(formStateId, readFormState);
+    // ⚠️ After the first frame. Controllers a subclass builds in its own
+    // initState are not ready until super.initState has returned, and a
+    // setState during initState throws.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final saved = LockedSessionMemory.takeForm(formStateId);
+      if (saved != null && saved.isNotEmpty) writeFormState(saved);
+    });
+  }
+
+  @override
+  void dispose() {
+    LockedSessionMemory.unregisterForm(formStateId);
+    super.dispose();
   }
 }
 

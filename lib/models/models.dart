@@ -525,6 +525,23 @@ class WarehouseEntryModel {
   final String? itemName;
   final String? hsCode;
 
+  /// Were these goods put here because their proper home was FULL?
+  ///
+  /// ⚠️ Recorded at admission (migration 042), never inferred by comparing
+  /// [warehouseId] against the category's target. Targets are editable, so a
+  /// yard that retargets a category afterwards would make every ordinary row
+  /// look displaced, and retargeting TO the overflow warehouse would hide a
+  /// real one.
+  final bool movedForSpace;
+
+  /// Where the category said these goods belonged, when they were displaced.
+  final String? intendedWarehouseId;
+  final String? intendedWarehouseName;
+  final String? intendedZone;
+
+  /// What was full, in the words the officer was shown.
+  final String? movedReason;
+
   /// Have goods disposed under an "Other" status actually left the yard?
   ///
   /// ⚠️ A separate flag from the re-export and release ones, because the
@@ -563,6 +580,11 @@ class WarehouseEntryModel {
     this.packageStatus,
     this.itemName,
     this.hsCode,
+    this.movedForSpace = false,
+    this.intendedWarehouseId,
+    this.intendedWarehouseName,
+    this.intendedZone,
+    this.movedReason,
   });
 
   factory WarehouseEntryModel.fromJson(Map<String, dynamic> json) {
@@ -615,7 +637,37 @@ class WarehouseEntryModel {
       packageStatus: package?['status'] as String?,
       itemName: matchedItem?['item_name'] as String?,
       hsCode: matchedItem?['hs_code'] as String?,
+      movedForSpace: json['moved_for_space'] as bool? ?? false,
+      intendedWarehouseId: json['intended_warehouse_id'] as String?,
+      intendedWarehouseName: json['intended_warehouse_name'] as String?,
+      intendedZone: json['intended_zone'] as String?,
+      movedReason: json['moved_reason'] as String?,
     );
+  }
+
+  /// One line naming where these goods were meant to be, for a tooltip.
+  ///
+  /// Null when they were not displaced, so a caller can branch on it directly.
+  ///
+  /// [intendedName] lets a caller supply the warehouse's name from a list it
+  /// has already loaded — see DisplacedBadge, and the note there about why
+  /// this is not a second embed in the query.
+  String? displacementNoteWith(String? intendedName) {
+    if (!movedForSpace) return null;
+    final name = intendedWarehouseName ?? intendedName;
+    final home = [
+      if ((name ?? '').trim().isNotEmpty) name!.trim(),
+      if ((intendedZone ?? '').trim().isNotEmpty) 'Zone ${intendedZone!.trim()}',
+    ].join(' · ');
+    final why = (movedReason ?? '').trim();
+    if (home.isEmpty) {
+      return why.isEmpty
+          ? 'Moved here because the intended location was full'
+          : 'Moved here — $why';
+    }
+    return why.isEmpty
+        ? 'Meant for $home, moved here because it was full'
+        : 'Meant for $home — $why';
   }
 
   bool get isPackageConfiscated => packageStatus == 'confiscated';

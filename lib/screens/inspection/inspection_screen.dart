@@ -25,6 +25,7 @@ import '../../widgets/warehouse_selection_dialog.dart';
 import '../../widgets/print_barcode_dialog.dart';
 import '../../core/db_client.dart';
 import '../../core/app_log.dart';
+import '../../core/idle_lock.dart';
 import '../../widgets/app_dialog.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
@@ -34,7 +35,7 @@ class InspectionScreen extends ConsumerStatefulWidget {
 }
 
 class _InspectionScreenState extends ConsumerState<InspectionScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, LockRestorableForm<InspectionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _srNumberCtrl = TextEditingController();
   // ⚠️ So picking a Register (SR/OA) can hand focus straight to the number
@@ -51,9 +52,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   // Normalised through yardByCode so it always matches a dropdown item.
   String _selectedYard = yardByCode(AppSession.currentYard).code;
 
-  /// Which register this number is minted from -- SR or OA. Each keeps
-  /// its own serial run, so switching this re-mints the number rather
-  /// than continuing the other register's count.
+  /// Which register this number is minted from -- SR or OA. Both share the
+  /// yard's single running serial, so switching this keeps the serial already
+  /// on screen and only rewrites the register segment.
   String _srDocType = kDefaultSrDocType;
   final _caseNumberCtrl = TextEditingController();
   final _originCtrl = TextEditingController();
@@ -116,6 +117,146 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   PackageModel? _tempPackageData;
   List<PackageItem>? _tempPackageItems;
   Key _resultPanelKey = UniqueKey();
+
+  // ── Surviving the idle lock ────────────────────────────────────────────
+  //
+  // ⚠️ This is the longest form in the app -- a dozen package fields plus a
+  // row of controllers per goods item -- so it is the one where losing the
+  // typing to a five-minute lock actually costs an officer their afternoon.
+
+  @override
+  String get formStateId => '/inspection';
+
+  @override
+  Map<String, dynamic> readFormState() => {
+        'sr': _srNumberCtrl.text,
+        'oldSr': _oldSrNumberCtrl.text,
+        'entryMode': _entryMode,
+        'yard': _selectedYard,
+        'docType': _srDocType,
+        'case': _caseNumberCtrl.text,
+        'origin': _originCtrl.text,
+        'value': _valueCtrl.text,
+        'weight': _weightCtrl.text,
+        'consignee': _consigneeCtrl.text,
+        'consigneeNic': _consigneeNicCtrl.text,
+        'consigneePhone': _consigneePhoneCtrl.text,
+        'declarant': _declarantCtrl.text,
+        'cusdec': _cusdecCtrl.text,
+        'cusdecDate': _cusdecDateCtrl.text,
+        'entryDate': _entryDateCtrl.text,
+        'container': _containerNumberCtrl.text,
+        'deposit': _destroyingDepositCtrl.text,
+        'desc': _descCtrl.text,
+        'reason': _reasonCtrlMain.text,
+        'notes': _notesCtrl.text,
+        'isUpdate': _isUpdate,
+        'loadedSr': _loadedSrNumber,
+        'items': [
+          for (final r in _items)
+            {
+              'itemId': r.itemId,
+              'name': r.nameCtrl.text,
+              'goodsDesc': r.goodsDescriptionCtrl.text,
+              'qty': r.qtyCtrl.text,
+              'unit': r.unitOfMeasureCtrl.text,
+              'unitOther': r.unitOtherCtrl.text,
+              'innerUnit': r.innerUnitCtrl.text,
+              'innerQty': r.innerQtyCtrl.text,
+              'value': r.valueCtrl.text,
+              'hs': r.hsCodeCtrl.text,
+              'category': r.categoryCtrl.text,
+              'status': r.status,
+              'nature': r.nature,
+              'otherStatus': r.otherStatusCtrl.text,
+              'reasons': r.selectedReasons,
+            }
+        ],
+      };
+
+  @override
+  void writeFormState(Map<String, dynamic> saved) {
+    String str(Object? v) => v?.toString() ?? '';
+    setState(() {
+      _srNumberCtrl.text = str(saved['sr']);
+      _oldSrNumberCtrl.text = str(saved['oldSr']);
+      _entryMode = str(saved['entryMode']).isEmpty ? 'new' : str(saved['entryMode']);
+      _selectedYard = str(saved['yard']).isEmpty ? _selectedYard : str(saved['yard']);
+      _srDocType =
+          str(saved['docType']).isEmpty ? kDefaultSrDocType : str(saved['docType']);
+      _caseNumberCtrl.text = str(saved['case']);
+      _originCtrl.text = str(saved['origin']);
+      _valueCtrl.text = str(saved['value']);
+      _weightCtrl.text = str(saved['weight']);
+      _consigneeCtrl.text = str(saved['consignee']);
+      _consigneeNicCtrl.text = str(saved['consigneeNic']);
+      _consigneePhoneCtrl.text = str(saved['consigneePhone']);
+      _declarantCtrl.text = str(saved['declarant']);
+      _cusdecCtrl.text = str(saved['cusdec']);
+      _cusdecDateCtrl.text = str(saved['cusdecDate']);
+      if (str(saved['entryDate']).isNotEmpty) {
+        _entryDateCtrl.text = str(saved['entryDate']);
+      }
+      _containerNumberCtrl.text = str(saved['container']);
+      _destroyingDepositCtrl.text = str(saved['deposit']);
+      _descCtrl.text = str(saved['desc']);
+      _reasonCtrlMain.text = str(saved['reason']);
+      _notesCtrl.text = str(saved['notes']);
+      _isUpdate = saved['isUpdate'] == true;
+      _loadedSrNumber = saved['loadedSr'] as String?;
+
+      final rows = (saved['items'] as List?) ?? const [];
+      if (rows.isNotEmpty) {
+        // ⚠️ Rebuilt from scratch, not merged: the officer may have added or
+        // removed goods rows before the lock, so the saved list is the truth
+        // about how many there were.
+        for (final r in _items) {
+          r.nameCtrl.dispose();
+          r.goodsDescriptionCtrl.dispose();
+          r.qtyCtrl.dispose();
+          r.unitOfMeasureCtrl.dispose();
+          r.unitOtherCtrl.dispose();
+          r.innerUnitCtrl.dispose();
+          r.innerQtyCtrl.dispose();
+          r.valueCtrl.dispose();
+          r.hsCodeCtrl.dispose();
+          r.categoryCtrl.dispose();
+          r.otherStatusCtrl.dispose();
+        }
+        _items
+          ..clear()
+          ..addAll([
+            for (final raw in rows)
+              () {
+                final m = (raw as Map).cast<String, dynamic>();
+                final row = _ItemRow();
+                row.itemId = m['itemId'] as String?;
+                row.nameCtrl.text = str(m['name']);
+                row.goodsDescriptionCtrl.text = str(m['goodsDesc']);
+                row.qtyCtrl.text = str(m['qty']);
+                row.unitOfMeasureCtrl.text = str(m['unit']);
+                row.unitOtherCtrl.text = str(m['unitOther']);
+                row.innerUnitCtrl.text = str(m['innerUnit']);
+                row.innerQtyCtrl.text = str(m['innerQty']);
+                row.valueCtrl.text = str(m['value']);
+                row.hsCodeCtrl.text = str(m['hs']);
+                row.categoryCtrl.text = str(m['category']);
+                row.status = str(m['status']).isEmpty ? 'Detain' : str(m['status']);
+                row.nature =
+                    str(m['nature']).isEmpty ? kNatureNormal : str(m['nature']);
+                row.otherStatusCtrl.text = str(m['otherStatus']);
+                final rs = (m['reasons'] as List?) ?? const [];
+                row.selectedReasons
+                  ..clear()
+                  ..addAll(rs.isEmpty
+                      ? <String?>[null]
+                      : rs.map((e) => e as String?));
+                return row;
+              }()
+          ]);
+      }
+    });
+  }
 
   /// Fetch an existing package by SR number and populate the form
   Future<void> _loadBySrNumber() async {
@@ -1433,6 +1574,7 @@ class _ResultPanel extends ConsumerStatefulWidget {
 
 class _ResultPanelState extends ConsumerState<_ResultPanel> {
   final Map<int, String?> _itemWarehouseSelections = {};
+  final Map<int, String?> _itemZoneSelections = {};
   bool _isSending = false;
   bool _warehouseSent = false;
   PackageModel? _savedPackage;
@@ -1450,6 +1592,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
         final item = widget.tempPackageItems![i];
         final cat = cats?.where((c) => c.name == item.category).firstOrNull;
         _itemWarehouseSelections[i] = cat?.targetWarehouseId;
+        _itemZoneSelections[i] = cat?.targetZone;
       }
     }
   }
@@ -1479,6 +1622,11 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
   ///
   /// Open areas take `OA` numbers, covered warehouses take `SR`. Returns the
   /// message to show the officer, naming the number it should be.
+  /// Where each item was headed before a capacity override sent it elsewhere,
+  /// keyed by item index. Empty unless the officer accepted an alternative.
+  final Map<int, ({String warehouseId, String? zone, String? reason})>
+      _displaced = {};
+
   Future<String?> _findRegisterMismatch() async {
     final data = widget.tempPackageData;
     final items = widget.tempPackageItems;
@@ -1524,7 +1672,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       final whId = _itemWarehouseSelections[i];
       if (whId == null) continue;
       final cat = cats?.where((c) => c.name == items[i].category).firstOrNull;
-      final zoneName = (cat?.targetZone ?? '').trim();
+      final zoneName = (_itemZoneSelections[i] ?? cat?.targetZone ?? '').trim();
       if (zoneName.isEmpty) continue; // no zone chosen → nothing to check
       final key = '$whId|${zoneName.toLowerCase()}';
       wanted[key] = (wanted[key] ?? 0) + items[i].quantity;
@@ -1555,10 +1703,11 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
           .where((z) => z.warehouseId == whId && z.id != zone.id)
           .map((z) => (z, occupancy[z.id]?.free ?? z.capacity))
           .where((e) => e.$2 >= entry.value)
-          .map((e) => '${e.$1.name} (${e.$2} free)')
+          .map((e) => 'Zone ${e.$1.name} (${e.$2} free)')
           .toList();
 
       problems.add(_CapacityProblem(
+        warehouseId: whId,
         zoneName: zoneName,
         needed: entry.value,
         free: free,
@@ -1613,12 +1762,68 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     final blocked = await _findCapacityProblems();
     if (blocked.isNotEmpty) {
       if (!mounted) return;
-      final proceed = await showAppDialog<bool>(
-            context: context,
-            builder: (_) => _CapacityBlockedDialog(problems: blocked),
-          ) ??
-          false;
-      if (!proceed) return;
+      final warehouses = await ref.read(warehousesProvider.future);
+      final zones = await ref.read(warehouseZonesProvider.future);
+      final occupancy = await ref.read(zoneOccupancyProvider.future);
+      final cats = ref.read(packageCategoriesProvider).valueOrNull ?? [];
+
+      final result = await showAppDialog<
+          ({bool proceed, Map<int, String?> updatedSelections, Map<int, String?> updatedZoneSelections})>(
+        context: context,
+        builder: (_) => _CapacityBlockedDialog(
+          problems: blocked,
+          items: widget.tempPackageItems ?? [],
+          initialSelections: _itemWarehouseSelections,
+          initialZoneSelections: _itemZoneSelections,
+          warehouses: warehouses,
+          categories: cats,
+          zones: zones,
+          occupancy: occupancy,
+        ),
+      );
+
+      if (result == null) return;
+
+      // ⚠️ Captured BEFORE the selections are overwritten below: this is the
+      // only moment the app knows where the goods were MEANT to go. A line
+      // later the intended warehouse is gone, and it cannot be recovered
+      // afterwards by re-reading the category target — targets are editable,
+      // so a later edit would rewrite history either way.
+      for (final entry in result.updatedSelections.entries) {
+        final i = entry.key;
+        final was = _itemWarehouseSelections[i];
+        final now = entry.value;
+        final wasZone = _itemZoneSelections[i];
+        final nowZone = result.updatedZoneSelections[i];
+        if (was == null || (was == now && wasZone == nowZone)) continue;
+        // The problem that displaced THIS item: the one about the zone it
+        // was headed for. Worded from the figures the officer was just shown.
+        final p = blocked
+            .where((b) =>
+                b.warehouseId == was &&
+                (wasZone == null || b.zoneName == wasZone))
+            .firstOrNull;
+        _displaced[i] = (
+          warehouseId: was,
+          zone: wasZone,
+          reason: p == null
+              ? null
+              : '${p.zoneName} was full '
+                  '(${p.free} free of ${p.capacity}, ${p.needed} needed)',
+        );
+      }
+
+      // Update the page state so the warehouse and zone confirmation chips change
+      setState(() {
+        for (final entry in result.updatedSelections.entries) {
+          _itemWarehouseSelections[entry.key] = entry.value;
+        }
+        for (final entry in result.updatedZoneSelections.entries) {
+          _itemZoneSelections[entry.key] = entry.value;
+        }
+      });
+
+      if (!result.proceed) return;
     }
 
     setState(() => _isSending = true);
@@ -1663,18 +1868,26 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 
         final warehouseId = _itemWarehouseSelections[i];
         final cat = cats?.where((c) => c.name == tempItem.category).firstOrNull;
+        final selectedZone = _itemZoneSelections[i] ?? cat?.targetZone;
 
+        final moved = _displaced[i];
         await warehouseService.addEntry(
           packageId: saved.id,
           packageItemId:
               item.id.isNotEmpty ? item.id : tempItem.id, // Fallback safely
           warehouseId: warehouseId!,
-          zone: cat?.targetZone,
+          zone: selectedZone,
           holdReason: (tempItem.reasons != null && tempItem.reasons!.isNotEmpty)
               ? tempItem.reasons!
               : 'System Assigned',
           itemCount: tempItem.quantity,
           admittedAt: saved.entryDate,
+          // Only when this item was actually displaced; the rest are ordinary
+          // placements and must not be flagged.
+          movedForSpace: moved != null,
+          intendedWarehouseId: moved?.warehouseId,
+          intendedZone: moved?.zone,
+          movedReason: moved?.reason,
         );
       }
 
@@ -1888,7 +2101,8 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                 final zones = ref.watch(warehouseZonesProvider).valueOrNull ?? [];
                 final occupancy = ref.watch(zoneOccupancyProvider).valueOrNull ?? {};
                 final cat = cats.where((c) => c.name == item.category).firstOrNull;
-                final targetZoneName = (cat?.targetZone ?? '').trim();
+                final defaultZoneName = (cat?.targetZone ?? '').trim();
+                final currentZoneName = (_itemZoneSelections[index] ?? defaultZoneName).trim();
                 final selectedWarehouseId = _itemWarehouseSelections[index];
 
                 return Padding(
@@ -1951,7 +2165,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                             final isNetwork = e
                                     .toString()
                                     .contains('SocketException') ||
-                                e.toString().contains('Failed host lookup') ||
+                                 e.toString().contains('Failed host lookup') ||
                                 e.toString().contains('ClientException');
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2000,12 +2214,12 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                               final whDisplay = selectedWh != null
                                   ? _formatWarehouseName(selectedWh.name)
                                   : selectedWarehouseId;
-                              final zoneObj = targetZoneName.isNotEmpty
+                              final zoneObj = currentZoneName.isNotEmpty
                                   ? zones
                                       .where((z) =>
                                           z.warehouseId == selectedWarehouseId &&
                                           z.name.trim().toLowerCase() ==
-                                              targetZoneName.toLowerCase())
+                                              currentZoneName.toLowerCase())
                                       .firstOrNull
                                   : null;
                               final occ = zoneObj != null
@@ -2048,8 +2262,8 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                     const Gap(6),
                                     Text(
                                       whDisplay +
-                                          (targetZoneName.isNotEmpty
-                                              ? ' | Zone $targetZoneName'
+                                          (currentZoneName.isNotEmpty
+                                              ? ' | Zone $currentZoneName'
                                               : '') +
                                           (zoneObj != null
                                               ? (isFull
@@ -2069,6 +2283,13 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                               );
                             }
 
+                            final selectedWhZones = selectedWarehouseId != null
+                                ? zones
+                                    .where((z) =>
+                                        z.warehouseId == selectedWarehouseId)
+                                    .toList()
+                                : <WarehouseZoneModel>[];
+
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -2079,19 +2300,34 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                   children: ws.map((w) {
                                     final isSelected =
                                         _itemWarehouseSelections[index] == w.id;
-                                    final isTargetWarehouse =
-                                        cat?.targetWarehouseId == w.id;
-                                    final hasZone = isTargetWarehouse &&
-                                        targetZoneName.isNotEmpty;
                                     final whName =
                                         _formatWarehouseName(w.name)
                                             .replaceFirst('GL1/SR/', '');
 
                                     return InkWell(
                                       borderRadius: BorderRadius.circular(8),
-                                      onTap: () => setState(() =>
-                                          _itemWarehouseSelections[index] =
-                                              w.id),
+                                      onTap: () => setState(() {
+                                        _itemWarehouseSelections[index] = w.id;
+                                        final wZones = zones
+                                            .where((z) => z.warehouseId == w.id)
+                                            .toList();
+                                        if (wZones.isNotEmpty) {
+                                          final curZ = _itemZoneSelections[index] ??
+                                              defaultZoneName;
+                                          final match = wZones
+                                              .where((z) =>
+                                                  z.name.toLowerCase() ==
+                                                  curZ.toLowerCase())
+                                              .firstOrNull;
+                                          if (match != null) {
+                                            _itemZoneSelections[index] =
+                                                match.name;
+                                          } else {
+                                            _itemZoneSelections[index] =
+                                                wZones.first.name;
+                                          }
+                                        }
+                                      }),
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 12, vertical: 8),
@@ -2121,9 +2357,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                             ),
                                             const Gap(6),
                                             Text(
-                                              hasZone
-                                                  ? '$whName • Zone $targetZoneName'
-                                                  : whName,
+                                              whName,
                                               style: TextStyle(
                                                 color: isSelected
                                                     ? context.colors.primaryGold
@@ -2141,6 +2375,102 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                     );
                                   }).toList(),
                                 ),
+                                if (selectedWhZones.isNotEmpty) ...[
+                                  const Gap(10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        'Zone:',
+                                        style: TextStyle(
+                                          color: context.colors.textMuted,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      ...selectedWhZones.map((z) {
+                                        final isZoneSelected =
+                                            currentZoneName.toLowerCase() ==
+                                                z.name.trim().toLowerCase();
+                                        final occ = occupancy[z.id];
+                                        final free = occ?.free ?? z.capacity;
+                                        final isFull = free <= 0;
+
+                                        return InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          onTap: () => setState(() =>
+                                              _itemZoneSelections[index] =
+                                                  z.name),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 9, vertical: 5),
+                                            decoration: BoxDecoration(
+                                              color: isZoneSelected
+                                                  ? context.colors.primaryGold
+                                                      .withOpacity(0.18)
+                                                  : context.colors.surfaceDark,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: isZoneSelected
+                                                    ? context.colors.primaryGold
+                                                    : (isFull
+                                                        ? context
+                                                            .colors.dangerRed
+                                                            .withOpacity(0.4)
+                                                        : context
+                                                            .colors.borderColor),
+                                                width: isZoneSelected ? 1.5 : 1,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.grid_view_rounded,
+                                                  size: 11,
+                                                  color: isZoneSelected
+                                                      ? context
+                                                          .colors.primaryGold
+                                                      : (isFull
+                                                          ? context
+                                                              .colors.dangerRed
+                                                          : context
+                                                              .colors.textMuted),
+                                                ),
+                                                const Gap(5),
+                                                Text(
+                                                  'Zone ${z.name}' +
+                                                      (isFull
+                                                          ? ' (FULL)'
+                                                          : ' ($free free)'),
+                                                  style: TextStyle(
+                                                    color: isZoneSelected
+                                                        ? context
+                                                            .colors.primaryGold
+                                                        : (isFull
+                                                            ? context.colors
+                                                                .dangerRed
+                                                            : context.colors
+                                                                .textSecondary),
+                                                    fontSize: 11,
+                                                    fontWeight: isZoneSelected
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                    ],
+                                  ),
+                                ],
                               ],
                             );
                           },
@@ -3013,6 +3343,7 @@ class _SectionCard extends StatelessWidget {
 
 /// One zone this consignment would overfill.
 class _CapacityProblem {
+  final String warehouseId;
   final String zoneName;
 
   /// Items this consignment wants to put in the zone.
@@ -3026,6 +3357,7 @@ class _CapacityProblem {
   final List<String> alternatives;
 
   const _CapacityProblem({
+    required this.warehouseId,
     required this.zoneName,
     required this.needed,
     required this.free,
@@ -3034,107 +3366,386 @@ class _CapacityProblem {
   });
 }
 
-/// Stops a consignment that does not fit, and says where it would.
-///
-/// Not a hard block: the officer can still admit the goods (physical reality
-/// sometimes runs ahead of the record, and refusing outright would leave them
-/// nowhere to log it). But it can no longer happen by accident — the overflow
-/// is stated, and the alternatives are offered first.
-class _CapacityBlockedDialog extends StatelessWidget {
+/// Stops a consignment that does not fit, and allows allocating goods directly
+/// to alternative warehouses/zones with real-time capacity reduction.
+class _CapacityBlockedDialog extends StatefulWidget {
   final List<_CapacityProblem> problems;
-  const _CapacityBlockedDialog({required this.problems});
+  final List<PackageItem> items;
+  final Map<int, String?> initialSelections;
+  final Map<int, String?> initialZoneSelections;
+  final List<WarehouseModel> warehouses;
+  final List<PackageCategory> categories;
+  final List<WarehouseZoneModel> zones;
+  final Map<String, ZoneOccupancy> occupancy;
+
+  const _CapacityBlockedDialog({
+    super.key,
+    required this.problems,
+    required this.items,
+    required this.initialSelections,
+    required this.initialZoneSelections,
+    required this.warehouses,
+    required this.categories,
+    required this.zones,
+    required this.occupancy,
+  });
+
+  @override
+  State<_CapacityBlockedDialog> createState() => _CapacityBlockedDialogState();
+}
+
+class _CapacityBlockedDialogState extends State<_CapacityBlockedDialog> {
+  late Map<int, String?> _warehouseSelections;
+  late Map<int, String?> _zoneSelections;
+
+  @override
+  void initState() {
+    super.initState();
+    _warehouseSelections = Map<int, String?>.from(widget.initialSelections);
+    _zoneSelections = Map<int, String?>.from(widget.initialZoneSelections);
+  }
+
+  String _cleanWhName(String name) {
+    if (name.contains('GL1/SR/')) return name;
+    String cleanName =
+        name.replaceAll(RegExp(r'^SR\s+', caseSensitive: false), '');
+    return 'GL1/SR/$cleanName';
+  }
 
   @override
   Widget build(BuildContext context) {
     final red = context.colors.dangerRed;
+    final green = context.colors.successGreen;
+
+    // Precompute dropdown options of all warehouse + zone combinations
+    final List<StyledDropdownOption<String>> dropdownOptions = [];
+    for (final w in widget.warehouses) {
+      final whZones =
+          widget.zones.where((z) => z.warehouseId == w.id).toList();
+      final cleanName = _cleanWhName(w.name);
+      if (whZones.isEmpty) {
+        dropdownOptions.add(StyledDropdownOption('${w.id}|', cleanName));
+      } else {
+        for (final z in whZones) {
+          final occ = widget.occupancy[z.id];
+          final freeSpace = occ?.free ?? z.capacity;
+          final label = '$cleanName • Zone ${z.name} ($freeSpace free)';
+          dropdownOptions.add(StyledDropdownOption('${w.id}|${z.name}', label));
+        }
+      }
+    }
 
     return StyledFormDialog(
+      yard: true,
       label: 'WAREHOUSE CAPACITY',
-      title: problems.length == 1
-          ? 'Zone ${problems.first.zoneName} is full'
-          : '${problems.length} zones are full',
+      title: widget.problems.length == 1
+          ? 'Zone ${widget.problems.first.zoneName} Capacity Allocation'
+          : 'Warehouse Capacity Allocation',
       icon: Icons.warehouse_rounded,
-      headerAccentColor: red,
-      width: 560,
+      headerAccentColor: context.colors.primaryGold,
+      width: 680,
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Change warehouse'),
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text('Cancel'),
+        ),
+        const Gap(8),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: red,
+            side: BorderSide(color: red.withOpacity(0.6)),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+          icon: const Icon(Icons.warning_amber_rounded, size: 16),
+          label: const Text('Admit anyway'),
+          onPressed: () => Navigator.pop(
+            context,
+            (
+              proceed: true,
+              updatedSelections: _warehouseSelections,
+              updatedZoneSelections: _zoneSelections
+            ),
+          ),
         ),
         const Gap(8),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-              backgroundColor: red, foregroundColor: Colors.white),
-          icon: const Icon(Icons.warning_amber_rounded, size: 18),
-          label: const Text('Admit anyway'),
-          onPressed: () => Navigator.pop(context, true),
+            backgroundColor: context.colors.primaryGold,
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          ),
+          icon: const Icon(Icons.check_circle_rounded, size: 16),
+          label: const Text('Apply Changes & Proceed'),
+          onPressed: () => Navigator.pop(
+            context,
+            (
+              proceed: true,
+              updatedSelections: _warehouseSelections,
+              updatedZoneSelections: _zoneSelections
+            ),
+          ),
         ),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final p in problems) ...[
-            StyledFormSection(
-              title: 'Zone ${p.zoneName}',
-              icon: Icons.grid_view_rounded,
-              children: [
-                _CapacityLine(
-                    label: 'These goods need', value: '${p.needed} items'),
-                _CapacityLine(
-                    label: 'Room left',
-                    value: '${p.free} of ${p.capacity}',
-                    colour: red),
-                _CapacityLine(
-                    label: 'Over by',
-                    value: '${p.needed - p.free} items',
-                    colour: red,
-                    emphasise: true),
-                if (p.alternatives.isNotEmpty) ...[
-                  const Gap(10),
-                  Text('Zones in this warehouse with room:',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: context.colors.textSecondary)),
-                  const Gap(6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final a in p.alternatives)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 9, vertical: 4),
-                          decoration: BoxDecoration(
-                            color:
-                                context.colors.successGreen.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: context.colors.successGreen
-                                    .withOpacity(0.4)),
-                          ),
-                          child: Text('Zone $a',
-                              style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: context.colors.successGreen)),
-                        ),
-                    ],
+          for (final p in widget.problems) ...[
+            Builder(builder: (context) {
+              // Find items contributing to this problem zone
+              final contributingIndices = <int>[];
+              int currentNeeded = 0;
+
+              for (int i = 0; i < widget.items.length; i++) {
+                final item = widget.items[i];
+                final itemCategory = item.category?.trim().toLowerCase() ?? '';
+                final cat = widget.categories
+                    .where((c) => c.name.trim().toLowerCase() == itemCategory)
+                    .firstOrNull;
+                final defaultTargetZone = (cat?.targetZone ?? '').trim();
+
+                final curWh = _warehouseSelections[i];
+                final curZone =
+                    (_zoneSelections[i] ?? defaultTargetZone).trim();
+
+                final initWh = widget.initialSelections[i];
+                final initZone =
+                    (widget.initialZoneSelections[i] ?? defaultTargetZone).trim();
+
+                final wasInProblem = initWh == p.warehouseId &&
+                    initZone.toLowerCase() == p.zoneName.toLowerCase();
+                final isCurrentlyInProblem = curWh == p.warehouseId &&
+                    curZone.toLowerCase() == p.zoneName.toLowerCase();
+
+                if (wasInProblem || isCurrentlyInProblem) {
+                  contributingIndices.add(i);
+                }
+
+                if (isCurrentlyInProblem) {
+                  currentNeeded += item.quantity;
+                }
+              }
+
+              final overBy = currentNeeded - p.free;
+              final isOver = overBy > 0;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: context.colors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isOver
+                        ? red.withOpacity(0.4)
+                        : green.withOpacity(0.4),
+                    width: 1.2,
                   ),
-                ] else ...[
-                  const Gap(10),
-                  Text(
-                      'No other zone in this warehouse has room for them — '
-                      'try a different warehouse.',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
-                          color: context.colors.textMuted)),
-                ],
-              ],
-            ),
-            const Gap(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Zone Header Banner
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isOver
+                            ? red.withOpacity(0.12)
+                            : green.withOpacity(0.12),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(11)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isOver
+                                ? Icons.warning_amber_rounded
+                                : Icons.check_circle_rounded,
+                            color: isOver ? red : green,
+                            size: 20,
+                          ),
+                          const Gap(10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Zone ${p.zoneName}',
+                                  style: TextStyle(
+                                    color: context.colors.textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Room left: ${p.free} of ${p.capacity} items | Currently assigned: $currentNeeded items',
+                                  style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: isOver
+                                  ? red.withOpacity(0.2)
+                                  : green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isOver
+                                  ? 'Over by $overBy items'
+                                  : 'Fits (${p.free - currentNeeded} room left)',
+                              style: TextStyle(
+                                color: isOver ? red : green,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Goods rows
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Assign goods to alternative warehouses or zones to reduce zone overflow:',
+                            style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Gap(10),
+                          for (final idx in contributingIndices) ...[
+                            Builder(builder: (context) {
+                              final item = widget.items[idx];
+                              final selectedWh = _warehouseSelections[idx];
+                              final itemCategory =
+                                  item.category?.trim().toLowerCase() ?? '';
+                              final cat = widget.categories
+                                  .where((c) =>
+                                      c.name.trim().toLowerCase() ==
+                                      itemCategory)
+                                  .firstOrNull;
+                              final defaultTargetZone =
+                                  (cat?.targetZone ?? '').trim();
+                              final curZone =
+                                  (_zoneSelections[idx] ?? defaultTargetZone)
+                                      .trim();
+                              final currentKey =
+                                  '${selectedWh ?? ""}|$curZone';
+                              final hasMatch = dropdownOptions
+                                  .any((opt) => opt.value == currentKey);
+                              final effectiveValue = hasMatch
+                                  ? currentKey
+                                  : (dropdownOptions.any((opt) => opt.value
+                                          .startsWith('${selectedWh ?? ""}|'))
+                                      ? dropdownOptions
+                                          .firstWhere((opt) => opt.value
+                                              .startsWith(
+                                                  '${selectedWh ?? ""}|'))
+                                          .value
+                                      : (dropdownOptions.isNotEmpty
+                                          ? dropdownOptions.first.value
+                                          : null));
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: context.colors.surfaceDark,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: context.colors.borderColor),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Goods ${idx + 1}: ${item.itemName}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          const Gap(2),
+                                          Text(
+                                            '${item.quantity} ${item.unitOfMeasure} • ${item.category ?? "General"}',
+                                            style: TextStyle(
+                                              color: context.colors.textMuted,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    Expanded(
+                                      flex: 4,
+                                      child: StyledDropdownFormField<String>(
+                                        value: effectiveValue,
+                                        label: 'Warehouse & Zone',
+                                        floatingLabelBehavior:
+                                            FloatingLabelBehavior.never,
+                                        menuWidth: 320,
+                                        options: dropdownOptions,
+                                        onChanged: (newKey) {
+                                          if (newKey != null) {
+                                            final parts = newKey.split('|');
+                                            final newWhId = parts[0];
+                                            final newZoneName =
+                                                parts.length > 1 ? parts[1] : '';
+                                            setState(() {
+                                              _warehouseSelections[idx] =
+                                                  newWhId;
+                                              _zoneSelections[idx] =
+                                                  newZoneName.isNotEmpty
+                                                      ? newZoneName
+                                                      : null;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                          if (p.alternatives.isNotEmpty && isOver) ...[
+                            const Gap(8),
+                            Text(
+                              'Other zones in this warehouse with room: ${p.alternatives.join(", ")}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontStyle: FontStyle.italic,
+                                color: context.colors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ],
       ),

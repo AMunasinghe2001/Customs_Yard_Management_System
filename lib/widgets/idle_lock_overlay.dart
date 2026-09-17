@@ -114,6 +114,13 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
           router.routerDelegate.currentConfiguration.uri.toString(),
     );
 
+    // ⚠️ Here too, and BEFORE the navigation below. Every open form is asked
+    // to describe itself while it is still mounted; one line further down the
+    // router has replaced it with the login page and there is nothing left to
+    // read. Without this the officer came back to the right PAGE but an empty
+    // form, which is most of the work lost anyway.
+    LockedSessionMemory.captureOpenForms();
+
     router.go(_loginRoute);
 
     try {

@@ -103,6 +103,7 @@ import 'error_view.dart';
 import 'appeal_state_chip.dart';
 import 'storage_charge_note.dart';
 import '../widgets/app_dialog.dart';
+import 'displaced_badge.dart';
 
 /// The valuation row shown in the Sale / Destruction sections.
 ///
@@ -5396,6 +5397,7 @@ class _ItemStorageSection extends ConsumerWidget {
                 // entry is noise — it earns its place only when this
                 // admission was made under a DIFFERENT one.
                 itemActivity: (item.reasons ?? '').trim(),
+                warehouses: ref.watch(warehousesProvider).valueOrNull,
               ),
               if (e != entries.last) const Gap(8),
             ],
@@ -5420,12 +5422,18 @@ class _ItemStorageEntryRow extends StatelessWidget {
   /// Unsold goods carry no money figure at all.
   final bool hideCharge;
 
+  /// Every warehouse in the yard, so a displaced entry can name where it was
+  /// MEANT to go. See DisplacedBadge for why this is not embedded in the
+  /// query.
+  final List<WarehouseModel>? warehouses;
+
   const _ItemStorageEntryRow(
       {required this.entry,
       required this.charge,
       this.spaceCost = 0,
       this.itemActivity = '',
-      this.hideCharge = false});
+      this.hideCharge = false,
+      this.warehouses});
 
   @override
   Widget build(BuildContext context) {
@@ -5511,6 +5519,10 @@ class _ItemStorageEntryRow extends StatelessWidget {
                           : 'No charge',
                   strong: charge > 0),
           ]),
+          // ⚠️ Below the figures, not among them: this is not another fact
+          // about the storage, it is the reason the location above is not the
+          // one the reader expected.
+          DisplacedNotice(entry: entry, warehouses: warehouses),
         ],
       ),
     );

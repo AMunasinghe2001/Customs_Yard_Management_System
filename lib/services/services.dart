@@ -2662,6 +2662,14 @@ class WarehouseService {
     required String holdReason,
     required int itemCount,
     DateTime? admittedAt,
+    // ⚠️ Set only when the officer was offered an alternative because the
+    // category's own target was full, and accepted it. Recorded at admission
+    // rather than inferred later: category targets are editable, so comparing
+    // against them afterwards would both invent and hide displacements.
+    bool movedForSpace = false,
+    String? intendedWarehouseId,
+    String? intendedZone,
+    String? movedReason,
   }) async {
     final rate = 0.0;
 
@@ -2692,6 +2700,12 @@ class WarehouseService {
           'daily_rate': rate,
           'admitted_by': supabase.auth.currentUser?.id,
           'admitted_at': (admittedAt ?? DateTime.now()).toIso8601String(),
+          if (movedForSpace) ...{
+            'moved_for_space': true,
+            'intended_warehouse_id': intendedWarehouseId,
+            'intended_zone': intendedZone,
+            'moved_reason': movedReason,
+          },
         })
 
         .select('id');

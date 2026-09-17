@@ -43,9 +43,14 @@ void main() {
     });
 
     test('the insert is read back, so a refusal is visible', () {
+      // ⚠️ A generous window, not a tight one. This pinned 1800 characters
+      // and broke the day four named parameters joined addEntry — the
+      // `.select('id')` it guards had simply moved further down an unchanged
+      // function.
       final fn = f.substring(f.indexOf('Future<void> addEntry('));
-      expect(fn.substring(0, 1800), contains(".select('id')"));
-      expect(fn.substring(0, 1800), contains('The warehouse entry was not written'));
+      final body = fn.substring(0, fn.indexOf('AuditLogService'));
+      expect(body, contains(".select('id')"));
+      expect(body, contains('The warehouse entry was not written'));
     });
   });
 

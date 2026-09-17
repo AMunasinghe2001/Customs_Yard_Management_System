@@ -30,8 +30,13 @@ void main() {
       // back to change one impossible in the first place.
       expect('upsertPackage('.allMatches(f).length, 1,
           reason: 'a second save path has appeared');
+      // ⚠️ To the end of the function, not a fixed 2500 characters: the
+      // register and capacity checks that now precede the save pushed it
+      // past that window without changing what the test is about.
       final send = f.substring(f.indexOf('Future<void> _sendToWarehouse()'));
-      expect(send.substring(0, 2500), contains('upsertPackage('));
+      expect(send.substring(0, send.indexOf('_findRegisterMismatch')), isNotEmpty);
+      expect(send.substring(0, send.indexOf('catch (e)')),
+          contains('upsertPackage('));
     });
 
     test('saving puts the form into edit mode', () {

@@ -24,6 +24,7 @@ import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/storage_charge_note.dart';
 import '../../widgets/qty_cell.dart';
+import '../../widgets/displaced_badge.dart';
 
 /// Item statuses whose goods have permanently left the yard — these must not
 /// appear in (or be counted by) the Warehouses view. Forfeit / Abandoned /
@@ -678,7 +679,16 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                                 ? context.colors.textMuted
                                                 : null),
                                         overflow: TextOverflow.ellipsis)
-                                  ]
+                                  ],
+                                  // ⚠️ Under the goods name, not in a column
+                                  // of its own: almost no row carries it, and
+                                  // a column that is blank for 99 rows out of
+                                  // 100 costs width every row pays for.
+                                  DisplacedBadge(
+                                      entry: e,
+                                      warehouses: ref
+                                          .watch(warehousesProvider)
+                                          .valueOrNull),
                                 ],
                               )),
                               DataCell(Builder(builder: (_) {
