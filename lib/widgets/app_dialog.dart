@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 /// `showDialog` with the app's own backdrop: the page behind is dimmed AND
@@ -37,11 +39,25 @@ Future<T?> showAppDialog<T>({
         curve: Curves.easeOutCubic,
         reverseCurve: Curves.easeInCubic,
       );
-      return FadeTransition(
-        opacity: curved,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
-          child: child,
+      // ⚠️ The blur belongs HERE, not in the dialog's own widget. This file
+      // promised "dimmed AND blurred" from the day it was written, but only
+      // ever faded and scaled -- so the one-tap calendar, which blurs in its
+      // own `showGeneralDialog`, was the only popup in the app with a frosted
+      // page behind it. Every other popup arrived over a flat dim.
+      //
+      // ⚠️ Animated with `t`, not a constant sigma. A BackdropFilter at full
+      // strength on frame one snaps the whole page out of focus before the
+      // dialog is visible; ramping it with the same curve lets the background
+      // settle back as the popup grows.
+      final t = curved.value;
+      return BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 2.5 * t, sigmaY: 2.5 * t),
+        child: FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+            child: child,
+          ),
         ),
       );
     },

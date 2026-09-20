@@ -257,9 +257,25 @@ class _BrandPanelState extends State<BrandPanel> with TickerProviderStateMixin {
   /// wash rather than as light on a dark ground. The base goes 0.22 → 0.34
   /// and gold's extra 0.28 → 0.34, so gold is held back roughly two-thirds of
   /// the way to its deep colour while the dim accents barely move.
+  ///
+  /// ⚠️ Raised a THIRD time, on the gold sign-in panels: "too much yellow,
+  /// it needs more black". Measured, the previous values put gold's corner at
+  /// 0.584 of the way to the deep colour, luminance 0.066.
+  ///
+  /// ⚠️ The BRIGHTNESS TERM carries the raise, not the base. Raising the base
+  /// moves every portal equally, and the first attempt at this took navy's
+  /// corner from 0.0148 down to 0.0110 — a panel nobody complained about,
+  /// pushed towards flat black. Only the second term is luminance-scaled, so
+  /// widening it (1.1 → 2.0, cap 0.34 → 0.52) leaves the five dim accents
+  /// exactly where they were and moves gold alone.
+  ///
+  /// Gold's corner goes 0.584 → 0.706 and its luminance 0.066 → 0.035: about
+  /// half as much light in the gold corner, which is the "more black" that
+  /// was asked for. The trailing clamp rises 0.70 → 0.82 because at 0.70 it,
+  /// not the formula, would have been the limit.
   double get _accentFloor =>
-      (0.34 + ((_accentLuminance - 0.17) * 1.1).clamp(0.0, 0.34))
-          .clamp(0.0, 0.70);
+      (0.34 + ((_accentLuminance - 0.17) * 2.0).clamp(0.0, 0.52))
+          .clamp(0.0, 0.82);
 
   /// The colour at the accent corner, at animation position [t].
   ///
@@ -267,10 +283,14 @@ class _BrandPanelState extends State<BrandPanel> with TickerProviderStateMixin {
   /// makes a gradient read as a shape rather than as light -- and on gold,
   /// which is far brighter than the other five accents, it is the state the
   /// panel was being judged on.
+  /// ⚠️ The trailing clamp is the REAL ceiling, and it has to move with the
+  /// floor. At 0.75 it sat below gold's new 0.70 floor plus anything `t`
+  /// adds, so the corner would have stopped darkening partway through the
+  /// cycle and the raise would have been half-applied.
   Color _corner(Color accent, [double t = 1.0]) => Color.lerp(
       accent,
       widget.deepColor,
-      (_accentFloor + 0.35 * _accentDepth * (1 - t)).clamp(0.0, 0.75))!;
+      (_accentFloor + 0.35 * _accentDepth * (1 - t)).clamp(0.0, 0.88))!;
 
   /// The colour the crest, the title and the badge are drawn in.
   ///
@@ -703,6 +723,17 @@ class _OrbFieldPainter extends CustomPainter {
   ///
   /// Takes gold to about 0.55 of its old strength and leaves the dim accents
   /// nearly untouched.
+  ///
+  /// ⚠️ Trimmed further with the gradient corner, for the same report. The
+  /// corner and the orbs are the two sources of gold on the panel; darkening
+  /// only the corner would leave the orbs as the brightest thing on it and
+  /// simply move the yellow rather than reduce it.
+  ///
+  /// ⚠️ The SLOPE, not the floor. Gold computes to ~0.548 here, a hair under
+  /// the old 0.55 floor — so it was never actually pinned by it, and dropping
+  /// that floor changed gold by 0.002. Steepening the slope 1.45 → 2.05 is
+  /// what moves it: gold lands at ~0.36 while the dim accents, whose
+  /// luminance is close to the 0.08 pivot, stay near 1.0.
   double get _brightnessTrim {
     double channel(double v) => v <= 0.03928
         ? v / 12.92
@@ -710,7 +741,7 @@ class _OrbFieldPainter extends CustomPainter {
     final l = 0.2126 * channel(accent.r) +
         0.7152 * channel(accent.g) +
         0.0722 * channel(accent.b);
-    return (1.0 - (l - 0.08) * 1.45).clamp(0.55, 1.0);
+    return (1.0 - (l - 0.08) * 2.05).clamp(0.30, 1.0);
   }
 
   @override

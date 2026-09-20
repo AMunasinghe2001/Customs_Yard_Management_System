@@ -2003,6 +2003,42 @@ The login and signup screens needed no change — they are separate screens, not
 
 **The profile is a DIALOG, over a blurred console (2026-09-04).** It was briefly a page — reverted, and the reason is worth keeping: ⚠️ **the rail stayed visible and clickable while the page was showing, but its taps only moved a `TabController` that nothing was rendering.** Choosing another module did nothing and the single back button was the only way out. A dialog cannot reach that state: it owns the screen until dismissed, and dismissing it puts you back where you were. `showIctProfileDialog` uses `showGeneralDialog` + `BackdropFilter` — the blur is the point, not decoration: a flat scrim leaves sharp text and tables behind the dialog and the eye keeps reading past them. The blur ramps with the animation (a full-strength blur on frame one reads as the window glitching).
 
+### Every popup blurs its backdrop — the helper promised it and never did
+
+⚠️ **Reported with two screenshots side by side:** the one-tap calendar sat
+over a softly blurred page; the SR Register Entry popup — and every other
+popup in the app — sat over a **flat dim**.
+
+[lib/widgets/app_dialog.dart](lib/widgets/app_dialog.dart) exists for exactly
+this, and its doc comment has said *"the page behind is dimmed AND blurred"*
+since the day it landed. **It only ever faded and scaled.** There was no
+`BackdropFilter` in the `transitionBuilder`. The calendar looked different
+only because it blurs inside its **own** `showGeneralDialog`
+([lib/widgets/date_range_picker_dialog.dart](lib/widgets/date_range_picker_dialog.dart)).
+
+⚠️ **A promise in a doc comment is not a backdrop.** This one went unnoticed
+because the helper's name, signature and comment all described the intended
+behaviour — nothing read the widget tree to check. The fix was three lines in
+one place; finding it took two screenshots from the officer.
+
+⚠️ **The blur belongs in the shared helper, not in a dialog widget.**
+**134 call sites** go through `showAppDialog`, so blurring inside any single
+popup fixes that one and leaves the rest — which is how the two screenshots
+came to differ in the first place.
+
+⚠️ **Ramp the sigma with the curve** (`2.5 * t`, matching the calendar). A
+full-strength `BackdropFilter` on frame one snaps the page out of focus before
+the popup is visible — the same note already recorded for the ICT profile
+dialog above.
+
+Guarded by
+[test/every_popup_blurs_its_backdrop_test.dart](test/every_popup_blurs_its_backdrop_test.dart):
+it pumps a real dialog and asserts a `BackdropFilter` is in the tree, that the
+sigma **grows** across the transition rather than starting at full, and that
+**no `lib/` file calls a raw `showDialog`** — a raw one has no
+`transitionBuilder` hook, so it cannot blur and would silently be the odd
+popup out again.
+
 ⚠️ **"The search box looks smaller than the dropdowns" was not a height bug.** All three toolbar controls measure `kIctControlHeight` exactly and share a baseline — `test/ict_control_heights_test.dart` pumps a real toolbar and measures the **InputDecorator** (the box a person sees), not the TextField (whatever box we wrapped it in). What differed was the CELL: the filters were a caption + a box, the search was a box alone. `IctFieldLabel` is now on every field. Same class of thing: Material's 48px minimum tap target beats a SizedBox, so ICT buttons pass `minimumSize: Size.zero` + `tapTargetSize: shrinkWrap`.
 
 ⚠️ **The header and the rail's brand block must be built the SAME WAY, not merely the same height.** The rail was a `SizedBox` followed by a `Divider` — a rule in the pixel *after* the box — while the header's `Container` border sits in the last pixel *of* it. Equal heights, rules one pixel apart, and that is the step you can see where they meet. Both are now a `Container(height: kIctTopBarHeight)` drawing its own bottom border.
@@ -2054,6 +2090,48 @@ python tool/measure_toolbar.py     # search/filter/button: top, bottom, height
 ⚠️ **Isolating the assistant's build broke the feedback loop (2026-09-04).** `tool/agent_build.ps1` stopped the assistant's rebuilds from closing the user's app — and, as a direct consequence, its fixes stopped reaching `build\windows\...`, which is the exe the user actually launches. The user then reported the same bug three more times while looking at a binary that predated the fix by half an hour. **Check the exe's timestamp before believing a "nothing changed" report.** The script now builds the shared copy too, and when that exe is locked by a running app it says so loudly instead of silently skipping (it must never kill it — that is the whole point of the slot).
 
 ⚠️ **The auth back arrow is a page-corner control, not a heading ornament (2026-09-04).** Every login/signup/OTP screen used to put an `IconButton` inline, immediately left of its title — which pushed the heading off the panel's own margin and forced **every subtitle to carry a matching `EdgeInsets.only(left: 48)`** just to line up under it. It is now `AuthBackButton` (`lib/widgets/auth_back_button.dart`), dropped into the `Stack` each screen already keeps for its theme toggle and pinned `top: 24, left: 24`. Title and subtitle both start at the margin.
+
+### Darkening gold a third time — move the luminance term, not the base
+
+⚠️ **"කහ වැඩියි, බ්ලැක් වැඩි වෙන්න ඕන"** on the gold sign-in panels
+(Valuation, DC/SDDC). Two knobs in
+[lib/widgets/brand_panel.dart](lib/widgets/brand_panel.dart) feed gold onto
+the panel and **both had to move** — `_accentFloor` (the gradient corner) and
+`_brightnessTrim` (the orbs). Darkening only the corner leaves the orbs the
+brightest thing on the panel and merely **moves** the yellow.
+
+⚠️ **Raise the LUMINANCE-SCALED term, never the base.** My first attempt
+raised `_accentFloor`'s base 0.34 → 0.46, which moves **every** portal: navy's
+corner went 0.0148 → 0.0110, pushing a panel nobody complained about towards
+flat black. Only the second term scales with the accent, so widening **that**
+(`* 1.1` cap `0.34` → `* 2.0` cap `0.52`) leaves the five dim accents
+**bit-identical** and moves gold alone.
+
+⚠️ **Check which clamp is actually binding before tuning a slope.** Gold
+computes to ~0.548 in `_brightnessTrim`, a hair *under* the old `.clamp(0.55,
+…)` floor — so it was never pinned by it and dropping that floor changed gold
+by **0.002**. The **slope** was the live knob (1.45 → 2.05). Same trap on
+`_accentFloor`: its trailing `.clamp(0.0, 0.70)` and `_corner`'s
+`.clamp(0.0, 0.75)` both sat below where the formula now wants to go, so they
+had to rise (→ 0.82, → 0.88) or they, not the formula, would set the result.
+
+Measured, old → new:
+
+```
+gold    floor 0.584→0.784   cornerLum 0.0657→0.0211   orbTrim 0.550→0.360
+teal    floor 0.340→0.340   cornerLum 0.0708→0.0708   orbTrim 0.881→0.831
+purple  floor 0.340→0.340   cornerLum 0.0351→0.0351   orbTrim 1.000→1.000
+navy    floor 0.340→0.340   cornerLum 0.0148→0.0148   orbTrim 1.000→1.000
+```
+
+⚠️ **The old tests restated the formula and so only checked themselves.**
+`brand_panel_test.dart` carried its own copy of the trim expression and a
+literal `contains('(0.34 + ((_accentLuminance - 0.17) * 1.1)')`, so the group
+stayed green against the **old** numbers after the widget changed. Both now
+**parse the constants out of the source** and assert the *property* — gold
+trimmed hard, dim accents untouched, and the ceiling above the computed floor
+so it is never the limiter.
+
 
 The chip is painted **white-on-dark deliberately, not from the theme's text colours**: the corner it occupies is the dark hero panel on the split-screen layouts, where `textSecondary` disappears in light mode. Frosted (`BackdropFilter`) so it keeps contrast wherever on the artwork it lands.
 
@@ -3023,6 +3101,53 @@ by hand and folded into neither `02_schema.sql` nor each other, so on a fresh
 database the view is skipped rather than failing the one file that stands a
 new server up. Verified by replaying `01_auth_and_session.sql` + `02_schema.sql`
 into an empty database with **stderr actually captured**: 0 errors, guard held.
+
+### The duplicate row: I added a second route beside the open one (045 → 046)
+
+⚠️ **Before adding a route into a page, check which view the PAGE reads.**
+Converted Goods showed *Liquid Milk Cartons* **twice**, and marking one
+Delivered marked both — they were two rows for **one `proposal_id`**, and
+delivery is recorded against the **proposal**, not the row.
+
+Migration 045 added a perishable branch to `exhausted_unsold`, reasoning that
+a perishable can never satisfy its `tender_count > 3`. **That reasoning was
+correct and the conclusion was still wrong:** the four Final Outcome pages
+never read `exhausted_unsold`. `getExhaustedUnsoldPaged(includeAllRoutes:
+true)` reads **`unsold_all_routes`** — and its `unsold_perishables` arm had
+carried those rulings since 017 (the section directly above). So:
+
+```
+exhausted_unsold    convert → 2   (1 normal + 1 perishable, added by 045)
+unsold_perishables  convert → 1   (the same perishable)
+unsold_all_routes   convert → 3   ← what the officer saw
+```
+
+[migrations/046_undo_045_the_perishable_route_already_existed.sql](migrations/046_undo_045_the_perishable_route_already_existed.sql)
+removes it. 045 is deleted from the tree, and `044`'s stranding check now
+asks **`unsold_all_routes`** rather than `exhausted_unsold` — checking the
+narrower view alone is precisely what made 045 look necessary.
+
+⚠️ **Do not rebuild a wrapped view by regex over `pg_get_viewdef`.** My first
+046 recovered the pre-045 body with `from \((.*)\) base`. 045's own branch
+also ended in `) b2`, so the **greedy** match ran past the real closing paren.
+The result still parsed, still had **18 columns**, passed **both**
+verifications — and returned **zero rows**, emptying `exhausted_unsold`,
+`committee_pool`, `unsold_all_routes` and `unsold_retender_pool` together. A
+column count is not proof; **046 now also asserts the view is non-empty.**
+The definition lives in the source files, so 046 is a guard + marker only and
+is applied **after** `postgres/23` → `migrations/016` (23 drops the view,
+which discards 016's `is_perishable` wrap — the same ordering trap as before).
+
+⚠️ **Rebuilding `exhausted_unsold` means rebuilding four views.**
+`committee_pool`, `unsold_all_routes` and `unsold_retender_pool` all depend on
+it, so the drop fails without them. Order:
+`23` → `016` → `031` → `postgres/39` → `017`.
+
+⚠️ **`Customs_SR_DB` is nearly empty; the real data is in
+`Customs_SR_DB_backup_20260914_1543`** (318 forfeited packages vs 6). A
+migration verified only against the live DB proves almost nothing — every
+count above came from the backup.
+
 
 ### Perishables are marked, not hidden
 `is_perishable` (migration 016) drives both a **filter chip** and a **row

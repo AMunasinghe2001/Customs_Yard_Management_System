@@ -109,11 +109,20 @@ select r.*,
            select we.released_delivered
              from public.warehouse_entries we
             where we.id = r.entry_id)
-         -- ⚠️ A released item with no warehouse entry has no hand-over step
-         -- of its own -- exactly like the original Source 4 rule the header
-         -- above quotes: "the release IS the hand-over." There was never a
-         -- warehouse for the owner to collect from.
-         when r.final_tag = 'RELEASED' and r.source = 'item' then null
+         -- ⚠️ Source 5 now carries the item's OPEN warehouse entry (see the
+         -- entry_id subselect below), so its hand-over flag lives in the same
+         -- place every other release's does. Reading it from the entry is
+         -- what lets the officer press Mark Delivered on a perishable and
+         -- have the answer stick.
+         --
+         -- The entry is never `is_returned` for these -- releasing a
+         -- perishable records the disposition on the ITEM and leaves the
+         -- entry open -- so `released_delivered` is the only flag that can
+         -- speak for them. Null when the item was genuinely never admitted.
+         when r.final_tag = 'RELEASED' and r.source = 'item' then (
+           select we.released_delivered
+             from public.warehouse_entries we
+            where we.id = r.entry_id)
        end                                        as delivered,
        case
          when r.final_tag = 'SOLD' then (
@@ -143,7 +152,8 @@ select r.*,
                        then we.re_export_delivered_at end
              from public.warehouse_entries we
             where we.id = r.entry_id)
-         when r.final_tag = 'RELEASED' and r.source = 'release' then (
+         when r.final_tag = 'RELEASED'
+              and r.source in ('release', 'item') then (
            select case when we.released_delivered
                        then we.released_delivered_at end
              from public.warehouse_entries we
@@ -212,7 +222,16 @@ select
   p.consignee_name,
   p.yard,
   pi.id                                      as item_id,
-  null::uuid                                 as entry_id,
+  -- ⚠️ The item's warehouse entry, for the same reason Source 5 carries one:
+  -- a disposition recorded on the ITEM leaves the entry open, but the goods
+  -- were still stored and the yard is still owed for the space. With null
+  -- here the Sold and Destroyed tables printed "—" in their charge columns
+  -- for 8 perishables, exactly as Released did.
+  (select w2b.id
+     from public.warehouse_entries w2b
+    where w2b.package_item_id = pi.id
+    order by w2b.admitted_at desc
+    limit 1)                                 as entry_id,
   null::uuid                                 as proposal_id,
   case lower(pi.status)
     when 're-exported'               then 'RE-EXPORTED'
@@ -250,7 +269,13 @@ where lower(coalesce(pi.status, '')) in
 
 union all
 
--- ── Source 3: Top Management ruled re-export after every tender failed ──────
+-- ── Source 3: a Top Management ruling that names a final outcome ───────────
+--
+-- ⚠️ `destroy` joins `re_export` here, reported directly: a perishable ruled
+-- DESTROY stayed on Perishable Goods and reached Destroyed Goods never. The
+-- ruling IS the decision -- what is still outstanding is the ACT -- so the
+-- row has to move the moment it is made and then sit on the Destroyed page
+-- as awaiting, exactly as a re-export ruling already does.
 select
   ('P:' || up.id::text)                      as row_key,
   'proposal'::text                           as source,
@@ -261,7 +286,10 @@ select
   fp.item_id,
   null::uuid                                 as entry_id,
   up.id                                      as proposal_id,
-  'RE-EXPORTED'::text                        as final_tag,
+  case up.proposal
+    when 'destroy' then 'DESTROYED'
+    else 'RE-EXPORTED'
+  end                                        as final_tag,
   coalesce(pi.item_name, '—')                as item_name,
   pi.hs_code,
   coalesce(fp.entry_qty, pi.quantity)        as quantity,
@@ -274,7 +302,17 @@ from public.unsold_proposals up
 join public.forfeited_packages fp on fp.id = up.forfeited_package_id
 join public.packages p            on p.id = fp.package_id
 left join public.package_items pi on pi.id = fp.item_id
-where up.proposal = 're_export'
+where up.proposal in ('re_export', 'destroy')
+  -- ⚠️ Not when the item already reaches this page another way. A ruling is
+  -- one route to Destroyed Goods; a Final Disposition recorded on the item
+  -- (Source 2) is another, and an item that has both would otherwise be
+  -- listed twice.
+  and not exists (
+    select 1 from public.package_items pi2
+     where pi2.id = fp.item_id
+       and lower(coalesce(pi2.status, '')) in
+           ('re-exported', 'destroyed', 'supposed to be destroyed',
+            'destroy', 'sold', 'other'))
 
 union all
 
@@ -337,7 +375,23 @@ select
   p.consignee_name,
   p.yard,
   pi.id                                      as item_id,
-  null::uuid                                 as entry_id,
+  -- ⚠️ The item's OPEN warehouse entry, when it has one.
+  --
+  -- This was `null`, on the assumption that goods released straight out of
+  -- Perishable Goods were never warehoused. They ARE: the page skips the
+  -- APPEAL window and the disposal wait, not storage -- every perishable in
+  -- this database has an admitted entry. With no entry_id the Released Goods
+  -- table could not find one, so its Warehouse Charge cell printed "—" and
+  -- the yard lost the storage it was owed on every perishable release.
+  --
+  -- Still not `is_returned`: releasing a perishable records the disposition
+  -- on the ITEM and never closes the entry, which is exactly why Source 4
+  -- cannot see these rows and Source 5 exists at all.
+  (select w5.id
+     from public.warehouse_entries w5
+    where w5.package_item_id = pi.id
+    order by w5.admitted_at desc
+    limit 1)                                 as entry_id,
   null::uuid                                 as proposal_id,
   'RELEASED'::text                           as final_tag,
   pi.item_name,

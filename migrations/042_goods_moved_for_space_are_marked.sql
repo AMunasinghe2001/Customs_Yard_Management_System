@@ -94,6 +94,7 @@ end $$;
 do $verify$
 declare
   c text;
+  n_flagged bigint;
 begin
   foreach c in array array['moved_for_space', 'intended_warehouse_id',
                            'intended_zone', 'moved_reason'] loop
@@ -105,14 +106,28 @@ begin
     end if;
   end loop;
 
-  -- Nothing may arrive already flagged: the column is new, so every existing
-  -- entry must read as an ordinary placement.
-  if exists (select 1 from public.warehouse_entries where moved_for_space) then
-    raise exception 'existing rows were flagged as displaced';
+  -- ⚠️ REPORT the displaced rows; do not refuse them.
+  --
+  -- This started as "nothing may arrive already flagged", which is true on a
+  -- first install and false ever after: the file is re-run whenever
+  -- postgres/70 recreates disposition_rows (that drops the wrap this
+  -- migration adds), and by then the yard has legitimately recorded real
+  -- displacements. Refusing them turned a routine re-run into a hard
+  -- failure over exactly the data this migration exists to hold.
+  --
+  -- What still has to hold is that a flagged row SAYS something: a
+  -- displacement with no intended location records nothing useful.
+  select count(*) into n_flagged
+    from public.warehouse_entries
+   where moved_for_space
+     and intended_warehouse_id is null
+     and coalesce(trim(intended_zone), '') = '';
+  if n_flagged > 0 then
+    raise exception '% displaced row(s) name no intended location', n_flagged;
   end if;
 
-  raise notice 'PASS: warehouse_entries records a capacity move, and no '
-               'existing row claims to be one';
+  raise notice 'PASS: warehouse_entries records a capacity move, and every '
+               'displaced row names where it belonged';
 end $verify$;
 
 do $verify2$

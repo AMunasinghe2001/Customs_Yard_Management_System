@@ -2207,6 +2207,28 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                 orElse: () => p.items.first)
             : null);
 
+    // The forfeited row the Appeal section reads, for whichever item this
+    // popup is about.
+    //
+    // ⚠️ THIS item's row, and no other. An SR can hold several items, each
+    // with its OWN forfeited row and its own appeal — CED/GL1/SR/24/2025 has
+    // four, and only Paint Thinner Cans was ruled on. Falling back to
+    // "whichever row came first" showed that ruling on the popup for Laptop
+    // Chargers, which had never been appealed at all: the table said Enabled
+    // and the popup said Decided · Other about the same goods.
+    //
+    // ⚠️ `forfeitedByItemProvider` keys STRICTLY by item and drops any
+    // package-level row (`if (itemId == null) continue`), so there is no
+    // package-wide entry to fall back to here. An item with no row of its
+    // own simply has no appeal to show, and showing nothing is right: the
+    // table says Enabled for exactly those goods.
+    final appealFor = widget.tenderHistoryFor ??
+        (highlightedItem == null
+            ? null
+            : ref
+                .watch(forfeitedByItemProvider(p.id))
+                .valueOrNull?[highlightedItem.id]);
+
     // Perishables never enter a warehouse -- no storage, no appeal window,
     // straight to disposal. So an EMPTY warehouse summary is the correct
     // answer for them, and the section has to say so rather than showing the
@@ -3207,9 +3229,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         // popup then said nothing at all about the appeal —
                         // not when it was lodged, not when the deadline
                         // falls, not what was ruled or when.
-                        if (widget.tenderHistoryFor != null)
+                        //
+                        // ⚠️ Resolved HERE when the caller did not pass one,
+                        // rather than at each call site. Eight screens open
+                        // this popup (Abandoned, Detained, Other, Goods
+                        // History, Old Entries, Released, Forfeited,
+                        // Warehouses) and none of them passed
+                        // `tenderHistoryFor`, so an officer asking "was this
+                        // appealed?" got no answer on any of them — while the
+                        // table they had just clicked from showed an Appeal
+                        // column. The popup has the package and a ref, so it
+                        // can answer for itself.
+                        if (appealFor != null)
                           _AppealHistorySection(
-                            forfeited: widget.tenderHistoryFor!,
+                            forfeited: appealFor,
                             itemId: highlightedItem?.id,
                           ),
                         // Per-round valuation + bids, for unsold packages.
@@ -4536,6 +4569,27 @@ bool _appealRuledAwayFromDestruction(
   return decision != 'DESTROY';
 }
 
+/// What the appeal window's start date is called, for this kind of goods.
+///
+/// ⚠️ `forfeited_packages` holds every route into the appeal window, not
+/// just forfeits: abandoned, "Other", detained and perishable goods all get a
+/// row, and `forfeited_at` is simply the day that window opened. Calling it
+/// "Forfeited on" for all of them says the State has taken goods that are
+/// still under inquiry -- which is both wrong and the kind of wrong an
+/// officer would act on.
+///
+/// The wording follows [SourceChip], so one row reads the same in the table
+/// and in the popup.
+String _appealStartLabel(String source) =>
+    switch (source.trim().toLowerCase()) {
+      'abandoned' => 'Abandoned on',
+      'detain' || 'detained' => 'Detained on',
+      'perishable' => 'Recorded on',
+      // "Other" is a status, not an event with a verb of its own.
+      'other' => 'Recorded on',
+      _ => 'Forfeited on',
+    };
+
 class _AppealHistorySection extends StatelessWidget {
   final ForfeitedPackageModel forfeited;
 
@@ -4622,7 +4676,14 @@ class _AppealHistorySection extends StatelessWidget {
               Expanded(
                 child: _DetailItem(
                   icon: Icons.gavel_rounded,
-                  label: 'Forfeited on',
+                  // ⚠️ Named for what this row ACTUALLY is. The appeal window
+                  // opens for abandoned, "Other", detained and perishable
+                  // goods too -- 250 of the 318 rows in this database are one
+                  // of those -- and every one of them read "Forfeited on",
+                  // which is a statement that the State has taken goods still
+                  // under inquiry. The same mistake SourceChip already
+                  // corrects for Detained.
+                  label: _appealStartLabel(f.source),
                   value: date.format(f.forfeitedAt),
                 ),
               ),

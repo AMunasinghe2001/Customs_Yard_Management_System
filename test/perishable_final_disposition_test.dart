@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///     perishable that skipped warehousing (by design — the page's own
 ///     subtitle: "no warehouse, no appeal window") never gets one written.
 void main() {
+  _releasedPerishablesAreCharged();
   _handoverIsAnActNotAnArrival();
   String read(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
   String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
@@ -214,6 +215,72 @@ void _handoverIsAnActNotAnArrival() {
       // quietly disappearing.
       expect(mig, contains("'is_perishable', 'is_destroyed'"));
       expect(mig, contains('is missing'));
+    });
+  });
+}
+
+// ── A released perishable is still owed its storage ───────────────────────
+//
+// ⚠️ Reported directly: Released Goods printed "—" in the Warehouse Charge
+// column for every perishable, so the yard lost the storage it was owed on
+// each one.
+//
+// The cause was an assumption in Source 5 of `disposition_rows`: it set
+// `entry_id` to null because Perishable Goods "skips the warehouse". It does
+// not — the page skips the APPEAL WINDOW and the disposal wait, not storage,
+// and every perishable in this database has an admitted warehouse entry. The
+// table's charge cell reads `if (entry == null) return '—'`, so with no
+// entry_id there was nothing to price.
+void _releasedPerishablesAreCharged() {
+  final view = File('postgres/70_disposition_rows_released_status.sql')
+      .readAsStringSync();
+  String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
+  final v = flat(view);
+
+  group('a released perishable carries its warehouse entry', () {
+    test('Source 5 resolves the entry instead of nulling it', () {
+      expect(
+          v,
+          contains('(select w5.id from public.warehouse_entries w5 '
+              'where w5.package_item_id = pi.id '
+              'order by w5.admitted_at desc limit 1) as entry_id'),
+          reason: 'the released perishable has no entry to price again');
+    });
+
+    test('the hand-over flag reads from that entry', () {
+      // ⚠️ It used to be hardcoded null — "the release IS the hand-over" —
+      // which left Mark Delivered with nowhere to write.
+      expect(
+          v,
+          contains("when r.final_tag = 'RELEASED' and r.source = 'item' then "
+              "( select we.released_delivered"),
+          reason: 'a perishable release cannot record its hand-over again');
+      expect(v.contains("and r.source = 'item' then null"), isFalse,
+          reason: 'the hand-over flag is hardcoded null again');
+    });
+
+    test('the hand-over DATE follows the same entry', () {
+      expect(v, contains("r.source in ('release', 'item')"));
+    });
+
+    test('Source 2 carries one too, for Sold and Destroyed', () {
+      // ⚠️ The SAME gap, found while checking this one: 7 sold and 1
+      // destroyed perishable also printed "—" for their storage. A
+      // disposition recorded on the item leaves the entry open whatever the
+      // outcome was.
+      expect(
+          v,
+          contains('(select w2b.id from public.warehouse_entries w2b '
+              'where w2b.package_item_id = pi.id '
+              'order by w2b.admitted_at desc limit 1) as entry_id'),
+          reason: 'Sold and Destroyed lost their storage charge again');
+    });
+
+    test('the double-count guards are still there', () {
+      // ⚠️ Attaching an entry must not let Source 4 and Source 5 both claim
+      // the same goods. Guard 2 still excludes any RETURNED entry, which is
+      // what Source 4 keys on.
+      expect(v, contains('and w4.is_returned = true'));
     });
   });
 }

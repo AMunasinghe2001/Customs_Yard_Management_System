@@ -2024,6 +2024,12 @@ Future<void> _confirmMarkDestroyed(
         label: 'DESTROY GOODS',
         title: 'Mark as Destroyed',
         icon: Icons.local_fire_department_rounded,
+        // ⚠️ NO yard header here, deliberately. This is the DISPOSAL
+        // portal's own destroy dialog, and the light tint is that
+        // directorate's design -- a navy bar here would be the yard's
+        // chrome on someone else's page, which is the same mistake in
+        // reverse. The yard's copy of this dialog lives in
+        // disposition_category_screen.dart and does take the navy.
         headerAccentColor: ctx.colors.dangerRed,
         width: 480,
         actions: [
@@ -3958,7 +3964,19 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                   columnSpacing: 10,
                   horizontalMargin: 12,
                   fixedTopRows: 1,
-                  minWidth: 1280,
+                  // ⚠️ 1280 forced a horizontal scrollbar on every screen.
+                  // The fixed columns come to 1004px, and with 10px between
+                  // eleven columns and two 12px margins the table cannot be
+                  // drawn below 1128 -- but 1280 demanded another 152px on
+                  // top of that, so the card ALWAYS overflowed its pane and
+                  // the reader had to scroll sideways to reach Status and
+                  // Details.
+                  //
+                  // At 1128 the table fits wherever it can, and the three
+                  // flexible columns (Goods Name, Consignee, Location) take
+                  // whatever room is left instead of pushing the fixed ones
+                  // off the edge.
+                  minWidth: 1128,
                   // ⚠️ On a settled sale the header goes LIGHTER than the
                   // data, not darker. The card around it is already grey,
                   // so a dark header merges into that surround and the
@@ -7097,7 +7115,19 @@ class DestructionCard extends ConsumerWidget {
                   columnSpacing: 10,
                   horizontalMargin: 12,
                   fixedTopRows: 1,
-                  minWidth: 1280,
+                  // ⚠️ 1280 forced a horizontal scrollbar on every screen.
+                  // The fixed columns come to 1011px, and with 10px between
+                  // eleven columns and two 12px margins the table cannot be
+                  // drawn below 1135 -- but 1280 demanded another 145px on
+                  // top of that, so the card ALWAYS overflowed its pane and
+                  // the reader had to scroll sideways to reach Status and
+                  // Details.
+                  //
+                  // At 1135 the table fits wherever it can, and the three
+                  // flexible columns (Goods Name, Consignee, Location) take
+                  // whatever room is left instead of pushing the fixed ones
+                  // off the edge.
+                  minWidth: 1135,
                   headingRowColor: _headingColor(context),
                   empty: const EmptyTableState(
                       message: 'No packages in this sale'),

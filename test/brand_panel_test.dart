@@ -368,16 +368,35 @@ void main() {
       return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
     }
 
-    double orbTrim(Color c) => (1.0 - (lum(c) - 0.08) * 1.45).clamp(0.55, 1.0);
+    // ⚠️ Read the slope and floor OUT OF THE SOURCE rather than restating
+    // them. A copy of the formula here passes whatever the widget does: when
+    // the panel was darkened for "too much yellow", this group still went
+    // green against the old numbers because the test was only checking
+    // itself.
+    final panelSrc = File('lib/widgets/brand_panel.dart').readAsStringSync();
+    final trimExpr = RegExp(
+            r'return \(1\.0 - \(l - 0\.08\) \* ([0-9.]+)\)\.clamp\(([0-9.]+), 1\.0\);')
+        .firstMatch(panelSrc)!;
+    final trimSlope = double.parse(trimExpr.group(1)!);
+    final trimFloor = double.parse(trimExpr.group(2)!);
+
+    double orbTrim(Color c) =>
+        (1.0 - (lum(c) - 0.08) * trimSlope).clamp(trimFloor, 1.0);
 
     const gold = Color(0xFFD4A017);
     const purple = Color(0xFF7B1FA2);
 
     test('the orbs are dimmed in proportion to the accent', () {
-      // Measured: gold 0.55, purple 1.00 — the dim accents are untouched.
-      expect(orbTrim(gold), closeTo(0.55, 0.02));
-      expect(orbTrim(purple), closeTo(1.00, 0.02));
-      expect(orbTrim(gold), lessThan(orbTrim(purple)));
+      // ⚠️ The PROPERTY, not the number: gold is trimmed hard, the dim
+      // accents are left alone. The exact figures have moved twice now
+      // (gold 0.55 -> 0.36 when the panel was darkened again) and pinning
+      // them only made this test an echo of the source.
+      expect(orbTrim(purple), closeTo(1.00, 0.02),
+          reason: 'the dim accents must keep their light');
+      expect(orbTrim(gold), lessThan(0.45),
+          reason: 'gold is the accent that washes the panel');
+      expect(orbTrim(gold), greaterThan(0.20),
+          reason: 'trimmed, not extinguished');
     });
 
     test('the trim is applied to the orb alpha, not just computed', () {
@@ -389,8 +408,30 @@ void main() {
     test('the gradient corner is held back further too', () {
       // The corner and the orbs are two sources of the same colour on one
       // panel; on gold the two together read as a wash.
+      // ⚠️ Asserted as a PROPERTY of the floor, not as the literal text of
+      // the expression. The previous version of this test pinned
+      // "(0.34 + ((_accentLuminance - 0.17) * 1.1)" and so had to be edited
+      // every time the panel was retuned, which tells you nothing about
+      // whether gold is still held back.
       final src = File('lib/widgets/brand_panel.dart').readAsStringSync();
-      expect(src, contains('(0.34 + ((_accentLuminance - 0.17) * 1.1)'));
+      final floorExpr = RegExp(r'\(([0-9.]+) \+ \(\(_accentLuminance - 0\.17\)'
+              r' \* ([0-9.]+)\)\.clamp\(0\.0, ([0-9.]+)\)\)\s*'
+              r'\.clamp\(0\.0, ([0-9.]+)\)')
+          .firstMatch(src)!;
+      final base = double.parse(floorExpr.group(1)!);
+      final mult = double.parse(floorExpr.group(2)!);
+      final term = double.parse(floorExpr.group(3)!);
+      final cap = double.parse(floorExpr.group(4)!);
+
+      double floorFor(Color c) =>
+          (base + ((lum(c) - 0.17) * mult).clamp(0.0, term)).clamp(0.0, cap);
+
+      // Gold is held back much further than the dim accents...
+      expect(floorFor(gold), greaterThan(0.70));
+      expect(floorFor(purple), closeTo(base, 0.001));
+      // ...and the ceiling must not be the thing doing the limiting, or the
+      // formula stops responding to the accent at all.
+      expect(cap, greaterThan(floorFor(gold)));
     });
   });
 

@@ -34,7 +34,13 @@ void main() {
         dialog.indexOf('class _DisposalExpenseBreakdown'));
 
     test('the dates', () {
-      expect(section, contains("label: 'Forfeited on'"));
+      // ⚠️ The window's START, not one wording of it. This is the appeal
+      // window for abandoned, "Other", detained and perishable goods too —
+      // 250 of the 318 rows in this database — and calling all of them
+      // "Forfeited on" said the State had taken goods still under inquiry.
+      // The label is chosen from the source now; see
+      // popup_shows_the_appeal_test.dart for the per-source wording.
+      expect(section, contains('label: _appealStartLabel(f.source),'));
       expect(section, contains("label: 'Appeal deadline'"));
       expect(section, contains("label: 'Decided on'"));
     });

@@ -17,6 +17,7 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../core/app_log.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/confirm_dialog.dart';
 
 Widget _tableActionButton({
   required BuildContext context,
@@ -1154,26 +1155,20 @@ class _WarehousesTab extends ConsumerWidget {
     WidgetRef ref,
     WarehouseZoneModel zone,
   ) async {
-    final ok = await showAppDialog<bool>(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: Text('Delete zone ${zone.name}?'),
-            content: const Text(
-                'Goods already recorded in this zone stay where they are, but '
-                'the zone stops counting towards capacity.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(c, false),
-                  child: const Text('Cancel')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    // ⚠️ The YARD's chrome, like Edit Zone two buttons away. This was a bare
+    // AlertDialog beside a StyledFormDialog: two shapes on one screen, and
+    // the plainer of the two was the one asking to destroy something.
+    final ok = await ConfirmDialog.show(
+      context,
+      label: 'ZONE',
+      title: 'Delete zone ${zone.name}?',
+      icon: Icons.grid_view_rounded,
+      message: 'Goods already recorded in this zone stay where they are, but '
+          'the zone stops counting towards capacity.',
+      confirmLabel: 'Delete zone',
+      accent: context.colors.dangerRed,
+      yard: true,
+    );
     if (!ok) return;
 
     try {
@@ -1309,50 +1304,31 @@ class _WarehousesTab extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     WarehouseModel warehouse,
-  ) {
-    showAppDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Warehouse?'),
-        content: Text(
-          'Are you sure you want to delete "${warehouse.name}"? This action cannot be undone. The warehouse must have no active entries.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            onPressed: () async {
-              try {
-                await ref.read(warehouseServiceProvider).deleteWarehouse(
-                      warehouse.id,
-                    );
-                ref.refresh(warehousesProvider);
-                if (ctx.mounted) Navigator.pop(ctx);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Warehouse deleted successfully'),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  showErrorSnack(context, e);
-                }
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+  ) async {
+    // ⚠️ ASK first, then act -- the delete used to run from inside the
+    // dialog's own button, so a failure had to close the dialog itself and
+    // the error landed on whatever was underneath. Confirming and acting are
+    // now two steps, like every other delete on this page.
+    final ok = await ConfirmDialog.show(
+      context,
+      label: 'WAREHOUSE',
+      title: 'Delete ${warehouse.name}?',
+      icon: Icons.warehouse_rounded,
+      message: 'This cannot be undone, and the warehouse must have no goods '
+          'still held in it. Its zones go with it.',
+      confirmLabel: 'Delete warehouse',
+      accent: context.colors.dangerRed,
+      yard: true,
     );
+    if (!ok) return;
+
+    try {
+      await ref.read(warehouseServiceProvider).deleteWarehouse(warehouse.id);
+      ref.invalidate(warehousesProvider);
+      if (context.mounted) context.showSuccess('Warehouse deleted');
+    } catch (e) {
+      if (context.mounted) showErrorSnack(context, e);
+    }
   }
 }
 
@@ -1678,35 +1654,28 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                       color: context.colors.dangerRed,
                                       tooltip: 'Delete Category',
                                       onPressed: () async {
-                                        final ok = await showAppDialog<bool>(
-                                            context: context,
-                                            builder: (_) => AlertDialog(
-                                                  title: const Text(
-                                                      'Delete Category'),
-                                                  content: Text(
-                                                      'Delete "${c.name}"?'),
-                                                  actions: [
-                                                    TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                                context, false),
-                                                        child: const Text(
-                                                            'Cancel')),
-                                                    ElevatedButton(
-                                                        style: ElevatedButton.styleFrom(
-                                                            backgroundColor:
-                                                                context.colors
-                                                                    .dangerRed,
-                                                            foregroundColor:
-                                                                Colors.white),
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                                context, true),
-                                                        child: const Text(
-                                                            'Delete')),
-                                                  ],
-                                                ));
-                                        if (ok == true) {
+                                        // ⚠️ Says what is LOST, not just
+                                        // what is being deleted. A category
+                                        // carries this yard's warehouse and
+                                        // zone target, and removing it sends
+                                        // the next goods of that kind to the
+                                        // fallback warehouse instead.
+                                        final ok = await ConfirmDialog.show(
+                                          context,
+                                          label: 'CATEGORY',
+                                          title: 'Delete ${c.name}?',
+                                          icon: Icons.category_rounded,
+                                          message:
+                                              'Goods already recorded under '
+                                              'this category keep it. New '
+                                              'goods can no longer be '
+                                              'assigned to it, and its '
+                                              'storage location is forgotten.',
+                                          confirmLabel: 'Delete category',
+                                          accent: context.colors.dangerRed,
+                                          yard: true,
+                                        );
+                                        if (ok) {
                                           await ref
                                               .read(
                                                   packageCategoryServiceProvider)
@@ -2402,26 +2371,19 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
   }
 
   Future<void> _delete(WarehouseZoneModel zone) async {
-    final ok = await showAppDialog<bool>(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: Text('Delete zone ${zone.name}?'),
-            content: const Text(
-                'Goods already recorded in this zone stay where they are, but '
-                'the zone stops counting towards capacity.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(c, false),
-                  child: const Text('Cancel')),
-              TextButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: Text('Delete',
-                    style: TextStyle(color: context.colors.dangerRed)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    // The same wording and the same chrome as the other zone-delete on this
+    // page -- they are the same act, reached from two places.
+    final ok = await ConfirmDialog.show(
+      context,
+      label: 'ZONE',
+      title: 'Delete zone ${zone.name}?',
+      icon: Icons.grid_view_rounded,
+      message: 'Goods already recorded in this zone stay where they are, but '
+          'the zone stops counting towards capacity.',
+      confirmLabel: 'Delete zone',
+      accent: context.colors.dangerRed,
+      yard: true,
+    );
     if (!ok) return;
 
     setState(() => _busy = true);
@@ -2447,53 +2409,66 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
 
     final saved = await showAppDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: Text(existing == null ? 'Add zone' : 'Edit zone'),
-        content: SizedBox(
-          width: 360,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
+      // ⚠️ The SAME shape as the other Add/Edit Zone form on this page. Two
+      // routes reach the same job and one of them was still a bare
+      // AlertDialog, so the zone form looked like a different feature
+      // depending on which button opened it.
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDlg) => StyledFormDialog(
+          label: 'ZONE',
+          title: existing == null ? 'Add Zone' : 'Edit Zone',
+          icon: Icons.grid_view_rounded,
+          width: 460,
+          yard: true,
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: Text('Cancel',
+                    style: TextStyle(color: context.colors.textMuted))),
+            const Gap(8),
+            StyledDialogPrimaryButton(
+              labelText: 'Save',
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
+                Navigator.pop(c, true);
+              },
             ),
-            const Gap(12),
-            TextField(
-              controller: codeCtrl,
-              decoration: InputDecoration(
-                  labelText: 'Zone Code',
-                  hintText:
-                      '${widget.warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: capCtrl,
-              keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: 'Capacity (items) *'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: descCtrl,
-              decoration:
-                  const InputDecoration(labelText: 'Description (optional)'),
-            ),
-          ]),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.trim().isEmpty) return;
-              if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
-              Navigator.pop(c, true);
-            },
-            child: const Text('Save'),
+          ],
+          child: StyledFormSection(
+            title: widget.warehouse.name,
+            icon: Icons.warehouse_rounded,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                // The Zone Code hint mirrors the name as it is typed, so a
+                // rebuild is needed on every keystroke.
+                onChanged: (_) => setDlg(() {}),
+                decoration: const InputDecoration(
+                    labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
+              ),
+              TextField(
+                controller: codeCtrl,
+                decoration: InputDecoration(
+                    labelText: 'Zone Code',
+                    hintText:
+                        '${widget.warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
+              ),
+              TextField(
+                controller: capCtrl,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Capacity (items) *'),
+              ),
+              TextField(
+                controller: descCtrl,
+                decoration:
+                    const InputDecoration(labelText: 'Description (optional)'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
 

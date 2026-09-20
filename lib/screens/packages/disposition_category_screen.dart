@@ -24,6 +24,7 @@ import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/perishable_row.dart';
 import '../../widgets/qty_cell.dart';
+import '../../widgets/one_tap_date_picker.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
 /// Re-exported / Other). Reads warehouse entries tagged "[FINAL:<TAG>]".
@@ -1242,6 +1243,11 @@ Future<void> _confirmMarkDestroyed(
         label: 'DESTROY GOODS',
         title: 'Mark as Destroyed',
         icon: Icons.local_fire_department_rounded,
+        // ⚠️ The yard's navy header, like every other popup on these pages.
+        // The red still rides ON it -- the icon and the Confirm button --
+        // which is where a destructive accent belongs; making the whole
+        // header pink turned it into a different kind of dialog.
+        yard: true,
         headerAccentColor: ctx.colors.dangerRed,
         width: 480,
         actions: [
@@ -1292,16 +1298,21 @@ Future<void> _confirmMarkDestroyed(
                       Text(DateFormat('yyyy-MM-dd').format(pickedDate)),
                   trailing: OutlinedButton(
                     onPressed: () async {
-                      final d = await showDatePicker(
+                      // ⚠️ The app's own calendar, like every other date on
+                      // these pages -- gold, one tap, the same shape as the
+                      // dialog holding it. Material's stock picker put a
+                      // blue-and-white box with its own OK/Cancel in the
+                      // middle of a yard-styled popup.
+                      final d = await showAppDialog<DateTime>(
                         context: ctx,
-                        initialDate: pickedDate,
-                        firstDate: DateTime(2020),
-                        // ⚠️ TODAY, not a year out. This records when goods
-                        // WERE destroyed — an act that has already happened —
-                        // so a future date is not a date the officer might
-                        // mean, it is one they cannot mean. The picker used to
-                        // offer 365 days ahead and accept any of them.
-                        lastDate: DateTime.now(),
+                        builder: (_) => OneTapDatePicker(
+                          initialDate: pickedDate,
+                          // ⚠️ TODAY, not a year out. This records when goods
+                          // WERE destroyed — an act that has already
+                          // happened — so a future date is not a date the
+                          // officer might mean, it is one they cannot mean.
+                          lastDate: DateTime.now(),
+                        ),
                       );
                       if (d != null) {
                         setDlgState(() => pickedDate = d);
@@ -1421,14 +1432,33 @@ class _SaleFinancialsCell extends ConsumerWidget {
         for (final t in item.appliedTaxes) {
           taxSum += parseDbNum(t['amount']) ?? 0;
         }
+        // ⚠️ The same shape the Valuation cell beside it already uses, and
+        // for the same reason it was given one.
+        //
+        // Without MainAxisSize.min this Column takes the row's full height
+        // and then asks for more; without maxLines the amount wraps to two
+        // lines when it is long ("Rs 5533000.00", "Rs 265000000.00"), and
+        // the pair overflows a 48px row -- Flutter paints its black-and-
+        // yellow "BOTTOM OVERFLOWED BY 20 PIXELS" bar across the table,
+        // which is what the officer reported.
+        //
+        // Ellipsis rather than a smaller font: a truncated figure is
+        // obviously truncated, while a silently shrunk one reads as exact.
         return Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text('Rs ${item.soldPrice.toStringAsFixed(2)}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 12)),
             Text('Tax: Rs ${taxSum.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(fontSize: 10, color: context.colors.textMuted)),
           ],
         );
       },

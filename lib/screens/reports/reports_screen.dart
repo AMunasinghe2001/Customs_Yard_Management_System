@@ -2596,6 +2596,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'other', 'Other Goods', 'excel'),
                     ),
                     _buildReportCard(
+                      title: 'Perishable Goods',
+                      description:
+                          'Goods that spoil — held with no appeal window.',
+                      icon: Icons.eco_rounded,
+                      color: const Color(0xFFD84315),
+                      onView: () => _generateSourceForfeitedReport(
+                          'perishable', 'Perishable Goods', 'view'),
+                      onPdf: () => _generateSourceForfeitedReport(
+                          'perishable', 'Perishable Goods', 'pdf'),
+                      onExcel: () => _generateSourceForfeitedReport(
+                          'perishable', 'Perishable Goods', 'excel'),
+                    ),
+                    _buildReportCard(
                       title: 'Appeal Goods',
                       description:
                           'Goods under appeal, with the decision or hold.',
@@ -4159,7 +4172,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       key: label,
       title: label.toUpperCase(),
       fileBase: label.replaceAll(' ', '_'),
-      dateHeader: source == 'abandoned' ? 'Abandoned On' : 'Recorded On',
+      // ⚠️ Named for what the row IS. `forfeited_packages` holds every
+      // route into the appeal window, so "Forfeited On" would be wrong for
+      // most of them -- the same correction the details popup carries.
+      dateHeader: switch (source) {
+        'abandoned' => 'Abandoned On',
+        'detain' || 'detained' => 'Detained On',
+        _ => 'Recorded On',
+      },
       format: format,
       fetch: () => ref
           .read(forfeitedPackageServiceProvider)

@@ -37,6 +37,15 @@ class ConfirmDialog extends StatelessWidget {
   /// pass amber or the portal's own accent.
   final Color accent;
 
+  /// Draw it in the YARD's chrome — the navy gradient header the yard's own
+  /// forms use — rather than the directorate's lighter tint.
+  ///
+  /// ⚠️ It has to match the form it sits beside. Yard Administration opens
+  /// Edit Zone as a yard-styled dialog and then asked "Delete zone Y6?" in a
+  /// bare AlertDialog: two shapes on one screen, and the plainer of the two
+  /// was the one asking the officer to destroy something.
+  final bool yard;
+
   const ConfirmDialog({
     super.key,
     required this.label,
@@ -45,6 +54,7 @@ class ConfirmDialog extends StatelessWidget {
     required this.message,
     required this.confirmLabel,
     required this.accent,
+    this.yard = false,
   });
 
   /// Shows the dialog and resolves true only if the officer confirmed.
@@ -59,6 +69,7 @@ class ConfirmDialog extends StatelessWidget {
     required String message,
     required String confirmLabel,
     required Color accent,
+    bool yard = false,
   }) async {
     final ok = await showAppDialog<bool>(
       context: context,
@@ -69,6 +80,7 @@ class ConfirmDialog extends StatelessWidget {
         message: message,
         confirmLabel: confirmLabel,
         accent: accent,
+        yard: yard,
       ),
     );
     return ok == true;
@@ -80,6 +92,7 @@ class ConfirmDialog extends StatelessWidget {
       label: label,
       title: title,
       icon: icon,
+      yard: yard,
       headerAccentColor: accent,
       // Narrower than a form: this holds one sentence, and a 460px box around
       // it reads as though something is missing.

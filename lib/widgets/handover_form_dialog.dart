@@ -7,6 +7,8 @@ import '../core/theme.dart';
 import '../models/models.dart';
 import 'styled_form_dialog.dart';
 import '../widgets/app_dialog.dart';
+import 'one_tap_date_picker.dart';
+import 'app_dialog.dart';
 
 /// What the yard collects before it hands goods over.
 ///
@@ -155,6 +157,12 @@ class _HandoverFormDialogState extends ConsumerState<_HandoverFormDialog> {
       label: 'HAND-OVER',
       title: widget.title,
       icon: widget.icon,
+      // ⚠️ The YARD's navy header, like the SR Register Entry popup beside
+      // it. Passing only an accent left this on the directorate's light tint
+      // -- a cream box -- while the popup the officer had just closed was
+      // navy. The accent still rides ON the bar for the icon and the commit
+      // button; it is not what the header is made of.
+      yard: true,
       headerAccentColor: context.colors.primaryGold,
       width: 480,
       actions: [
@@ -256,13 +264,21 @@ class _HandoverFormDialogState extends ConsumerState<_HandoverFormDialog> {
                 subtitle: Text(DateFormat('yyyy-MM-dd').format(_date)),
                 trailing: OutlinedButton(
                   onPressed: () async {
-                    final d = await showDatePicker(
+                    // ⚠️ The app's OWN calendar, not Material's. Every
+                    // other date on these pages opens OneTapDatePicker --
+                    // gold, one tap to pick, the same shape as the dialog
+                    // it sits in -- while this one opened the stock
+                    // blue-and-white picker with its own OK/Cancel. Two
+                    // calendars in one product, and the odd one out was in
+                    // the middle of a hand-over.
+                    final d = await showAppDialog<DateTime>(
                       context: context,
-                      initialDate: _date,
-                      firstDate: DateTime(2020),
-                      // ⚠️ Not the future. Goods cannot have been collected
-                      // on a day that has not happened.
-                      lastDate: DateTime.now(),
+                      builder: (_) => OneTapDatePicker(
+                        initialDate: _date,
+                        // ⚠️ Not the future. Goods cannot have been
+                        // collected on a day that has not happened.
+                        lastDate: DateTime.now(),
+                      ),
                     );
                     if (d != null) setState(() => _date = d);
                   },
