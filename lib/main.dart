@@ -17,8 +17,10 @@ import 'core/holidays.dart';
 import 'core/idle_lock.dart';
 import 'widgets/offline_banner.dart';
 import 'widgets/idle_lock_overlay.dart';
+import 'widgets/update_banner.dart';
 import 'services/services.dart';
 import 'core/frame_watch.dart';
+import 'core/update_check.dart';
 
 void main() async {
   // Everything runs inside one guarded zone so that an uncaught ASYNC error
@@ -87,6 +89,16 @@ Future<void> _start() async {
 
   // Background auto-update check (Windows/macOS). Never throws.
   await initAutoUpdater();
+
+  // ⚠️ NOT awaited. This is an HTTPS call to GitHub, and on a branch PC with
+  // a slow or dead link it would hold the splash screen for its whole
+  // timeout before the officer could sign in. The banner appears whenever
+  // the answer arrives; until then there is simply nothing to show.
+  //
+  // fetchAvailableUpdate never throws, so no error can escape this.
+  unawaited(fetchAvailableUpdate().then((u) {
+    if (u != null) availableUpdate.value = u;
+  }));
 
   // ⚠️ Still fetched, though nothing reads it today.
   //
@@ -441,7 +453,13 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
       // link while unattended should say so when someone comes back to it.
       builder: (context, child) => IdleActivityDetector(
         child: OfflineBanner(
-          child: IdleLockOverlay(child: child ?? const SizedBox.shrink()),
+          // ⚠️ INSIDE the offline strip and OUTSIDE the lock, like the strip
+          // above it. Offline is the more urgent of the two and keeps the
+          // top; an update notice on a locked screen is harmless and means
+          // the officer sees it the moment they come back.
+          child: UpdateBanner(
+            child: IdleLockOverlay(child: child ?? const SizedBox.shrink()),
+          ),
         ),
       ),
       // Desktop scrolling. Flutter hides the scrollbar and disables

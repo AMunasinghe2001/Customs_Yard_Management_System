@@ -543,9 +543,9 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                     size: ColumnSize.S,
                                     fixedWidth: 110),
                                 const DataColumn2(
-                                    label: Text('Qty'),
+                                    label: Center(child: Text('No. of Goods')),
                                     size: ColumnSize.S,
-                                    fixedWidth: 70),
+                                    fixedWidth: 100),
                                 const DataColumn2(
                                     label: Text('Post Status Activity'),
                                     size: ColumnSize.M),

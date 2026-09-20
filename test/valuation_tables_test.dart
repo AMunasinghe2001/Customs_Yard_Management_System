@@ -96,7 +96,10 @@ void main() {
       // reads as a column that does not line up with its own title.
       expect(c, contains("Center(child: Text('Disposition'))"));
       expect(c, contains('Center(child: _DispoChip('));
-      expect(c, contains("Center(child: Text('Qty'))"));
+      // ⚠️ "No. of Goods", not "Qty". The column was renamed across all 19
+      // tables to match the Warehouses page, which had always spelled it out
+      // -- so the app now says one thing rather than two.
+      expect(c, contains("Center(child: Text('No. of Goods'))"));
     });
   });
 

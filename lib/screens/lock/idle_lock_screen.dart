@@ -138,8 +138,19 @@ class _IdleLockScreenState extends State<IdleLockScreen>
                           _glow(
                             // Counter-rotating and offset, so the two never
                             // overlap the same way twice.
-                            alignment: Alignment(-0.6 * math.cos(t * 0.7 + 1.2),
-                                -0.5 * math.sin(t * 0.7 + 1.2)),
+                            //
+                            // ⚠️ The multiplier must be a WHOLE number. This
+                            // was `t * 0.7`: when _drift wrapped from 1 back
+                            // to 0 its phase was 0.7 x 2pi, not a multiple of
+                            // 2pi, so the glow teleported across the screen
+                            // once every 24 seconds — the "breaks and starts
+                            // again" in the background. At x2 the phase lands
+                            // exactly on 2 full turns as the controller
+                            // wraps, so the loop is seamless; the +1.2 offset
+                            // and the opposite sign still keep the two glows
+                            // from ever repeating the same overlap.
+                            alignment: Alignment(-0.6 * math.cos(t * 2 + 1.2),
+                                -0.5 * math.sin(t * 2 + 1.2)),
                             color: const Color(0xFF2B3A8F),
                             size: 720,
                             opacity: 0.32,
@@ -426,8 +437,24 @@ class _SealHaloPainter extends CustomPainter {
     //
     // Two BROKEN rings — a ring with a piece missing — turning in opposite
     // directions at different speeds.
-    _arc(canvas, centre, 146 + 6 * breath, orbit * 2 * math.pi, 0.34);
-    _arc(canvas, centre, 178 - 5 * breath, -orbit * 2 * math.pi * 0.6, 0.18);
+    //
+    // ⚠️ FIXED radii. These used to breathe with the seal (146 + 6 * breath,
+    // 178 - 5 * breath), so the two rings grew and shrank on a 7-second
+    // cycle while also turning. Two motions at once read as wobble rather
+    // than rotation, and it fought the one thing that is supposed to pulse.
+    // The seal alone breathes now; the rings only turn.
+    //
+    // ⚠️ The OUTER ring's multiplier must be a whole number too, and 0.6 is
+    // not. `_orbit` runs 0 -> 1 and repeats; at x0.6 the outer arc had turned
+    // 0.6 of a revolution when the controller wrapped, so it SNAPPED back to
+    // its start — the outer ring "not completing its tour and going in
+    // pieces", while the inner one (x1) looped cleanly and looked fine.
+    //
+    // x2 the other way: twice round per cycle, opposite direction, still
+    // never in step with the inner ring, and it lands exactly on a whole
+    // number of turns as the controller wraps.
+    _arc(canvas, centre, 146, orbit * 2 * math.pi, 0.34);
+    _arc(canvas, centre, 178, -orbit * 2 * math.pi * 2, 0.18);
   }
 
   /// One arc — a ring with a piece missing — turning without ever stopping.
@@ -444,6 +471,20 @@ class _SealHaloPainter extends CustomPainter {
   /// along it — so what the eye follows is the SHAPE going round, which is
   /// continuous. It fades only at the two ends, over a short stretch, so the
   /// ends are soft rather than cut square.
+  ///
+  /// ⚠️ THE REMAINING BREAK, and why it is not the gap either: a
+  /// [SweepGradient] whose `stops` end before 1.0 does not stop there — it
+  /// holds its last colour around the rest of the circle, and the jump from
+  /// that held colour back to `stops[0]` is a hard SEAM at the gradient's own
+  /// zero angle. `GradientRotation(angle)` carried that seam around with the
+  /// arc, so once per revolution it crossed the drawn part and the ring
+  /// visibly snapped — "it goes a distance, breaks, and starts again
+  /// somewhere else".
+  ///
+  /// The fix is to describe the WHOLE circle: the stops now run to 1.0, with
+  /// the unlit remainder explicitly transparent at both the start and the
+  /// end. There is no held colour and no discontinuity anywhere on the
+  /// sweep, so the seam has nothing to show. The shape turns; nothing jumps.
   void _arc(
       Canvas canvas, Offset centre, double radius, double angle, double alpha) {
     final rect = Rect.fromCircle(center: centre, radius: radius);
@@ -457,16 +498,17 @@ class _SealHaloPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round
       ..shader = SweepGradient(
-        // Soft at both ends, full through the middle. The stops are expressed
-        // as a fraction of the DRAWN arc, not of the whole circle, so the
-        // fade stays the same visual length whatever `sweep` is.
+        // Soft at both ends, full through the middle, and TRANSPARENT the
+        // whole way round the gap — so the first and last stop agree and the
+        // gradient closes on itself seamlessly.
         colors: [
           color.withOpacity(0),
           color.withOpacity(alpha),
           color.withOpacity(alpha),
           color.withOpacity(0),
+          color.withOpacity(0),
         ],
-        stops: [0.0, frac * 0.18, frac * 0.82, frac],
+        stops: [0.0, frac * 0.18, frac * 0.82, frac, 1.0],
         transform: GradientRotation(angle),
       ).createShader(rect);
 

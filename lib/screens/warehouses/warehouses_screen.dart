@@ -514,6 +514,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                         columnSpacing: 10,
                         horizontalMargin: 12,
                         fixedTopRows: 1,
+                        dataRowHeight: 64,
                         empty: EmptyTableState(
                           icon: Icons.warehouse_rounded,
                           message:
@@ -531,7 +532,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               size: ColumnSize.S,
                               fixedWidth: 110),
                           DataColumn2(
-                              label: Text('No. of Goods'),
+                              label: Center(child: Text('No. of Goods')),
                               size: ColumnSize.S,
                               fixedWidth: 100),
                           DataColumn2(

@@ -578,6 +578,13 @@ class _ValuationRequestCard extends ConsumerWidget {
                   columnSpacing: 12,
                   horizontalMargin: 14,
                   fixedTopRows: 1,
+                  // ⚠️ Its fixed columns now total 866px. data_table_2
+                  // ASSERTS when the fixed widths exceed the viewport rather
+                  // than clipping or scrolling, so on a narrower window this
+                  // table would throw instead of drawing. Every other table
+                  // this wide already declares a minWidth; this one did not,
+                  // because at the old "Qty" width it still fitted.
+                  minWidth: 940,
                   empty: const EmptyTableState(
                       message: 'No packages in this request'),
                   // ⚠️ IDENTITY, then PLACE, then NUMBERS, then STATE, then
@@ -602,9 +609,9 @@ class _ValuationRequestCard extends ConsumerWidget {
                     // before pricing something they may want to inspect.
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Center(child: Text('Qty')),
+                        label: Center(child: Text('No. of Goods')),
                         size: ColumnSize.S,
-                        fixedWidth: 64),
+                        fixedWidth: 100),
                     DataColumn2(
                         label: Center(child: Text('Value')),
                         size: ColumnSize.S,
@@ -1463,9 +1470,9 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                         DataColumn2(
                             label: Text('Location'), size: ColumnSize.M),
                         DataColumn2(
-                            label: Center(child: Text('Qty')),
+                            label: Center(child: Text('No. of Goods')),
                             size: ColumnSize.S,
-                            fixedWidth: 64),
+                            fixedWidth: 100),
                         DataColumn2(
                             label: Center(child: Text('Value')),
                             size: ColumnSize.S,

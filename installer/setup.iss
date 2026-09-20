@@ -15,7 +15,7 @@
 ; what makes Windows treat a new setup as an UPGRADE of the installed copy
 ; rather than a second product: the officer runs it over the old one and
 ; keeps their shortcuts, their install folder and their .env.
-#define AppVersion     "1.1.0"
+#define AppVersion     "1.2.0"
 #define AppPublisher   "Sri Lanka Customs Department"
 #define AppExeName     "cus_yard_management.exe"
 #define BuildDir       "..\build\windows\x64\runner\Release"
@@ -81,6 +81,21 @@ Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 ; officer to place it beside the exe after installing.
 Source: "DEPLOYMENT.txt"; DestDir: "{app}"; Flags: ignoreversion
 
+; ⚠️ TEMPLATES, deliberately named .env.txt and put in a SUBFOLDER.
+;
+; They carry no password and no real hostname, so nothing secret ships. Two
+; of them because one installer serves both cases: an office wired to the
+; local server, and one reaching the cloud. The operator copies the right one
+; up a level, renames it to .env and fills in the two blanks.
+;
+; ⚠️ NOT dropped straight into {app} as ".env". `onlyifdoesntexist` would
+; look like the safe way to do that, but a template placed there on a fresh
+; install would leave the app with a file full of placeholders instead of no
+; file at all -- and "cannot reach the database" while a .env plainly exists
+; is a far more confusing fault than the same message with none.
+Source: "env-templates\local-server.env.txt"; DestDir: "{app}\env-templates"; Flags: ignoreversion
+Source: "env-templates\cloud-server.env.txt"; DestDir: "{app}\env-templates"; Flags: ignoreversion
+
 [Icons]
 Name: "{group}\{#AppShortName}"; Filename: "{app}\{#AppExeName}"
 Name: "{group}\Uninstall {#AppShortName}"; Filename: "{uninstallexe}"
@@ -96,3 +111,6 @@ Filename: "{app}\{#AppExeName}"; Description: "Start {#AppShortName}"; Flags: no
 ; Inno Setup itself.
 Type: files; Name: "{app}\.env"
 Type: files; Name: "{app}\frame_watch.log"
+; The templates themselves came from [Files] and Inno Setup removes them, but
+; the folder holding them is not cleaned up on its own once they are gone.
+Type: dirifempty; Name: "{app}\env-templates"

@@ -80,6 +80,9 @@ class DisplacedBadge extends StatelessWidget {
 
 /// The same fact as a full line, for the details popup where there is room to
 /// say it properly.
+///
+/// Shows a clear "from → to" flow so the reader can see at a glance where
+/// these goods were meant to go and where they actually ended up.
 class DisplacedNotice extends StatelessWidget {
   const DisplacedNotice({super.key, required this.entry, this.warehouses});
 
@@ -94,57 +97,159 @@ class DisplacedNotice extends StatelessWidget {
     if (e == null || !e.movedForSpace) return const SizedBox.shrink();
     final accent = displacedAccent(context);
 
-    final named = e.intendedWarehouseName ??
+    // --- Intended (source) location ---
+    final intendedName = e.intendedWarehouseName ??
         warehouses
             ?.where((w) => w.id == e.intendedWarehouseId)
             .firstOrNull
             ?.name;
-    final home = [
-      if ((named ?? '').trim().isNotEmpty) named!.trim(),
-      if ((e.intendedZone ?? '').trim().isNotEmpty)
-        'Zone ${e.intendedZone!.trim()}',
+    final fromWarehouse = (intendedName ?? '').trim();
+    final fromZone = (e.intendedZone ?? '').trim();
+    final fromLabel = [
+      if (fromWarehouse.isNotEmpty) fromWarehouse,
+      if (fromZone.isNotEmpty) 'Zone $fromZone',
+    ].join(' · ');
+
+    // --- Actual (current) location ---
+    final toWarehouse = (e.warehouseName).trim();
+    final toZone = (e.zone ?? '').trim();
+    final toLabel = [
+      if (toWarehouse.isNotEmpty) toWarehouse,
+      if (toZone.isNotEmpty) 'Zone $toZone',
     ].join(' · ');
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: accent.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: accent.withOpacity(0.35)),
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(Icons.swap_horiz_rounded, size: 15, color: accent),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Moved here for space',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: accent)),
-            const SizedBox(height: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Title row
+          Row(children: [
+            Icon(Icons.swap_horiz_rounded, size: 16, color: accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Relocated — No Space',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: accent)),
+            ),
+          ]),
+          const SizedBox(height: 10),
+
+          // From → To flow
+          if (fromLabel.isNotEmpty || toLabel.isNotEmpty)
+            Row(
+              children: [
+                // FROM column
+                Expanded(
+                  child: _LocationCard(
+                    label: 'Intended Location',
+                    location: fromLabel.isEmpty ? 'Unknown' : fromLabel,
+                    icon: Icons.location_on_outlined,
+                    color: Colors.orange.shade700,
+                    bgColor: Colors.orange.withOpacity(0.08),
+                    borderColor: Colors.orange.withOpacity(0.25),
+                  ),
+                ),
+                // Arrow
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(Icons.arrow_forward_rounded,
+                      size: 18, color: accent),
+                ),
+                // TO column
+                Expanded(
+                  child: _LocationCard(
+                    label: 'Current Location',
+                    location: toLabel.isEmpty ? 'Unknown' : toLabel,
+                    icon: Icons.warehouse_rounded,
+                    color: accent,
+                    bgColor: accent.withOpacity(0.08),
+                    borderColor: accent.withOpacity(0.25),
+                  ),
+                ),
+              ],
+            ),
+
+          if (fromLabel.isEmpty && toLabel.isEmpty)
             Text(
-                home.isEmpty
-                    ? 'These goods were admitted here because the location '
-                        'their category points at was full.'
-                    : 'These goods belong in $home. It was full when they '
-                        'arrived, so they were admitted here instead.',
+                'These goods were admitted here because the location '
+                'their category points at was full.',
                 style: TextStyle(
                     fontSize: 11.5,
                     height: 1.35,
                     color: context.colors.textSecondary)),
-            if ((e.movedReason ?? '').trim().isNotEmpty) ...[
-              const SizedBox(height: 3),
-              Text(e.movedReason!.trim(),
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontStyle: FontStyle.italic,
-                      color: context.colors.textMuted)),
-            ],
+
+          if ((e.movedReason ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(e.movedReason!.trim(),
+                style: TextStyle(
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
+                    color: context.colors.textMuted)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A small location card for the from/to flow.
+class _LocationCard extends StatelessWidget {
+  final String label;
+  final String location;
+  final IconData icon;
+  final Color color;
+  final Color bgColor;
+  final Color borderColor;
+
+  const _LocationCard({
+    required this.label,
+    required this.location,
+    required this.icon,
+    required this.color,
+    required this.bgColor,
+    required this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(children: [
+            Icon(icon, size: 11, color: color),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    color: color.withOpacity(0.7))),
           ]),
-        ),
-      ]),
+          const SizedBox(height: 3),
+          Text(location,
+              style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: color)),
+        ],
+      ),
     );
   }
 }

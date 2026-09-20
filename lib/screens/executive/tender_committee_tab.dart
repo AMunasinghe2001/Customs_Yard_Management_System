@@ -373,9 +373,9 @@ class TenderCommitteeTab extends ConsumerWidget {
                             label: Center(child: Text('Source')),
                             size: ColumnSize.S),
                         DataColumn2(
-                            label: Text('Qty'),
+                            label: Center(child: Text('No. of Goods')),
                             size: ColumnSize.S,
-                            fixedWidth: 48),
+                            fixedWidth: 100),
                         DataColumn2(
                             label: Text('Location'), size: ColumnSize.M),
                         DataColumn2(
@@ -418,7 +418,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                               overflow: TextOverflow.ellipsis)),
                           DataCell(Center(
                               child: _CommitteeSourceChip(source: f.source))),
-                          DataCell(TooltipText('${qty ?? '—'}')),
+                          DataCell(Center(child: TooltipText('${qty ?? '—'}'))),
                           DataCell(TooltipText(
                               _committeeLocation(pkg, f.itemId, f.yard),
                               overflow: TextOverflow.ellipsis,

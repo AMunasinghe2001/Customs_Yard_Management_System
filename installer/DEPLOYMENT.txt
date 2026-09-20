@@ -19,19 +19,36 @@ Create a file named exactly
 
     .env
 
-in the folder this app was installed into — beside cus_yard_management.exe.
+in the folder this app was installed into -- beside cus_yard_management.exe.
 By default that is:
 
     C:\Program Files\SL Customs\SR Management System\
 
-Put these lines in it, with your own office's values:
+THE EASY WAY -- a template is already there.
 
-    PG_HOST=10.10.71.15
-    PG_PORT=5432
-    PG_DATABASE=Customs_SR_DB
-    PG_USER=yard_app
-    PG_PASSWORD=<the password the ICT Directorate gave you>
-    PG_SSL=true
+Open the  env-templates  folder inside that same install folder. It holds two
+ready-made files:
+
+    local-server.env.txt   an office wired to the local/office server
+    cloud-server.env.txt   an office reaching the cloud server
+
+Copy the one you need UP ONE LEVEL (beside cus_yard_management.exe), rename it
+to exactly
+
+    .env
+
+and fill in the two blanks it marks -- the server address and the password.
+
+!! Windows hides known file extensions, so "renaming" in Explorer can quietly
+!! leave you with ".env.txt". The app then still says it cannot reach the
+!! database, because to it the file does not exist. Either switch on
+!!     View -> File name extensions
+!! or rename it from a Command Prompt:
+!!     ren local-server.env.txt .env
+
+!! Saving into Program Files needs administrator rights. If Notepad refuses,
+!! open Notepad as administrator, or save the file to the Desktop and move it
+!! in.
 
 Then start the app from the Start Menu or the desktop shortcut.
 

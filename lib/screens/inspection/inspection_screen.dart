@@ -1594,7 +1594,33 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
         _itemWarehouseSelections[i] = cat?.targetWarehouseId;
         _itemZoneSelections[i] = cat?.targetZone;
       }
+      _loadExistingEntriesIfAny();
     }
+  }
+
+  Future<void> _loadExistingEntriesIfAny() async {
+    final pkgId = widget.tempPackageData?.id;
+    if (pkgId == null || pkgId.isEmpty) return;
+    try {
+      final existingEntries =
+          await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+      final pkgEntries =
+          existingEntries.where((e) => e.packageId == pkgId).toList();
+      if (pkgEntries.isEmpty || !mounted) return;
+
+      setState(() {
+        for (int i = 0; i < (widget.tempPackageItems?.length ?? 0); i++) {
+          final item = widget.tempPackageItems![i];
+          final entry = pkgEntries
+              .where((e) => e.packageItemId == item.id)
+              .firstOrNull;
+          if (entry != null) {
+            _itemWarehouseSelections[i] = entry.warehouseId;
+            _itemZoneSelections[i] = entry.zone;
+          }
+        }
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1843,7 +1869,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       final cats = ref.read(packageCategoriesProvider).value;
       final warehouseService = ref.read(warehouseServiceProvider);
 
-      // Get existing entries to avoid duplicates on retry
+      // Get existing entries to update or avoid duplicates on retry
       final existingEntries = await warehouseService.getAllWarehouseEntries();
       final pkgExistingEntries =
           existingEntries.where((e) => e.packageId == saved.id).toList();
@@ -1861,35 +1887,59 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                 ? saved.items[i]
                 : (saved.items.isNotEmpty ? saved.items.first : tempItem));
 
-        // CHECK: If this item already has a warehouse entry, skip it to avoid duplicates
-        final alreadySent =
-            pkgExistingEntries.any((e) => e.packageItemId == item.id);
-        if (alreadySent) continue;
-
         final warehouseId = _itemWarehouseSelections[i];
         final cat = cats?.where((c) => c.name == tempItem.category).firstOrNull;
         final selectedZone = _itemZoneSelections[i] ?? cat?.targetZone;
-
         final moved = _displaced[i];
-        await warehouseService.addEntry(
-          packageId: saved.id,
-          packageItemId:
-              item.id.isNotEmpty ? item.id : tempItem.id, // Fallback safely
-          warehouseId: warehouseId!,
-          zone: selectedZone,
-          holdReason: (tempItem.reasons != null && tempItem.reasons!.isNotEmpty)
-              ? tempItem.reasons!
-              : 'System Assigned',
-          itemCount: tempItem.quantity,
-          admittedAt: saved.entryDate,
-          // Only when this item was actually displaced; the rest are ordinary
-          // placements and must not be flagged.
-          movedForSpace: moved != null,
-          intendedWarehouseId: moved?.warehouseId,
-          intendedZone: moved?.zone,
-          movedReason: moved?.reason,
-        );
+
+        final existingEntry = pkgExistingEntries
+            .where((e) => e.packageItemId == item.id)
+            .firstOrNull;
+
+        if (existingEntry != null) {
+          // UPDATE existing warehouse entry
+          await warehouseService.updateEntry(
+            entryId: existingEntry.id,
+            warehouseId: warehouseId!,
+            zone: selectedZone,
+            holdReason:
+                (tempItem.reasons != null && tempItem.reasons!.isNotEmpty)
+                    ? tempItem.reasons!
+                    : 'System Assigned',
+            itemCount: tempItem.quantity,
+            admittedAt: saved.entryDate,
+            movedForSpace: moved != null,
+            intendedWarehouseId: moved?.warehouseId,
+            intendedZone: moved?.zone,
+            movedReason: moved?.reason,
+          );
+        } else {
+          // INSERT new warehouse entry
+          await warehouseService.addEntry(
+            packageId: saved.id,
+            packageItemId:
+                item.id.isNotEmpty ? item.id : tempItem.id, // Fallback safely
+            warehouseId: warehouseId!,
+            zone: selectedZone,
+            holdReason:
+                (tempItem.reasons != null && tempItem.reasons!.isNotEmpty)
+                    ? tempItem.reasons!
+                    : 'System Assigned',
+            itemCount: tempItem.quantity,
+            admittedAt: saved.entryDate,
+            movedForSpace: moved != null,
+            intendedWarehouseId: moved?.warehouseId,
+            intendedZone: moved?.zone,
+            movedReason: moved?.reason,
+          );
+        }
       }
+
+      // Trigger refresh so warehouse entries, packages, and zone capacities immediately update across the app
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      ref.invalidate(zoneOccupancyProvider);
+      ref.invalidate(warehousesProvider);
+      ref.invalidate(warehouseZonesProvider);
 
       if (mounted) {
         setState(() => _warehouseSent = true);

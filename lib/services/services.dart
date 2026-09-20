@@ -2731,6 +2731,46 @@ class WarehouseService {
     }
   }
 
+  Future<void> updateEntry({
+    required String entryId,
+    required String warehouseId,
+    String? zone,
+    required String holdReason,
+    required int itemCount,
+    DateTime? admittedAt,
+    bool movedForSpace = false,
+    String? intendedWarehouseId,
+    String? intendedZone,
+    String? movedReason,
+  }) async {
+    await supabase.from('warehouse_entries').update({
+      'warehouse_id': warehouseId,
+      'zone': zone,
+      'hold_reason': holdReason,
+      'item_count': itemCount,
+      if (admittedAt != null) 'admitted_at': admittedAt.toIso8601String(),
+      'moved_for_space': movedForSpace,
+      'intended_warehouse_id': movedForSpace ? intendedWarehouseId : null,
+      'intended_zone': movedForSpace ? intendedZone : null,
+      'moved_reason': movedForSpace ? movedReason : null,
+    }).eq('id', entryId);
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Updated warehouse entry',
+        entityType: 'warehouse_entry',
+        entityId: entryId,
+        details: {
+          'warehouse_id': warehouseId,
+          'zone': zone,
+          'moved_for_space': movedForSpace,
+        },
+      );
+    }
+  }
+
   Future<void> markAsReturned(String entryId,
       {String? returnNotes,
       int? returnQty,

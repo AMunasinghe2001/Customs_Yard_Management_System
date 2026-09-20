@@ -1402,9 +1402,9 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                             DataColumn2(
                                 label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Qty'),
+                                label: Center(child: Text('No. of Goods')),
                                 size: ColumnSize.S,
-                                fixedWidth: 60),
+                                fixedWidth: 100),
                             DataColumn2(
                                 label: Text('Sold Date'), size: ColumnSize.M),
                             DataColumn2(
@@ -1453,8 +1453,9 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                             fontWeight: FontWeight.w600))),
                                     DataCell(TooltipText(r.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(
-                                        TooltipText('${r.entry.itemCount}')),
+                                    DataCell(Center(
+                                        child: TooltipText(
+                                            '${r.entry.itemCount}'))),
                                     DataCell(TooltipText(
                                         r.entry.returnedAt != null
                                             ? DateFormat('yyyy-MM-dd')
@@ -1872,9 +1873,9 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                             DataColumn2(
                                 label: Text('Location'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Center(child: Text('Qty')),
+                                label: Center(child: Text('No. of Goods')),
                                 size: ColumnSize.S,
-                                fixedWidth: 64),
+                                fixedWidth: 100),
                             // ⚠️ The day destruction was DECIDED, not the
                             // day it was carried out. It is the
                             // [FINAL:DESTROYED] tag's own date -- the
@@ -2803,9 +2804,9 @@ class _RequestCard extends ConsumerWidget {
                         fixedWidth: 106),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Center(child: Text('Qty')),
+                        label: Center(child: Text('No. of Goods')),
                         size: ColumnSize.S,
-                        fixedWidth: 64),
+                        fixedWidth: 100),
                     DataColumn2(
                         label: Center(child: Text('Source')),
                         size: ColumnSize.S,
@@ -3150,7 +3151,13 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                     columnSpacing: 12,
                     horizontalMargin: 16,
                     fixedTopRows: 1,
-                    minWidth: 880,
+                    // ⚠️ 880 no longer covers it. The fixed columns come to
+                    // 875px and the two 16px margins add 32 more, so the
+                    // table needed more room than its own minWidth allowed
+                    // and data_table_2 asserts on that rather than
+                    // scrolling. Widening the count column by 36px is what
+                    // pushed it over.
+                    minWidth: 940,
                     headingRowColor: _headingColor(context),
                     columns: const [
                       // ⚠️ The SAME order every other table uses: identity,
@@ -3172,9 +3179,9 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                           fixedWidth: 106),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
                       DataColumn2(
-                          label: Center(child: Text('Qty')),
+                          label: Center(child: Text('No. of Goods')),
                           size: ColumnSize.S,
-                          fixedWidth: 64),
+                          fixedWidth: 100),
                       DataColumn2(
                           label: Center(child: Text('Source')),
                           size: ColumnSize.S,
@@ -3999,9 +4006,9 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                         fixedWidth: 96),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Center(child: Text('Qty')),
+                        label: Center(child: Text('No. of Goods')),
                         size: ColumnSize.S,
-                        fixedWidth: 56),
+                        fixedWidth: 100),
                     DataColumn2(
                         label: Center(child: Text('Source')),
                         size: ColumnSize.S,
@@ -7115,9 +7122,9 @@ class DestructionCard extends ConsumerWidget {
                         fixedWidth: 106),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Center(child: Text('Qty')),
+                        label: Center(child: Text('No. of Goods')),
                         size: ColumnSize.S,
-                        fixedWidth: 56),
+                        fixedWidth: 100),
                     DataColumn2(
                         label: Center(child: Text('Source')),
                         size: ColumnSize.S,

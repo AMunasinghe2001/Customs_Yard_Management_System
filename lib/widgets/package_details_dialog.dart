@@ -244,14 +244,13 @@ class TenderHistorySection extends ConsumerWidget {
     // section appeared visibly later than the rest of the dialog.
     final mine =
         ref.watch(tenderRoundsForPackageProvider(forfeited.id)).valueOrNull ??
-            const <
-                ({
-                  String id,
-                  DateTime createdAt,
-                  bool hasRun,
-                  bool sold,
-                  double? soldPrice
-                })>[];
+            const <({
+              String id,
+              DateTime createdAt,
+              bool hasRun,
+              bool sold,
+              double? soldPrice
+            })>[];
 
     // Any round that has a valuation or bids but no matching sale row still
     // deserves a line, so collect those ids too.
@@ -797,7 +796,8 @@ class _FinalOutcomeTile extends StatelessWidget {
                 running
                     ? Icons.storefront_rounded
                     : (sold != null ? Icons.sell_rounded : _icon),
-                size: 16, color: tint),
+                size: 16,
+                color: tint),
             const Gap(8),
             Text('FINAL OUTCOME',
                 style: TextStyle(
@@ -811,13 +811,11 @@ class _FinalOutcomeTile extends StatelessWidget {
                     ? 'At tender'
                     : sold != null
                         ? 'Sold'
-                    : decided
-                        ? unsoldProposalLabel(proposal!.proposal)
-                        : 'Awaiting Top Management',
+                        : decided
+                            ? unsoldProposalLabel(proposal!.proposal)
+                            : 'Awaiting Top Management',
                 style: TextStyle(
-                    color: tint,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800)),
+                    color: tint, fontSize: 12.5, fontWeight: FontWeight.w800)),
           ]),
           if (sold != null) ...[
             const Gap(6),
@@ -858,8 +856,8 @@ class _FinalOutcomeTile extends StatelessWidget {
             Text(
                 'This package is in a tender that has not closed yet. '
                 'Its outcome is decided when bidding ends.',
-                style: TextStyle(
-                    color: context.colors.textMuted, fontSize: 11.5)),
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
           ] else ...[
             const Gap(6),
             // ⚠️ "Every tender has been exhausted" describes a package
@@ -874,8 +872,8 @@ class _FinalOutcomeTile extends StatelessWidget {
                         'final decision -- there is no re-tender.'
                     : 'Every tender has been exhausted. The package is with '
                         'Top Management for a final decision.',
-                style: TextStyle(
-                    color: context.colors.textMuted, fontSize: 11.5)),
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
           ],
         ],
       ),
@@ -926,9 +924,8 @@ class DeliveryStatusBanner extends StatelessWidget {
     // ⚠️ GREEN when gone, AMBER while waiting -- never red. Amber is the
     // colour this app uses for work outstanding, and the delivery pill on
     // every table beside this popup already uses exactly these two.
-    final tint = delivered
-        ? context.colors.successGreen
-        : context.colors.warningAmber;
+    final tint =
+        delivered ? context.colors.successGreen : context.colors.warningAmber;
     final money = NumberFormat('#,##0.00');
     final d = DateFormat('dd MMM yyyy');
 
@@ -1018,8 +1015,7 @@ class DeliveryStatusBanner extends StatelessWidget {
 
 /// A small icon+text tag, for facts that ride along with a banner.
 class _MiniTag extends StatelessWidget {
-  const _MiniTag(
-      {required this.icon, required this.label, required this.tint});
+  const _MiniTag({required this.icon, required this.label, required this.tint});
 
   final IconData icon;
   final String label;
@@ -2151,10 +2147,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         : context.colors.accentLightBlue;
     final appealDate =
         appealIsHold ? widget.appealHeldAt : widget.appealDecidedAt;
-    final appealNote = (appealIsHold
-            ? widget.appealHoldNote
-            : widget.appealDecisionNote)
-        ?.trim();
+    final appealNote =
+        (appealIsHold ? widget.appealHoldNote : widget.appealDecisionNote)
+            ?.trim();
     // ⚠️ NOT "Unknown Officer". Most of these entries were bulk-loaded when
     // the register was migrated, so no officer was ever recorded against them
     // -- there is nobody to name, and nothing has gone wrong. "Unknown"
@@ -3977,6 +3972,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                             _ItemStorageSection(
                                               package: p,
                                               item: item,
+                                              highlightEntry:
+                                                  widget.highlightEntry,
                                             ),
                                           if (widget.tenderHistoryFor == null)
                                             _ItemLifecycleSection(
@@ -4484,8 +4481,6 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
   }
 }
 
-
-
 bool _statusIsDestruction(String? status) {
   final st = (status ?? '').toLowerCase();
   return st == 'destroyed' ||
@@ -4558,8 +4553,7 @@ class _AppealHistorySection extends StatelessWidget {
     final raw = itemId == null
         ? null
         : f.itemAppealDecisions[itemId] as Map<String, dynamic>?;
-    final decision =
-        (raw?['decision'] as String?) ?? f.appealDecision;
+    final decision = (raw?['decision'] as String?) ?? f.appealDecision;
     final note = (raw?['note'] as String?) ?? f.appealDecisionNote;
     final decidedAt = raw?['decided_at'] != null
         ? DateTime.tryParse(raw!['decided_at'].toString())
@@ -4654,9 +4648,8 @@ class _AppealHistorySection extends StatelessWidget {
             _DetailItem(
               icon: Icons.pan_tool_rounded,
               label: 'Hold placed on',
-              value: f.appealHeldAt != null
-                  ? date.format(f.appealHeldAt!)
-                  : '—',
+              value:
+                  f.appealHeldAt != null ? date.format(f.appealHeldAt!) : '—',
             ),
             if ((f.appealHoldNote ?? '').trim().isNotEmpty) ...[
               const Gap(12),
@@ -4685,9 +4678,7 @@ class _AppealHistorySection extends StatelessWidget {
                   child: _DetailItem(
                     icon: Icons.event_available_rounded,
                     label: 'Decided on',
-                    value: decidedAt != null
-                        ? date.format(decidedAt)
-                        : '—',
+                    value: decidedAt != null ? date.format(decidedAt) : '—',
                   ),
                 ),
               ],
@@ -4722,8 +4713,11 @@ class _DisposalExpenseBreakdown extends StatelessWidget {
       // Shown only when there IS one, so a non-destruction SR does not carry
       // an empty destruction line.
       if (sr.destructionExpense > 0)
-        ('Destruction', sr.destructionExpense,
-            Icons.local_fire_department_rounded),
+        (
+          'Destruction',
+          sr.destructionExpense,
+          Icons.local_fire_department_rounded
+        ),
     ].where((r) => r.$2 > 0).toList();
 
     return _DetailSection(
@@ -5188,20 +5182,60 @@ class _StatusBadge extends StatelessWidget {
 class _ItemStorageSection extends ConsumerWidget {
   final PackageModel package;
   final PackageItem item;
+  final WarehouseEntryModel? highlightEntry;
 
-  const _ItemStorageSection({required this.package, required this.item});
+  const _ItemStorageSection({
+    required this.package,
+    required this.item,
+    this.highlightEntry,
+  });
 
   static String fmtDate(DateTime d) => DateFormat('dd MMM yyyy').format(d);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Entries belonging to THIS item. An entry with no package_item_id is a
-    // whole-package admission from before items were tracked separately, so
-    // it counts for every item rather than disappearing from all of them.
-    final entries = package.warehouseEntries
-        .where((e) => e.packageItemId == null || e.packageItemId == item.id)
-        .toList()
-      ..sort((a, b) => a.admittedAt.compareTo(b.admittedAt));
+    // Entries belonging to THIS item. Watch live packageDataProvider so
+    // warehouse entries and displacements update dynamically.
+    final freshPkg = ref.watch(packageDataProvider(package.id)).valueOrNull ??
+        ref.watch(packageByIdProvider(package.id)).valueOrNull ??
+        package;
+    final allEntries = freshPkg.warehouseEntries.isNotEmpty
+        ? freshPkg.warehouseEntries
+        : package.warehouseEntries;
+
+    final entries = allEntries.where((e) {
+      if (e.packageItemId == item.id || e.packageItemId == null) return true;
+      if (freshPkg.items.length == 1 || package.items.length == 1) return true;
+      return false;
+    }).toList();
+
+    if (highlightEntry != null &&
+        (highlightEntry!.packageId == package.id ||
+            highlightEntry!.packageId == freshPkg.id)) {
+      if (highlightEntry!.packageItemId == null ||
+          highlightEntry!.packageItemId == item.id ||
+          freshPkg.items.length <= 1 ||
+          package.items.length <= 1) {
+        final existingIdx =
+            entries.indexWhere((e) => e.id == highlightEntry!.id);
+        if (existingIdx != -1) {
+          entries[existingIdx] = highlightEntry!;
+        } else {
+          entries.add(highlightEntry!);
+        }
+      }
+    }
+    entries.sort((a, b) => a.admittedAt.compareTo(b.admittedAt));
+
+    // Put the entry that opened the popup first in the reader's view. The
+    // movement note is important enough to see without opening each history
+    // row, especially when an SR has more than one warehouse admission.
+    WarehouseEntryModel? displacedEntry;
+    if (highlightEntry?.movedForSpace == true) {
+      displacedEntry =
+          entries.where((e) => e.id == highlightEntry!.id).firstOrNull;
+    }
+    displacedEntry ??= entries.where((e) => e.movedForSpace).firstOrNull;
 
     final isPerishable = item.nature == kNaturePerishable;
     if (entries.isEmpty && !isPerishable) return const SizedBox.shrink();
@@ -5329,6 +5363,11 @@ class _ItemStorageSection extends ConsumerWidget {
               style: material.TextStyle(
                   fontSize: 10.5, color: context.colors.textMuted),
             ),
+            if (displacedEntry != null)
+              DisplacedNotice(
+                entry: displacedEntry,
+                warehouses: ref.watch(warehousesProvider).valueOrNull,
+              ),
             const Gap(10),
             if (entries.isEmpty && isPerishable) ...[
               material.Container(
@@ -5398,6 +5437,7 @@ class _ItemStorageSection extends ConsumerWidget {
                 // admission was made under a DIFFERENT one.
                 itemActivity: (item.reasons ?? '').trim(),
                 warehouses: ref.watch(warehousesProvider).valueOrNull,
+                showDisplacementNotice: e.id != displacedEntry?.id,
               ),
               if (e != entries.last) const Gap(8),
             ],
@@ -5427,13 +5467,18 @@ class _ItemStorageEntryRow extends StatelessWidget {
   /// query.
   final List<WarehouseModel>? warehouses;
 
+  /// The selected moved entry is shown once under the section heading. Other
+  /// moved admissions keep their own notice inside their history row.
+  final bool showDisplacementNotice;
+
   const _ItemStorageEntryRow(
       {required this.entry,
       required this.charge,
       this.spaceCost = 0,
       this.itemActivity = '',
       this.hideCharge = false,
-      this.warehouses});
+      this.warehouses,
+      this.showDisplacementNotice = true});
 
   @override
   Widget build(BuildContext context) {
@@ -5485,8 +5530,7 @@ class _ItemStorageEntryRow extends StatelessWidget {
             if (entry.holdReason.trim().isNotEmpty &&
                 entry.holdReason.trim().toLowerCase() !=
                     itemActivity.toLowerCase())
-              _StorageFact(
-                  label: 'Held under', value: entry.holdReason.trim()),
+              _StorageFact(label: 'Held under', value: entry.holdReason.trim()),
             _StorageFact(label: 'Quantity', value: entry.itemCount.toString()),
             _StorageFact(
                 label: 'Admitted',
@@ -5506,8 +5550,7 @@ class _ItemStorageEntryRow extends StatelessWidget {
             // alone answered neither: it said who pays without saying what
             // the space cost.
             if (hideCharge)
-              const _StorageFact(
-                  label: 'Storage charge', value: 'Not charged')
+              const _StorageFact(label: 'Storage charge', value: 'Not charged')
             else
               _StorageFact(
                   label:
@@ -5522,7 +5565,8 @@ class _ItemStorageEntryRow extends StatelessWidget {
           // ⚠️ Below the figures, not among them: this is not another fact
           // about the storage, it is the reason the location above is not the
           // one the reader expected.
-          DisplacedNotice(entry: entry, warehouses: warehouses),
+          if (showDisplacementNotice)
+            DisplacedNotice(entry: entry, warehouses: warehouses),
         ],
       ),
     );
@@ -5740,9 +5784,8 @@ class _HandoverPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tint = delivered
-        ? context.colors.successGreen
-        : context.colors.warningAmber;
+    final tint =
+        delivered ? context.colors.successGreen : context.colors.warningAmber;
     return material.Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -5751,12 +5794,8 @@ class _HandoverPill extends StatelessWidget {
         border: Border.all(color: tint.withOpacity(0.4)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(
-            delivered
-                ? Icons.check_circle_rounded
-                : Icons.schedule_rounded,
-            size: 12,
-            color: tint),
+        Icon(delivered ? Icons.check_circle_rounded : Icons.schedule_rounded,
+            size: 12, color: tint),
         const Gap(5),
         Text(delivered ? kind.pillDone : kind.pillPending,
             style: material.TextStyle(
@@ -6214,14 +6253,13 @@ class _SystemEntrySection extends StatelessWidget {
           // looked like it came from a different screen.
           material.Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: context.colors.textPrimary.withOpacity(0.03),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(15)),
-              border: Border(
-                  bottom: BorderSide(color: context.colors.borderColor)),
+              border:
+                  Border(bottom: BorderSide(color: context.colors.borderColor)),
             ),
             child: Row(
               children: [
@@ -6281,9 +6319,8 @@ class _SystemEntrySection extends StatelessWidget {
                           fontSize: 14.5,
                           fontWeight:
                               _unrecorded ? FontWeight.w500 : FontWeight.w700,
-                          fontStyle: _unrecorded
-                              ? FontStyle.italic
-                              : FontStyle.normal,
+                          fontStyle:
+                              _unrecorded ? FontStyle.italic : FontStyle.normal,
                         ),
                       ),
                       // Says WHY it is blank, so nobody goes looking for a
@@ -6318,10 +6355,7 @@ class _SystemEntrySection extends StatelessWidget {
           ),
         ],
       ),
-    )
-        .animate()
-        .fadeIn(delay: Duration(milliseconds: delay))
-        .slideY(begin: 0.1);
+    ).animate().fadeIn(delay: Duration(milliseconds: delay)).slideY(begin: 0.1);
   }
 }
 
@@ -7313,8 +7347,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                         ],
                       ),
                     ),
-                    DialogCloseButton(
-                        prominent: false),
+                    DialogCloseButton(prominent: false),
                   ],
                 ),
               ),
@@ -8471,8 +8504,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                           ),
                         ),
                         const Gap(12),
-                        DialogCloseButton(
-                            prominent: false),
+                        DialogCloseButton(prominent: false),
                       ],
                     ),
                   ),
@@ -8674,7 +8706,8 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                               } else {
                                                 // Show selection dialog with live processed slots
                                                 final slots =
-                                                    await showAppDialog<Set<int>>(
+                                                    await showAppDialog<
+                                                        Set<int>>(
                                                   context: context,
                                                   builder: (ctx) =>
                                                       _PackageSelectionDialog(
@@ -9467,8 +9500,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       ),
                     ),
                     const Gap(12),
-                    DialogCloseButton(
-                        prominent: false),
+                    DialogCloseButton(prominent: false),
                   ],
                 ),
               ),
@@ -9734,7 +9766,6 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
 
 // ── Disposition meta resolvers (by normalized returnNotes key) ────────────────
 
-
 String _dispoLabel(String key, String raw) {
   switch (key) {
     case 'FORFEIT':
@@ -9762,7 +9793,6 @@ String _dispoLabel(String key, String raw) {
 }
 
 // ── Disposition Row (shows status breakdown) ──────────────────────────────────
-
 
 class _DispositionMeta {
   final IconData icon;
@@ -9953,7 +9983,7 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
                         decoration: const InputDecoration(
                           labelText: 'Quantity',
                           isDense: true,
-                          ),
+                        ),
                         onChanged: (v) => _setQty(int.tryParse(v) ?? 0),
                       ),
                     ),

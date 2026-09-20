@@ -661,9 +661,9 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                 size: ColumnSize.S,
                                 fixedWidth: 110),
                             DataColumn2(
-                                label: Text('Qty'),
+                                label: Center(child: Text('No. of Goods')),
                                 size: ColumnSize.S,
-                                fixedWidth: 70),
+                                fixedWidth: 100),
                             DataColumn2(
                                 label: Text('Post Status Activity'),
                                 size: ColumnSize.M),

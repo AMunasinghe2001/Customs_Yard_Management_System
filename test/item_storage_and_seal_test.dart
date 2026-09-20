@@ -34,8 +34,12 @@ void main() {
     test('entries are matched to the item, and legacy ones are not lost', () {
       // A pre-items admission carries no package_item_id. Dropping it would
       // make the goods look as though they were never in a warehouse.
-      expect(dialog, contains(
-          '.where((e) => e.packageItemId == null || e.packageItemId == item.id)'));
+      // ⚠️ BOTH clauses, not the exact expression. The filter was rewritten
+      // into a multi-line closure (to handle a highlighted entry too) and the
+      // two operands swapped order — the rule is unchanged, so pinning the
+      // old one-liner reported a regression that had not happened.
+      expect(dialog, contains('e.packageItemId == item.id'));
+      expect(dialog, contains('e.packageItemId == null'));
     });
 
     test('it shows where, under what, since when, and what it costs', () {

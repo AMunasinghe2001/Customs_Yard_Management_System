@@ -155,7 +155,10 @@ const double kUnsoldTableMinWidth = 945;
 const List<DataColumn2> kUnsoldColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
   DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
   // "Latest Valuation": these rows carry the committee's figure when one
@@ -179,7 +182,10 @@ const List<DataColumn2> kUnsoldColumns = [
 const List<DataColumn2> kUnsoldDecidedColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
   DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
   // "Latest Valuation": these rows carry the committee's figure when one
@@ -209,7 +215,10 @@ const List<DataColumn2> kUnsoldDecidedColumns = [
 const List<DataColumn2> kUnsoldPerishableColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
   DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
   DataColumn2(
@@ -235,7 +244,10 @@ const List<DataColumn2> kUnsoldPerishableColumns = [
 const List<DataColumn2> kUnsoldPerishableDecidedColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
   DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
   DataColumn2(
@@ -352,7 +364,7 @@ List<DataCell> unsoldCells(
           style: TextStyle(color: srColor, fontWeight: FontWeight.w700)),
     )),
     DataCell(TooltipText(unsoldItemName(f), overflow: TextOverflow.ellipsis)),
-    DataCell(TooltipText('$qty')),
+    DataCell(Center(child: TooltipText('$qty'))),
     DataCell(TooltipText(f.consigneeName, overflow: TextOverflow.ellipsis)),
     DataCell(TooltipText(unsoldLocation(pkg, f.itemId, f.yard),
         overflow: TextOverflow.ellipsis,

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../core/providers.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
+import 'displaced_badge.dart';
 
 /// What one entry's space has cost, from [from] to today.
 ///
@@ -378,7 +379,14 @@ class StorageChargeNote extends ConsumerWidget {
       ]);
     }
 
-    return Container(
+    // ⚠️ Goods put somewhere other than their category's home because it was
+    // full. The Warehouses popup renders its Storage section through THIS
+    // widget, not through the per-entry list in package_details_dialog, so a
+    // notice added only there left the one screen an officer opens to ask
+    // "where is this?" saying nothing at all.
+    final displaced = entries.where((e) => e.movedForSpace).firstOrNull;
+
+    final panel = Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -421,5 +429,14 @@ class StorageChargeNote extends ConsumerWidget {
         ),
       ]),
     );
+
+    if (displaced == null) return panel;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      panel,
+      DisplacedNotice(
+        entry: displaced,
+        warehouses: ref.watch(warehousesProvider).valueOrNull,
+      ),
+    ]);
   }
 }
