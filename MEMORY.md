@@ -2091,6 +2091,35 @@ python tool/measure_toolbar.py     # search/filter/button: top, bottom, height
 
 ⚠️ **The auth back arrow is a page-corner control, not a heading ornament (2026-09-04).** Every login/signup/OTP screen used to put an `IconButton` inline, immediately left of its title — which pushed the heading off the panel's own margin and forced **every subtitle to carry a matching `EdgeInsets.only(left: 48)`** just to line up under it. It is now `AuthBackButton` (`lib/widgets/auth_back_button.dart`), dropped into the `Stack` each screen already keeps for its theme toggle and pinned `top: 24, left: 24`. Title and subtitle both start at the margin.
 
+### The field fill has now been wrong in BOTH directions (2026-09-21)
+
+⚠️ **A bordered box looks 3D when its fill contrasts with the page.** The
+eye reads the lighter panel plus the darker outline as a lit edge. Reported
+directly: *"3d විදිහට පෙන්වන කලර්ස් අයින් කරන්න, කලින් තිබ්බ 2d එක
+හොදයි තනි පාට එක්ක."*
+
+`_fieldFillLight`, against a `#F0F4FA` page:
+
+```
+#EDF1F7   DARKER than the page   -> every box a grey slab
+#FBFCFE   11 steps lighter       -> box reads as RAISED, a 3D chip
+#F4F7FC    4 steps lighter       -> flat; the BORDER draws the field
+```
+
+Both wrong values were mine, three days apart, and each was a fix for the
+other's symptom. The pre-Sep-15 look people liked used `cardDark` (#F7F9FC),
+only 7 steps off the page — so **the border alone drew the field**. That is
+the property to preserve, not any particular hex.
+
+⚠️ **It still must not equal `_cardLight`.** A field inside a card has to
+stay visible — that is the bug the separate `fieldFill` token was created
+for, and `one_field_height_test` enforces the separation. Four steps is
+enough to see on a card and too little to lift off the page.
+
+All 15 sign-in/sign-up screens inherit this from `inputDecorationTheme` with
+no local `fillColor`, so one value covers every portal. The dashboard
+search/filter boxes set their own accent-tinted fills and are unaffected.
+
 ### Destruction is a two-party job with an ORDER (2026-09-21)
 
 Four rules, given together, that turn out to be one workflow:

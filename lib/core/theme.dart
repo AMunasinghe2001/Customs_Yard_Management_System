@@ -256,18 +256,23 @@ class AppTheme {
   /// still has to be its own token, and [one_field_height_test] enforces
   /// that.
   ///
-  /// ⚠️ LIGHTER than the page, not darker. This was #EDF1F7, which is darker
-  /// than `_bgLight` (#F0F4FA) — so on the sign-in pages, where the fields
-  /// sit straight on the page with no card under them, every box read as a
-  /// grey slab and the side looked heavy and washed out. Reported directly:
-  /// "අලු පාටක් ඇවිත් ලාවට, ටෙක්ස්බොක්ස් වල සුදු අලු මික්ස් වෙලා. ඒක තිබ්බ
-  /// විදිහට හදන්න."
+  /// ⚠️ CLOSE TO THE PAGE, so the BORDER draws the field and the fill does
+  /// not. This value has now been wrong in both directions:
   ///
-  /// Near-white puts the field back on top of the page the way it used to
-  /// look, while staying a distinct value from both `_bgLight` and
-  /// `_cardLight` — so the problem this token was created for (a field
-  /// vanishing into the card behind it) does not come back.
-  static const Color _fieldFillLight = Color(0xFFFBFCFE);
+  ///     #EDF1F7   darker than the page → every box a grey slab
+  ///     #FBFCFE   11 steps lighter     → box reads as RAISED, a 3D chip
+  ///     #F4F7FC   4 steps lighter      → flat; the outline is the field
+  ///
+  /// A fill that contrasts with the page is what makes a bordered box look
+  /// three-dimensional — the eye takes the lighter panel plus the darker
+  /// outline as a lit edge. Reported directly: *"3d විදිහට පෙන්වන කලර්ස්
+  /// අයින් කරන්න, කලින් තිබ්බ 2d එක හොදයි තනි පාට එක්ක යන."*
+  ///
+  /// It is deliberately NOT `_cardLight` (#F7F9FC): a field inside a card
+  /// must still be visible, which is the bug this token was created for.
+  /// Four steps is enough to see on a card and too little to lift off the
+  /// page.
+  static const Color _fieldFillLight = Color(0xFFF4F7FC);
   static const Color _textPrimaryLight = Color(0xFF1A1A24);
   static const Color _textSecondaryLight = Color(0xFF5A6372);
   static const Color _textMutedLight = Color(0xFF8A93A2);
