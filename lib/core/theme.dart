@@ -256,23 +256,27 @@ class AppTheme {
   /// still has to be its own token, and [one_field_height_test] enforces
   /// that.
   ///
-  /// ⚠️ CLOSE TO THE PAGE, so the BORDER draws the field and the fill does
-  /// not. This value has now been wrong in both directions:
+  /// ⚠️ ONE flat, near-NEUTRAL grey. Asked for plainly: a single colour,
+  /// white or grey, with no shading. Every earlier value was a blue-tinted
+  /// off-white that read as part of a gradient rather than as a fill:
   ///
-  ///     #EDF1F7   darker than the page → every box a grey slab
-  ///     #FBFCFE   11 steps lighter     → box reads as RAISED, a 3D chip
-  ///     #F4F7FC   4 steps lighter      → flat; the outline is the field
+  ///     #EDF1F7   darker than the page    → every box a grey slab
+  ///     #FBFCFE   11 steps lighter        → box reads as RAISED, a 3D chip
+  ///     #F4F7FC   blue tint (R−B = −8)    → still "white and grey mixed"
+  ///     #F5F5F7   R−B = −2, flat          → a grey, and only a grey
   ///
-  /// A fill that contrasts with the page is what makes a bordered box look
-  /// three-dimensional — the eye takes the lighter panel plus the darker
-  /// outline as a lit edge. Reported directly: *"3d විදිහට පෙන්වන කලර්ස්
-  /// අයින් කරන්න, කලින් තිබ්බ 2d එක හොදයි තනි පාට එක්ක යන."*
+  /// THE TINT is the part that kept failing. At R−B = −8 the fill leans blue
+  /// and the page (#F0F4FA) leans blue harder, so the two shade into one
+  /// another and the box looks washed rather than filled. A near-neutral
+  /// grey reads as one deliberate colour on the page and on a card alike.
+  ///
+  /// ⚠️ The other half of "shaded" was the HOVER blend — see `hoverColor`
+  /// in `inputDecorationTheme`. A colour alone could not have fixed it.
   ///
   /// It is deliberately NOT `_cardLight` (#F7F9FC): a field inside a card
   /// must still be visible, which is the bug this token was created for.
-  /// Four steps is enough to see on a card and too little to lift off the
-  /// page.
-  static const Color _fieldFillLight = Color(0xFFF4F7FC);
+  /// 11 steps from the card and 9 from the page — visible on both.
+  static const Color _fieldFillLight = Color(0xFFF5F5F7);
   static const Color _textPrimaryLight = Color(0xFF1A1A24);
   static const Color _textSecondaryLight = Color(0xFF5A6372);
   static const Color _textMutedLight = Color(0xFF8A93A2);
@@ -396,6 +400,21 @@ class AppTheme {
         // `fieldFill` is a real grey that differs from BOTH, so a field reads
         // as a field wherever it is placed.
         fillColor: colors.fieldFill,
+        // ⚠️ NO HOVER TINT. This is what made the boxes look shaded and
+        // made two fields in one form disagree with each other.
+        //
+        // A `filled: true` input blends `ThemeData.hoverColor` OVER its fill
+        // whenever the pointer is near -- Flutter computes
+        // `alphaBlend(hoverColor, fillColor)` -- so a field was one grey at
+        // rest and a darker grey under the cursor, and in a screenshot the
+        // hovered field and its neighbour read as two different colours.
+        // Reported exactly that way: "සුදු අලු මික්ස් වෙලා ශේඩ් වෙන
+        // විදිහට... කර්සර් එක ලගට ගෙනිච්චත් එහෙමයි, නිකනුත් එහෙමයි."
+        //
+        // Transparent means the fill is the fill, in every state. The FOCUS
+        // ring is what tells the officer where they are -- one clear signal
+        // instead of a wash that varies with the mouse.
+        hoverColor: Colors.transparent,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: colors.borderColor),

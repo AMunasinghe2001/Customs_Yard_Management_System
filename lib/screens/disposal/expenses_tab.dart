@@ -1037,6 +1037,7 @@ class _StatusBadge extends StatelessWidget {
 /// live so the officer sees the consequence before saving.
 class RecordExpenseDialog extends ConsumerStatefulWidget {
   final SrFinancials sr;
+
   /// Opened from the Destroyed Goods table: hides Auction Expenses (it never
   /// applies to a destruction) and adjusts the copy to talk about destruction
   /// specifically instead of disposal in general.
@@ -1220,7 +1221,8 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
     final green = context.colors.successGreen;
 
     return StyledFormDialog(
-      label: widget.forDestruction ? 'DESTRUCTION EXPENSES' : 'DISPOSAL EXPENSES',
+      label:
+          widget.forDestruction ? 'DESTRUCTION EXPENSES' : 'DISPOSAL EXPENSES',
       title: widget.sr.srNumber,
       icon: widget.forDestruction
           ? Icons.local_fire_department_rounded
@@ -1345,8 +1347,8 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
                         widget.locked
                             ? 'These goods have already been destroyed, so the costs are closed and cannot be edited. They are shown here for reference only.'
                             : widget.forDestruction
-                            ? 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.'
-                            : 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
+                                ? 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.'
+                                : 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
                         style: TextStyle(
                           color: context.colors.textSecondary,
                           fontSize: 12,

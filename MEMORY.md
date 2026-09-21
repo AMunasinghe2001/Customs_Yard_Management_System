@@ -2091,6 +2091,80 @@ python tool/measure_toolbar.py     # search/filter/button: top, bottom, height
 
 ⚠️ **The auth back arrow is a page-corner control, not a heading ornament (2026-09-04).** Every login/signup/OTP screen used to put an `IconButton` inline, immediately left of its title — which pushed the heading off the panel's own margin and forced **every subtitle to carry a matching `EdgeInsets.only(left: 48)`** just to line up under it. It is now `AuthBackButton` (`lib/widgets/auth_back_button.dart`), dropped into the `Stack` each screen already keeps for its theme toggle and pinned `top: 24, left: 24`. Title and subtitle both start at the margin.
 
+### A focused field was GOLD on every portal (2026-09-21)
+
+⚠️ **The real "two colours" complaint.** I first read it as the fill vs
+the page and changed `_fieldFillLight` (see below). Two screenshots of the
+SAME box — resting and focused — showed the actual fault:
+`inputDecorationTheme.focusedBorder` hardcoded **`primaryGold`**, so clicking
+a field drew a **gold** ring on the purple Appeal form, the green Disposal
+form, the teal Top Management form. The box was one colour until you touched
+it and another after.
+
+⚠️ **The accent is per-portal, so the fix has to be too.** A global theme
+cannot know which portal is on screen. New
+[lib/widgets/portal_field_theme.dart](lib/widgets/portal_field_theme.dart)
+wraps a form and overrides the focus ring, the floating label,
+`colorScheme.primary` and the caret/selection colours — **the ring alone is
+not enough**, since the label rides the border and the caret and checkboxes
+read from the scheme. All 15 auth screens already name their accent for
+`BrandPanel`; each now passes the same value here, and a test asserts the two
+**agree per file**.
+
+⚠️ **Only the FOCUS state is per-portal.** Fill and resting border stay
+shared, so every form looks identical until the officer interacts with it.
+
+#### ...and `dart format lib/screens` cost an hour
+
+⚠️ **Format the files you EDITED, never a directory.** `dart format
+lib/screens` reflowed **52 files** when 15 were touched, and the suite went
+**26 → 42 failures** — none of them about colour. The source-text tests that
+match exact lines are the tripwire, and this is the same trap already
+recorded under *dart format breaks source-text tests*.
+
+Recovery: `git checkout` each file I had not meant to change. ⚠️ The two
+large ones (`disposal_dashboard_screen`, `disposition_category_screen`)
+**kept their real edits** anyway, because those were already committed — so
+the checkout discarded only the reformat. Worth knowing before assuming a
+revert loses work.
+
+### A field is ONE flat colour: the hover blend and the tint (2026-09-21)
+
+⚠️ **The "white and grey mixed / shaded" complaint had TWO causes, and
+fixing either alone left it standing.** I changed the fill colour twice
+before finding the second one.
+
+**1. The hover blend.** A `filled: true` input blends `ThemeData.hoverColor`
+over its fill whenever the pointer is near — Flutter computes
+`alphaBlend(hoverColor, fillColor)` in `input_decorator.dart`. So a field was
+one grey at rest and a **darker grey under the cursor**, and in a screenshot
+the hovered field and its neighbour read as two different colours. Reported
+exactly: *"කර්සර් එක ලගට ගෙනිච්චත් එහෙමයි, නිකනුත් එහෙමයි."*
+Fixed with `hoverColor: Colors.transparent` on the **input** theme (not
+`ThemeData.hoverColor`, which would also change buttons and list tiles).
+
+**2. The tint.** Every value I tried was a blue-leaning off-white on a page
+that leans blue harder, so the two shaded into each other:
+
+```
+#EDF1F7  darker than the page   -> every box a grey slab
+#FBFCFE  11 steps lighter       -> reads as RAISED, a 3D chip
+#F4F7FC  blue tint (R-B = -8)   -> still "white and grey mixed"
+#F5F5F7  R-B = -2, flat         -> a grey, and only a grey
+```
+
+⚠️ **Near-neutral is the property, not any hex.** A fill leaning the same
+way as the background shades into it however light or dark it is. It must
+still differ from `_cardLight` by enough to see — that is the bug the
+separate `fieldFill` token exists for.
+
+Guarded by `test/a_field_is_one_flat_colour_test.dart`, verified by breaking
+both halves separately. ⚠️ It reads the constants **out of the source**:
+building `AppTheme.lightTheme` in a test pulls in Google Fonts, which either
+fetches over the network or throws for a missing asset — neither has
+anything to do with colour. And its regex allows a **line break**, because
+`dart format` wraps `static const Color _x =` onto the next line.
+
 ### The field fill has now been wrong in BOTH directions (2026-09-21)
 
 ⚠️ **A bordered box looks 3D when its fill contrasts with the page.** The

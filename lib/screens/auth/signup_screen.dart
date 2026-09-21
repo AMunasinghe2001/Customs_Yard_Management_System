@@ -12,6 +12,7 @@ import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
+import '../../widgets/portal_field_theme.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -95,253 +96,260 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
             ),
             Expanded(
               flex: 4,
-              child: Center(
-                child: SingleChildScrollView(
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 460),
-                    padding: const EdgeInsets.all(48),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text('Create Account',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineMedium)
-                              .animate()
-                              .fadeIn(duration: 400.ms),
-                          const Gap(6),
-                          const Padding(
-                            padding: EdgeInsets.only(left: 48),
-                            child: Text(
-                                'Register a new officer or admin account',
-                                style: TextStyle(
-                                    color: AppTheme.textSecondary,
-                                    fontSize: 14)),
-                          ).animate().fadeIn(delay: 100.ms),
-                          const Gap(32),
-                          if (_success != null) ...[
-                            Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: AppTheme.successGreen.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                    color:
-                                        AppTheme.successGreen.withOpacity(0.4)),
+              child: PortalFieldTheme(
+                accent: AppTheme.customsBlueLight,
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 460),
+                      padding: const EdgeInsets.all(48),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text('Create Account',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineMedium)
+                                .animate()
+                                .fadeIn(duration: 400.ms),
+                            const Gap(6),
+                            const Padding(
+                              padding: EdgeInsets.only(left: 48),
+                              child: Text(
+                                  'Register a new officer or admin account',
+                                  style: TextStyle(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 14)),
+                            ).animate().fadeIn(delay: 100.ms),
+                            const Gap(32),
+                            if (_success != null) ...[
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color:
+                                      AppTheme.successGreen.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                      color: AppTheme.successGreen
+                                          .withOpacity(0.4)),
+                                ),
+                                child: Row(children: [
+                                  const Icon(Icons.check_circle_outline,
+                                      color: AppTheme.successGreen, size: 18),
+                                  const Gap(10),
+                                  Expanded(
+                                      child: Text(_success!,
+                                          style: const TextStyle(
+                                              color: AppTheme.successGreen,
+                                              fontSize: 13))),
+                                ]),
                               ),
-                              child: Row(children: [
-                                const Icon(Icons.check_circle_outline,
-                                    color: AppTheme.successGreen, size: 18),
-                                const Gap(10),
-                                Expanded(
-                                    child: Text(_success!,
-                                        style: const TextStyle(
-                                            color: AppTheme.successGreen,
-                                            fontSize: 13))),
-                              ]),
-                            ),
-                            const Gap(20),
-                          ],
-                          if (_error != null) ...[
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppTheme.dangerRed.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                    color: AppTheme.dangerRed.withOpacity(0.4)),
-                              ),
-                              child: Row(children: [
-                                const Icon(Icons.error_outline,
-                                    color: AppTheme.dangerRed, size: 18),
-                                const Gap(10),
-                                Expanded(
-                                    child: Text(_error!,
-                                        style: const TextStyle(
-                                            color: AppTheme.dangerRed,
-                                            fontSize: 13))),
-                              ]),
-                            ),
-                            const Gap(20),
-                          ],
-                          Row(children: [
-                            Expanded(
-                                child: TextFormField(
-                              controller: _fullNameCtrl,
-                              decoration: const InputDecoration(
-                                labelText: 'Full Name *',
-                                prefixIcon: Icon(Icons.person_outline,
-                                    color: AppTheme.textMuted),
-                              ),
-                              validator: (v) =>
-                                  v == null || v.isEmpty ? 'Required' : null,
-                            )),
-                            const Gap(12),
-                            Expanded(
-                                child: TextFormField(
-                              controller: _badgeCtrl,
-                              decoration: const InputDecoration(
-                                labelText: 'Badge Number',
-                                prefixIcon: Icon(Icons.badge_outlined,
-                                    color: AppTheme.textMuted),
-                              ),
-                            )),
-                          ])
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
-                              .fadeIn(),
-                          const Gap(16),
-                          TextFormField(
-                            controller: _emailCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Email *',
-                              prefixIcon: Icon(Icons.email_outlined,
-                                  color: AppTheme.textMuted),
-                            ),
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (v) => v == null || v.isEmpty
-                                ? 'Email required'
-                                : !v.contains('@')
-                                    ? 'Invalid email'
-                                    : null,
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 250.ms)
-                              .fadeIn(),
-                          const Gap(16),
-                          DropdownButtonFormField<String>(
-                            value: _role,
-                            decoration: const InputDecoration(
-                              labelText: 'Role *',
-                              prefixIcon: Icon(
-                                  Icons.admin_panel_settings_outlined,
-                                  color: AppTheme.textMuted),
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                  value: 'officer', child: Text('Officer')),
-                              DropdownMenuItem(
-                                  value: 'admin', child: Text('Admin')),
+                              const Gap(20),
                             ],
-                            onChanged: (v) => setState(() => _role = v!),
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 300.ms)
-                              .fadeIn(),
-                          const Gap(16),
-                          StyledDropdownFormField<String>(
-                            value: _selectedYard,
-                            label: 'Yard *',
-                            helperText: null,
-                            menuWidth: 384,
-                            prefixIcon: const Icon(Icons.warehouse_outlined,
-                                color: AppTheme.textMuted),
-                            options: [
-                              for (final y in kYards)
-                                StyledDropdownOption(y.code, y.name),
+                            if (_error != null) ...[
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.dangerRed.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                      color:
+                                          AppTheme.dangerRed.withOpacity(0.4)),
+                                ),
+                                child: Row(children: [
+                                  const Icon(Icons.error_outline,
+                                      color: AppTheme.dangerRed, size: 18),
+                                  const Gap(10),
+                                  Expanded(
+                                      child: Text(_error!,
+                                          style: const TextStyle(
+                                              color: AppTheme.dangerRed,
+                                              fontSize: 13))),
+                                ]),
+                              ),
+                              const Gap(20),
                             ],
-                            onChanged: (v) => setState(
-                                () => _selectedYard = v ?? kDefaultYardCode),
-                            validator: (v) =>
-                                v == null || v.isEmpty ? 'Select a yard' : null,
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 320.ms)
-                              .fadeIn(),
-                          const Gap(16),
-                          PasswordRequirements(password: _passwordCtrl.text),
-                          const Gap(10),
-                          TextFormField(
-                            controller: _passwordCtrl,
-                            onChanged: (_) => setState(() {}),
-                            decoration: InputDecoration(
-                              labelText: 'Password *',
-                              prefixIcon: const Icon(Icons.lock_outline,
-                                  color: AppTheme.textMuted),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                    _obscurePass
-                                        ? Icons.visibility_off
-                                        : Icons.visibility,
+                            Row(children: [
+                              Expanded(
+                                  child: TextFormField(
+                                controller: _fullNameCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Full Name *',
+                                  prefixIcon: Icon(Icons.person_outline,
+                                      color: AppTheme.textMuted),
+                                ),
+                                validator: (v) =>
+                                    v == null || v.isEmpty ? 'Required' : null,
+                              )),
+                              const Gap(12),
+                              Expanded(
+                                  child: TextFormField(
+                                controller: _badgeCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Badge Number',
+                                  prefixIcon: Icon(Icons.badge_outlined,
+                                      color: AppTheme.textMuted),
+                                ),
+                              )),
+                            ])
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
+                                .fadeIn(),
+                            const Gap(16),
+                            TextFormField(
+                              controller: _emailCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Email *',
+                                prefixIcon: Icon(Icons.email_outlined,
                                     color: AppTheme.textMuted),
-                                onPressed: () => setState(
-                                    () => _obscurePass = !_obscurePass),
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                              validator: (v) => v == null || v.isEmpty
+                                  ? 'Email required'
+                                  : !v.contains('@')
+                                      ? 'Invalid email'
+                                      : null,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 250.ms)
+                                .fadeIn(),
+                            const Gap(16),
+                            DropdownButtonFormField<String>(
+                              value: _role,
+                              decoration: const InputDecoration(
+                                labelText: 'Role *',
+                                prefixIcon: Icon(
+                                    Icons.admin_panel_settings_outlined,
+                                    color: AppTheme.textMuted),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                    value: 'officer', child: Text('Officer')),
+                                DropdownMenuItem(
+                                    value: 'admin', child: Text('Admin')),
+                              ],
+                              onChanged: (v) => setState(() => _role = v!),
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 300.ms)
+                                .fadeIn(),
+                            const Gap(16),
+                            StyledDropdownFormField<String>(
+                              value: _selectedYard,
+                              label: 'Yard *',
+                              helperText: null,
+                              menuWidth: 384,
+                              prefixIcon: const Icon(Icons.warehouse_outlined,
+                                  color: AppTheme.textMuted),
+                              options: [
+                                for (final y in kYards)
+                                  StyledDropdownOption(y.code, y.name),
+                              ],
+                              onChanged: (v) => setState(
+                                  () => _selectedYard = v ?? kDefaultYardCode),
+                              validator: (v) => v == null || v.isEmpty
+                                  ? 'Select a yard'
+                                  : null,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 320.ms)
+                                .fadeIn(),
+                            const Gap(16),
+                            PasswordRequirements(password: _passwordCtrl.text),
+                            const Gap(10),
+                            TextFormField(
+                              controller: _passwordCtrl,
+                              onChanged: (_) => setState(() {}),
+                              decoration: InputDecoration(
+                                labelText: 'Password *',
+                                prefixIcon: const Icon(Icons.lock_outline,
+                                    color: AppTheme.textMuted),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                      _obscurePass
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
+                                      color: AppTheme.textMuted),
+                                  onPressed: () => setState(
+                                      () => _obscurePass = !_obscurePass),
+                                ),
+                              ),
+                              obscureText: _obscurePass,
+                              validator: PasswordPolicy.validate,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 350.ms)
+                                .fadeIn(),
+                            PasswordStrengthBar(password: _passwordCtrl.text),
+                            const Gap(16),
+                            TextFormField(
+                              controller: _confirmCtrl,
+                              onChanged: (_) => setState(() {}),
+                              decoration: InputDecoration(
+                                labelText: 'Confirm Password *',
+                                prefixIcon: const Icon(Icons.lock_outline,
+                                    color: AppTheme.textMuted),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                      _obscureConfirm
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
+                                      color: AppTheme.textMuted),
+                                  onPressed: () => setState(
+                                      () => _obscureConfirm = !_obscureConfirm),
+                                ),
+                              ),
+                              obscureText: _obscureConfirm,
+                              validator: (v) => v != _passwordCtrl.text
+                                  ? 'Passwords do not match'
+                                  : null,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 400.ms)
+                                .fadeIn(),
+                            PasswordMatchBar(
+                                password: _passwordCtrl.text,
+                                confirm: _confirmCtrl.text),
+                            const Gap(32),
+                            SizedBox(
+                              height: 52,
+                              child: ElevatedButton.icon(
+                                icon: _isLoading
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppTheme.primaryNavy))
+                                    : const Icon(Icons.person_add_rounded),
+                                label: Text(_isLoading
+                                    ? 'Creating Account...'
+                                    : 'Create Account'),
+                                onPressed: _isLoading ? null : _signUp,
+                              ),
+                            )
+                                .animate()
+                                .slideY(
+                                    begin: 0.3, duration: 400.ms, delay: 450.ms)
+                                .fadeIn(),
+                            const Gap(16),
+                            Center(
+                              child: TextButton(
+                                onPressed: () => context.go('/'),
+                                child: const Text('← Back to Sign In'),
                               ),
                             ),
-                            obscureText: _obscurePass,
-                            validator: PasswordPolicy.validate,
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 350.ms)
-                              .fadeIn(),
-                          PasswordStrengthBar(password: _passwordCtrl.text),
-                          const Gap(16),
-                          TextFormField(
-                            controller: _confirmCtrl,
-                            onChanged: (_) => setState(() {}),
-                            decoration: InputDecoration(
-                              labelText: 'Confirm Password *',
-                              prefixIcon: const Icon(Icons.lock_outline,
-                                  color: AppTheme.textMuted),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                    _obscureConfirm
-                                        ? Icons.visibility_off
-                                        : Icons.visibility,
-                                    color: AppTheme.textMuted),
-                                onPressed: () => setState(
-                                    () => _obscureConfirm = !_obscureConfirm),
-                              ),
-                            ),
-                            obscureText: _obscureConfirm,
-                            validator: (v) => v != _passwordCtrl.text
-                                ? 'Passwords do not match'
-                                : null,
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 400.ms)
-                              .fadeIn(),
-                          PasswordMatchBar(
-                              password: _passwordCtrl.text, confirm: _confirmCtrl.text),
-                          const Gap(32),
-                          SizedBox(
-                            height: 52,
-                            child: ElevatedButton.icon(
-                              icon: _isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: AppTheme.primaryNavy))
-                                  : const Icon(Icons.person_add_rounded),
-                              label: Text(_isLoading
-                                  ? 'Creating Account...'
-                                  : 'Create Account'),
-                              onPressed: _isLoading ? null : _signUp,
-                            ),
-                          )
-                              .animate()
-                              .slideY(
-                                  begin: 0.3, duration: 400.ms, delay: 450.ms)
-                              .fadeIn(),
-                          const Gap(16),
-                          Center(
-                            child: TextButton(
-                              onPressed: () => context.go('/'),
-                              child: const Text('← Back to Sign In'),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),

@@ -19,6 +19,7 @@ import '../../widgets/auth_back_button.dart';
 import '../../core/security_policy.dart';
 import '../../core/session_reset.dart';
 import '../../core/idle_lock.dart';
+import '../../widgets/portal_field_theme.dart';
 
 /// Two-step login for the Appeal Directorate: password first, then an email OTP
 /// that must be verified on EVERY sign-in (identical flow to the disposal login).
@@ -45,8 +46,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
   String _resolvedEmail = '';
   String? _error, _success;
 
-  static int get _otpWindowSeconds =>
-      GmailOtpService.codeLifetime.inSeconds;
+  static int get _otpWindowSeconds => GmailOtpService.codeLifetime.inSeconds;
   static const int _maxResends = 2;
   Timer? _countdownTimer;
   Timer? _lockTimer;
@@ -462,265 +462,275 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
           ),
           Expanded(
             flex: 4,
-            child: Center(
-              child: SingleChildScrollView(
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 460),
-                  padding: const EdgeInsets.all(52),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text('Appeal Sign In',
-                                style:
-                                    Theme.of(context).textTheme.headlineMedium)
-                            .animate()
-                            .fadeIn(duration: 400.ms),
-                        const Gap(8),
-                        Text(
-                                _passwordStage
-                                    ? (_passwordExpired
-                                        ? 'Your password has expired'
-                                        : 'Update your password')
-                                    : _otpStage
-                                        ? 'Two-step verification'
-                                        : 'Appeal Directorate access',
-                                style: TextStyle(
-                                    color: context.colors.textSecondary,
-                                    fontSize: 14))
-                            .animate()
-                            .fadeIn(delay: 100.ms),
-                        const Gap(36),
-                        if (_success != null && _otpStage) ...[
-                          // Green, not the portal accent: this is a
-                          // confirmation that the code went out, and it has to
-                          // read as one on every portal alike.
-                          _banner(
-                              context,
-                              _success!,
-                              context.colors.successGreen,
-                              Icons.check_circle_outline),
-                          const Gap(16),
-                        ],
-                        if (_error != null) ...[
-                          _banner(context, _error!, context.colors.dangerRed,
-                              Icons.error_outline),
-                          const Gap(16),
-                        ],
-                        if (!_otpStage && !_passwordStage) ...[
-                          TextFormField(
-                            controller: _idCtrl,
-                            // Enter submits, so the form can be completed from the
-                            // keyboard without reaching for the mouse.
-                            onFieldSubmitted: (_) =>
-                                _isLoading ? null : _continue(),
-                            decoration: InputDecoration(
-                              labelText: 'Username or Email',
-                              prefixIcon: Icon(Icons.person_outline,
-                                  color: context.colors.textMuted),
-                            ),
-                            validator: (v) => v == null || v.isEmpty
-                                ? 'Username or email required'
-                                : null,
-                          )
+            child: PortalFieldTheme(
+              accent: AppTheme.appealPurple,
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    padding: const EdgeInsets.all(52),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text('Appeal Sign In',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium)
                               .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
-                              .fadeIn(),
-                          const Gap(16),
-                          TextFormField(
-                            controller: _passwordCtrl,
-                            obscureText: _obscurePassword,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: Icon(Icons.lock_outline,
-                                  color: context.colors.textMuted),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_off
-                                        : Icons.visibility,
+                              .fadeIn(duration: 400.ms),
+                          const Gap(8),
+                          Text(
+                                  _passwordStage
+                                      ? (_passwordExpired
+                                          ? 'Your password has expired'
+                                          : 'Update your password')
+                                      : _otpStage
+                                          ? 'Two-step verification'
+                                          : 'Appeal Directorate access',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 14))
+                              .animate()
+                              .fadeIn(delay: 100.ms),
+                          const Gap(36),
+                          if (_success != null && _otpStage) ...[
+                            // Green, not the portal accent: this is a
+                            // confirmation that the code went out, and it has to
+                            // read as one on every portal alike.
+                            _banner(
+                                context,
+                                _success!,
+                                context.colors.successGreen,
+                                Icons.check_circle_outline),
+                            const Gap(16),
+                          ],
+                          if (_error != null) ...[
+                            _banner(context, _error!, context.colors.dangerRed,
+                                Icons.error_outline),
+                            const Gap(16),
+                          ],
+                          if (!_otpStage && !_passwordStage) ...[
+                            TextFormField(
+                              controller: _idCtrl,
+                              // Enter submits, so the form can be completed from the
+                              // keyboard without reaching for the mouse.
+                              onFieldSubmitted: (_) =>
+                                  _isLoading ? null : _continue(),
+                              decoration: InputDecoration(
+                                labelText: 'Username or Email',
+                                prefixIcon: Icon(Icons.person_outline,
                                     color: context.colors.textMuted),
-                                onPressed: () => setState(
-                                    () => _obscurePassword = !_obscurePassword),
                               ),
-                            ),
-                            validator: (v) => v == null || v.isEmpty
-                                ? 'Password required'
-                                : null,
-                            onFieldSubmitted: (_) => _continue(),
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 300.ms)
-                              .fadeIn(),
-                          const Gap(12),
-                          Row(children: [
+                              validator: (v) => v == null || v.isEmpty
+                                  ? 'Username or email required'
+                                  : null,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
+                                .fadeIn(),
+                            const Gap(16),
+                            TextFormField(
+                              controller: _passwordCtrl,
+                              obscureText: _obscurePassword,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                prefixIcon: Icon(Icons.lock_outline,
+                                    color: context.colors.textMuted),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
+                                      color: context.colors.textMuted),
+                                  onPressed: () => setState(() =>
+                                      _obscurePassword = !_obscurePassword),
+                                ),
+                              ),
+                              validator: (v) => v == null || v.isEmpty
+                                  ? 'Password required'
+                                  : null,
+                              onFieldSubmitted: (_) => _continue(),
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 300.ms)
+                                .fadeIn(),
+                            const Gap(12),
+                            Row(children: [
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: Checkbox(
+                                  value: _rememberMe,
+                                  activeColor: accent,
+                                  onChanged: (v) =>
+                                      setState(() => _rememberMe = v ?? false),
+                                ),
+                              ),
+                              const Gap(8),
+                              Text('Remember me',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 13)),
+                            ]),
+                            const Gap(24),
                             SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: Checkbox(
-                                value: _rememberMe,
-                                activeColor: accent,
-                                onChanged: (v) =>
-                                    setState(() => _rememberMe = v ?? false),
+                              height: 54,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: accent,
+                                    foregroundColor: Colors.white),
+                                icon: _isLoading
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white))
+                                    : const Icon(Icons.arrow_forward_rounded),
+                                label: Text(
+                                    _isLoading ? 'Please wait...' : 'Continue',
+                                    style: const TextStyle(fontSize: 16)),
+                                onPressed:
+                                    _isLoading ? null : () => _continue(),
                               ),
-                            ),
-                            const Gap(8),
-                            Text('Remember me',
-                                style: TextStyle(
-                                    color: context.colors.textSecondary,
-                                    fontSize: 13)),
-                          ]),
-                          const Gap(24),
-                          SizedBox(
-                            height: 54,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: accent,
-                                  foregroundColor: Colors.white),
-                              icon: _isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.arrow_forward_rounded),
-                              label: Text(
-                                  _isLoading ? 'Please wait...' : 'Continue',
-                                  style: const TextStyle(fontSize: 16)),
-                              onPressed: _isLoading ? null : () => _continue(),
-                            ),
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 400.ms)
-                              .fadeIn(),
-                          const Gap(20),
-                          Divider(
-                              color:
-                                  context.colors.borderColor.withOpacity(0.5)),
-                          Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 400.ms)
+                                .fadeIn(),
+                            const Gap(20),
+                            Divider(
+                                color: context.colors.borderColor
+                                    .withOpacity(0.5)),
+                            Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text("Don't have an account?",
+                                      style: TextStyle(
+                                          color: context.colors.textMuted,
+                                          fontSize: 13)),
+                                  TextButton(
+                                    onPressed: () =>
+                                        context.go('/appeal/signup'),
+                                    child: Text('Create Account',
+                                        style: TextStyle(
+                                            color: accent,
+                                            fontWeight: FontWeight.w600)),
+                                  ),
+                                ]),
+                          ],
+                          if (_otpStage) ...[
+                            Row(children: [
+                              Icon(Icons.mark_email_read_rounded,
+                                  color: accent, size: 22),
+                              const Gap(10),
+                              Expanded(
+                                child: Text(
+                                  'Enter the 6-digit code sent to\n$_resolvedEmail',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 13),
+                                ),
+                              ),
+                            ]),
+                            const Gap(20),
+                            TextFormField(
+                              controller: _otpCtrl,
+                              autofocus: true,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 22,
+                                  letterSpacing: 8,
+                                  fontWeight: FontWeight.w700),
+                              decoration: const InputDecoration(
+                                  labelText: 'OTP Code *'),
+                              onFieldSubmitted: (_) =>
+                                  _isLoading ? null : _verify(),
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
+                                .fadeIn(),
+                            const Gap(14),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text("Don't have an account?",
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Icon(Icons.timer_outlined,
+                                      size: 16,
+                                      color: _secondsLeft > 0
+                                          ? context.colors.textMuted
+                                          : context.colors.dangerRed),
+                                  const Gap(6),
+                                  Text(
+                                    _secondsLeft > 0
+                                        ? 'Code expires in $_countdownText'
+                                        : 'Code expired',
+                                    style: TextStyle(
+                                      color: _secondsLeft > 0
+                                          ? context.colors.textSecondary
+                                          : context.colors.dangerRed,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ]),
+                                _buildResendControl(context, accent),
+                              ],
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed:
+                                    _isLoading ? null : _backToCredentials,
+                                icon: Icon(Icons.arrow_back_rounded,
+                                    size: 15, color: context.colors.textMuted),
+                                label: Text('Back',
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 13)),
-                                TextButton(
-                                  onPressed: () => context.go('/appeal/signup'),
-                                  child: Text('Create Account',
-                                      style: TextStyle(
-                                          color: accent,
-                                          fontWeight: FontWeight.w600)),
-                                ),
-                              ]),
-                        ],
-                        if (_otpStage) ...[
-                          Row(children: [
-                            Icon(Icons.mark_email_read_rounded,
-                                color: accent, size: 22),
-                            const Gap(10),
-                            Expanded(
-                              child: Text(
-                                'Enter the 6-digit code sent to\n$_resolvedEmail',
-                                style: TextStyle(
-                                    color: context.colors.textSecondary,
-                                    fontSize: 13),
                               ),
                             ),
-                          ]),
-                          const Gap(20),
-                          TextFormField(
-                            controller: _otpCtrl,
-                            autofocus: true,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 22,
-                                letterSpacing: 8,
-                                fontWeight: FontWeight.w700),
-                            decoration:
-                                const InputDecoration(labelText: 'OTP Code *'),
-                            onFieldSubmitted: (_) =>
-                                _isLoading ? null : _verify(),
-                          )
-                              .animate()
-                              .slideX(
-                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
-                              .fadeIn(),
-                          const Gap(14),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.timer_outlined,
-                                    size: 16,
-                                    color: _secondsLeft > 0
-                                        ? context.colors.textMuted
-                                        : context.colors.dangerRed),
-                                const Gap(6),
-                                Text(
-                                  _secondsLeft > 0
-                                      ? 'Code expires in $_countdownText'
-                                      : 'Code expired',
-                                  style: TextStyle(
-                                    color: _secondsLeft > 0
-                                        ? context.colors.textSecondary
-                                        : context.colors.dangerRed,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ]),
-                              _buildResendControl(context, accent),
-                            ],
-                          ),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: _isLoading ? null : _backToCredentials,
-                              icon: Icon(Icons.arrow_back_rounded,
-                                  size: 15, color: context.colors.textMuted),
-                              label: Text('Back',
-                                  style: TextStyle(
-                                      color: context.colors.textMuted,
-                                      fontSize: 13)),
+                            const Gap(10),
+                            SizedBox(
+                              height: 54,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: accent,
+                                    foregroundColor: Colors.white),
+                                // A RESEND must not make this read
+                                // "Verifying..." -- nothing is being verified.
+                                // It is still disabled while one is in flight,
+                                // so the code cannot be checked mid-resend.
+                                icon: _isLoading && !_isResending
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white))
+                                    : const Icon(Icons.login_rounded),
+                                label: Text(
+                                    _isLoading && !_isResending
+                                        ? 'Verifying...'
+                                        : 'Verify & Sign In',
+                                    style: const TextStyle(fontSize: 16)),
+                                onPressed: (_isLoading || _isResending)
+                                    ? null
+                                    : _verify,
+                              ),
                             ),
-                          ),
-                          const Gap(10),
-                          SizedBox(
-                            height: 54,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: accent,
-                                  foregroundColor: Colors.white),
-                              // A RESEND must not make this read
-                              // "Verifying..." -- nothing is being verified.
-                              // It is still disabled while one is in flight,
-                              // so the code cannot be checked mid-resend.
-                              icon: _isLoading && !_isResending
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.login_rounded),
-                              label: Text(
-                                  _isLoading && !_isResending
-                                      ? 'Verifying...'
-                                      : 'Verify & Sign In',
-                                  style: const TextStyle(fontSize: 16)),
-                              onPressed:
-                                  (_isLoading || _isResending) ? null : _verify,
-                            ),
-                          ),
+                          ],
+                          if (_passwordStage)
+                            ..._buildPasswordStage(context, accent),
                         ],
-                        if (_passwordStage)
-                          ..._buildPasswordStage(context, accent),
-                      ],
+                      ),
                     ),
                   ),
                 ),

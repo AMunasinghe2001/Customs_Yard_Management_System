@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../widgets/portal_field_theme.dart';
 
 /// Split-screen yard-access chooser: left branding, right Officer / Admin tiles.
 /// Replaces the old dialog approach to match the Disposal / Appeal login style.
@@ -32,87 +33,91 @@ class YardAccessScreen extends ConsumerWidget {
           ),
           Expanded(
             flex: 4,
-            child: Center(
-              child: SingleChildScrollView(
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 460),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 52, vertical: 48),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Back + heading
-                      Text('Yard Access',
-                              style: Theme.of(context).textTheme.headlineMedium)
-                          .animate()
-                          .fadeIn(duration: 400.ms),
-                      const Gap(6),
-                      Text('Choose how you want to sign in',
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 14))
-                          .animate()
-                          .fadeIn(delay: 100.ms),
-                      const Gap(36),
+            child: PortalFieldTheme(
+              accent: context.colors.customsBlue,
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 52, vertical: 48),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Back + heading
+                        Text('Yard Access',
+                                style:
+                                    Theme.of(context).textTheme.headlineMedium)
+                            .animate()
+                            .fadeIn(duration: 400.ms),
+                        const Gap(6),
+                        Text('Choose how you want to sign in',
+                                style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 14))
+                            .animate()
+                            .fadeIn(delay: 100.ms),
+                        const Gap(36),
 
-                      // Officer tile
-                      _RoleTile(
-                        icon: Icons.badge_rounded,
-                        title: 'SC / DSC / ASC',
-                        subtitle:
-                            'Superintendent of Customs and deputy / assistant '
-                            'grades',
-                        tag: 'Yard Staff',
-                        accent: context.colors.accentLightBlue,
-                        onSignIn: () => context.go('/login'),
-                      )
-                          .animate()
-                          .slideY(
-                              begin: 0.12,
-                              duration: 380.ms,
-                              delay: 200.ms,
-                              curve: Curves.easeOutCubic)
-                          .fadeIn(delay: 200.ms),
+                        // Officer tile
+                        _RoleTile(
+                          icon: Icons.badge_rounded,
+                          title: 'SC / DSC / ASC',
+                          subtitle:
+                              'Superintendent of Customs and deputy / assistant '
+                              'grades',
+                          tag: 'Yard Staff',
+                          accent: context.colors.accentLightBlue,
+                          onSignIn: () => context.go('/login'),
+                        )
+                            .animate()
+                            .slideY(
+                                begin: 0.12,
+                                duration: 380.ms,
+                                delay: 200.ms,
+                                curve: Curves.easeOutCubic)
+                            .fadeIn(delay: 200.ms),
 
-                      const Gap(14),
+                        const Gap(14),
 
-                      // SDDC / DDC tile
-                      _RoleTile(
-                        icon: Icons.admin_panel_settings_rounded,
-                        title: 'SDDC / DDC',
-                        subtitle:
-                            'Senior Deputy / Deputy Director of Customs — '
-                            'full yard control',
-                        tag: 'Yard Administration',
-                        accent: context.colors.primaryGold,
-                        onSignIn: () => context.go('/admin/login'),
-                      )
-                          .animate()
-                          .slideY(
-                              begin: 0.12,
-                              duration: 380.ms,
-                              delay: 300.ms,
-                              curve: Curves.easeOutCubic)
-                          .fadeIn(delay: 300.ms),
+                        // SDDC / DDC tile
+                        _RoleTile(
+                          icon: Icons.admin_panel_settings_rounded,
+                          title: 'SDDC / DDC',
+                          subtitle:
+                              'Senior Deputy / Deputy Director of Customs — '
+                              'full yard control',
+                          tag: 'Yard Administration',
+                          accent: context.colors.primaryGold,
+                          onSignIn: () => context.go('/admin/login'),
+                        )
+                            .animate()
+                            .slideY(
+                                begin: 0.12,
+                                duration: 380.ms,
+                                delay: 300.ms,
+                                curve: Curves.easeOutCubic)
+                            .fadeIn(delay: 300.ms),
 
-                      const Gap(28),
+                        const Gap(28),
 
-                      // Footer note
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.shield_outlined,
-                              size: 13, color: context.colors.textMuted),
-                          const Gap(6),
-                          Text(
-                              'Yard accounts are provisioned by the ICT Directorate',
-                              style: TextStyle(
-                                  color: context.colors.textMuted,
-                                  fontSize: 12)),
-                        ],
-                      ).animate().fadeIn(delay: 420.ms),
-                    ],
+                        // Footer note
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.shield_outlined,
+                                size: 13, color: context.colors.textMuted),
+                            const Gap(6),
+                            Text(
+                                'Yard accounts are provisioned by the ICT Directorate',
+                                style: TextStyle(
+                                    color: context.colors.textMuted,
+                                    fontSize: 12)),
+                          ],
+                        ).animate().fadeIn(delay: 420.ms),
+                      ],
+                    ),
                   ),
                 ),
               ),
