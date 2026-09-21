@@ -2091,6 +2091,107 @@ python tool/measure_toolbar.py     # search/filter/button: top, bottom, height
 
 ⚠️ **The auth back arrow is a page-corner control, not a heading ornament (2026-09-04).** Every login/signup/OTP screen used to put an `IconButton` inline, immediately left of its title — which pushed the heading off the panel's own margin and forced **every subtitle to carry a matching `EdgeInsets.only(left: 48)`** just to line up under it. It is now `AuthBackButton` (`lib/widgets/auth_back_button.dart`), dropped into the `Stack` each screen already keeps for its theme toggle and pinned `top: 24, left: 24`. Title and subtitle both start at the margin.
 
+### Destruction is a two-party job with an ORDER (2026-09-21)
+
+Four rules, given together, that turn out to be one workflow:
+
+```
+1. Central Disposal records what the destruction costs
+2. only THEN may the YARD confirm the goods were destroyed
+3. once destroyed, the costs are CLOSED -- the form opens read-only
+4. Central Disposal never confirms a destruction; it only reads
+```
+
+⚠️ **Rules 1 and 3 lock against each other, which is why 2 is a hard
+gate and not a warning.** The cost form closes the moment a row is
+destroyed, so if the yard could mark first the figure could never be
+entered at all — the record would be permanently incomplete.
+
+**The gate** lives in `DestructionStatusPill`
+([lib/widgets/destruction_status_pill.dart](lib/widgets/destruction_status_pill.dart)),
+which became a `ConsumerWidget` and takes `srNumber`. Uncosted rows show a
+muted, inert **"Awaiting Costs"** pill with a tooltip naming what is being
+waited for — a disabled control with no explanation is the thing to avoid.
+
+⚠️ **It reuses the PAGE-scoped spend query** (`destructionSpendProvider`
+via `DestructionExpenseScope`), the one the expense column already runs.
+Asking per row would have put a second round trip behind every pill — the
+same mistake this tab was fixed for once before.
+
+**The lock** is a `locked` flag on `RecordExpenseDialog`. The dialog still
+**opens** — hiding the button would leave no way to see what was charged.
+There is no greyed Save, just **Close**; and `_save()` returns early on
+`locked` so a future shortcut or autosave cannot slip past the UI.
+
+⚠️ **`readOnly` was NOT enough, and this is the lesson.** The first
+version kept the `TextField`s and set `readOnly: true`. That governs
+**writes**; it does nothing about **affordance**. The field still took focus,
+drew the accent focus ring, showed a caret and let its text be selected — so
+a closed record looked editable and refused only after the officer tried it.
+Caught from a screenshot with the Advertising field lit up, and asked for
+plainly: *"විවි එකේදී ෆුල් විව් පොපප් එකක් දෙන්න, ලාවටවත් කොහේවත් නිකමටවත්
+ක්ලික් කරන්න දෙන්න එපා."*
+
+A locked form now renders **no input at all** — `_ReadOnlyCost`, a label and
+a figure. **The only way to have no affordance is to have no control.** A
+real zero is shown rather than a blank: on a closed record "nothing was
+charged" is a finding, not a gap.
+
+⚠️ **A widget test failed for the RIGHT reason and had to be taught the
+rule.** `destroyed_goods_workflow_test` stubbed the page but not the spend,
+so the pill correctly rendered "Awaiting Costs" and the test looking for
+"Mark Destroyed" failed. Stubbing `destructionSpendProvider` with a costed
+SR fixed it — and that test now proves the gate end to end.
+
+Guarded by `test/destruction_order_of_work_test.dart` (14 source tests) and
+`test/closed_costs_popup_is_not_clickable_test.dart`, which **pumps the real
+dialog** and asserts no `EditableText` exists — source matching cannot answer
+"what can the officer click".
+
+⚠️ **Scope a "nothing is clickable" assertion to the CONTENT.** Counting
+every `InkWell` fails on the header X and the Close action, which must stay
+or the popup cannot be dismissed; `GestureDetector` is worse, since the
+scroll views install two of their own. The test walks each named cost row
+instead. All of it verified by **breaking it back** to a `readOnly` field.
+
+### A destruction IS advertised (2026-09-21)
+
+⚠️ **A comment asserting a business rule is not evidence for it.** The
+destruction cost form excluded Advertising Expenses, with this reasoning
+written into the code and mirrored in a test:
+
+> *the goods are handed straight to the destroying contractor, so nothing
+> is advertised and nothing is auctioned*
+
+The officer corrected it: **a destruction is advertised**, and the cost
+comes out of the same destroying deposit as the rest. The rule had been
+inferred, not given — and then locked in by a test that quoted the literal
+`_notForDestruction` set, so it looked verified.
+
+Three places carried the same wrong premise:
+
+1. **The entry form** (`expenses_tab.dart`) — `_notForDestruction` is now
+   `{'auction_expense'}` alone. Auction stays out for a reason that does
+   hold: a destroyed item is never sold.
+2. **The notice copy** — the destruction branch said only "Costs entered
+   here"; it now names destruction and advertising, like the disposal one.
+3. **The details popup** (`package_details_dialog.dart`) — Advertising was
+   wrapped in `if (advertisingExpense > 0)`, so it vanished when nothing
+   was spent. Now shown always, like Destruction / Labour / Transport. A
+   blank box means "nothing spent yet", which is information.
+
+⚠️ **Nothing downstream needed touching, and that is worth knowing.**
+`advertising_expense` was already in `kRecordableExpenseKinds`, and
+`SrFinancials.depositSpent` already summed it — so the save loop, the
+refund/shortfall arithmetic, `_hiddenSpend` and the totals strip were all
+correct the whole time. **Only the form was hiding the field.** Any cost
+kind added to that map is picked up everywhere by construction.
+
+`test/destruction_status_pill_test.dart` now asserts the corrected rule,
+plus the notice copy and the popup's unconditional box. ⚠️ Its old
+assertion is a reminder that a source-text test proves only *"the code
+still says what it said"* — never that what it says is right.
+
 ### The home page was cutting off its own card text (2026-09-21)
 
 Asked whether the seal could be bigger, and for any other home-page tidying

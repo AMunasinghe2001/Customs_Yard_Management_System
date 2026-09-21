@@ -1957,12 +1957,18 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                     DataCell(Center(
                                         child: _RecordCostsButton(row: r))),
                                     DataCell(Center(
+                                      // ⚠️ VIEW ONLY here. Confirming a
+                                      // destruction is the YARD's act -- they
+                                      // are the ones holding the goods -- and
+                                      // Central Disposal only reads the state
+                                      // and records what it cost. Passing an
+                                      // onMark gave this table a working
+                                      // "Mark Destroyed" it had no business
+                                      // having; with it null the row shows a
+                                      // read-only "Pending" instead.
                                       child: DestructionStatusPill(
                                         destroyed: r.isDestroyed,
-                                        onMark: r.isDestroyed
-                                            ? null
-                                            : () => _confirmMarkDestroyed(
-                                                context, ref, r),
+                                        srNumber: r.package.srNumber,
                                       ),
                                     )),
                                     DataCell(Center(
@@ -2246,16 +2252,25 @@ class _RecordCostsButton extends ConsumerWidget {
     if (!context.mounted) return;
     await showAppDialog(
       context: context,
-      builder: (_) => RecordExpenseDialog(sr: sr!, forDestruction: true),
+      // Already destroyed -> the costs are a closed record, shown read-only.
+      builder: (_) => RecordExpenseDialog(
+          sr: sr!, forDestruction: true, locked: row.isDestroyed),
     );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // The costs close when the goods are destroyed, so the button says so
+    // rather than promising an edit it will not give.
+    final closed = row.isDestroyed;
     return IconButton(
-      tooltip: 'Record / edit destruction costs',
-      icon: Icon(Icons.edit_note_rounded,
-          size: 20, color: context.colors.successGreen),
+      tooltip: closed
+          ? 'View destruction costs (closed - the goods have been destroyed)'
+          : 'Record / edit destruction costs',
+      icon: Icon(closed ? Icons.receipt_long_rounded : Icons.edit_note_rounded,
+          size: 20,
+          color:
+              closed ? context.colors.textMuted : context.colors.successGreen),
       onPressed: () => _open(context, ref),
     );
   }

@@ -1041,8 +1041,26 @@ class RecordExpenseDialog extends ConsumerStatefulWidget {
   /// applies to a destruction) and adjusts the copy to talk about destruction
   /// specifically instead of disposal in general.
   final bool forDestruction;
+
+  /// Opened on a row that is already DESTROYED: the form is shown, but
+  /// greyed and read-only, with a notice saying why.
+  ///
+  /// ⚠️ THE POINT, given directly: "ඩිස්ට්‍රෝයිඩ් කියලා අප්ඩේට් වුනා
+  /// කියන්නේ ඒ ගුඩ්ස් විනාශ කරලා ඉවරයි කියන එකනේ. එතකොට කොස්ට් අප්ඩේට්
+  /// කරලා වැඩක් නෑ නේද." Once the goods are gone the destruction is closed,
+  /// and a cost changed afterwards would restate a settled account.
+  ///
+  /// ⚠️ The dialog still OPENS. Hiding the button would leave the officer
+  /// with no way to see what was charged; showing a dead form with no
+  /// explanation is worse again. It opens, it is visibly disabled, and it
+  /// says why.
+  final bool locked;
+
   const RecordExpenseDialog(
-      {super.key, required this.sr, this.forDestruction = false});
+      {super.key,
+      required this.sr,
+      this.forDestruction = false,
+      this.locked = false});
 
   @override
   ConsumerState<RecordExpenseDialog> createState() =>
@@ -1056,11 +1074,18 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   late final Map<String, TextEditingController> _fields;
   bool _saving = false;
 
-  /// Kinds a destruction never incurs. The goods are handed straight to the
-  /// destroying contractor, so nothing is advertised and nothing is auctioned
-  /// -- what a destruction costs is the destruction itself plus getting the
-  /// goods and the hands there.
-  static const _notForDestruction = {'advertising_expense', 'auction_expense'};
+  /// Kinds a destruction never incurs.
+  ///
+  /// ⚠️ ADVERTISING IS NOT ONE OF THEM. This set used to hold it too, on
+  /// the reasoning that "the goods are handed straight to the destroying
+  /// contractor, so nothing is advertised". That premise was wrong and the
+  /// officer corrected it: a destruction IS advertised, and the cost comes
+  /// out of the same destroying deposit as the rest.
+  ///
+  /// Auction stays out, and only that: a destroyed item is never sold, so an
+  /// auction cost against one would be a data-entry mistake rather than a
+  /// field somebody needs.
+  static const _notForDestruction = {'auction_expense'};
 
   /// The kinds this dialog offers.
   Iterable<MapEntry<String, String>> get _kinds => widget.forDestruction
@@ -1158,6 +1183,10 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   }
 
   Future<void> _save() async {
+    // ⚠️ Guarded here as well as in the UI. The Save button is gone on a
+    // locked form, but this is the only place that actually writes -- a
+    // future keyboard shortcut or an autosave must not slip past the rule.
+    if (widget.locked) return;
     setState(() => _saving = true);
     try {
       final svc = ref.read(disposalServiceProvider);
@@ -1198,31 +1227,41 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
           : Icons.receipt_long_rounded,
       headerAccentColor: green,
       width: 520,
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        const Gap(8),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: green,
-            foregroundColor: Colors.white,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          icon: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.check_rounded, size: 18),
-          label: const Text('Save Costs',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          onPressed: _saving ? null : _save,
-        ),
-      ],
+      actions: widget.locked
+          // ⚠️ No Save at all on a closed record -- not a greyed one.
+          // A disabled Save invites the officer to keep trying it; a single
+          // Close says the form is finished with.
+          ? [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: _saving ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              const Gap(8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: green,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Save Costs',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: _saving ? null : _save,
+              ),
+            ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -1250,21 +1289,39 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
               // One field per recordable kind, driven off the shared map so
               // this form never drifts from what the database accepts.
               for (final entry in _kinds) ...[
-                TextField(
-                  controller: _fields[entry.key],
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: '${entry.value} (LKR)',
-                    hintText: '0.00',
-                    isDense: true,
-                    prefixIcon: Icon(
-                        _icons[entry.key] ?? Icons.payments_rounded,
-                        color: _colourFor(context, entry.key)),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                // ⚠️ A LOCKED FORM RENDERS NO FIELD AT ALL.
+                //
+                // It used to be a `readOnly: true` TextField, which still
+                // takes focus: clicking one drew the accent focus ring, put
+                // a caret in it and let the text be selected, so a closed
+                // record looked editable and only refused once the officer
+                // tried. Asked for plainly -- a view popup must not be
+                // clickable anywhere, not even faintly.
+                //
+                // `readOnly` is about writes; this is about AFFORDANCE. The
+                // only way to have no affordance is to have no input.
+                if (widget.locked)
+                  _ReadOnlyCost(
+                    label: entry.value,
+                    icon: _icons[entry.key] ?? Icons.payments_rounded,
+                    amount: _valueOf(entry.key),
+                  )
+                else
+                  TextField(
+                    controller: _fields[entry.key],
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: '${entry.value} (LKR)',
+                      hintText: '0.00',
+                      isDense: true,
+                      prefixIcon: Icon(
+                          _icons[entry.key] ?? Icons.payments_rounded,
+                          color: _colourFor(context, entry.key)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
-                ),
                 const Gap(12),
               ],
               const Gap(2),
@@ -1285,8 +1342,10 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
                     const Gap(10),
                     Expanded(
                       child: Text(
-                        widget.forDestruction
-                            ? 'Notice: Costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.'
+                        widget.locked
+                            ? 'These goods have already been destroyed, so the costs are closed and cannot be edited. They are shown here for reference only.'
+                            : widget.forDestruction
+                            ? 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.'
                             : 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
                         style: TextStyle(
                           color: context.colors.textSecondary,
@@ -1364,6 +1423,57 @@ class _KeyValue extends StatelessWidget {
                   fontWeight: emphasise ? FontWeight.w800 : FontWeight.w600)),
         ),
       ]),
+    );
+  }
+}
+
+/// One cost on a CLOSED record: a label and a figure, and nothing to click.
+///
+/// ⚠️ Deliberately not a disabled/readOnly `TextField`. An input that
+/// cannot be written to still takes focus, shows a caret and draws a focus
+/// ring, so the form reads as editable and refuses only after the officer
+/// tries. A closed record should not invite the attempt.
+class _ReadOnlyCost extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final double amount;
+
+  const _ReadOnlyCost(
+      {required this.label, required this.icon, required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final muted = context.colors.textMuted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: muted.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: muted),
+          const Gap(10),
+          Expanded(
+            child: Text(
+              '$label (LKR)',
+              style: TextStyle(fontSize: 12, color: muted),
+            ),
+          ),
+          // A real zero is shown as 0.00, not hidden -- on a closed record
+          // "nothing was charged" is a finding, not a blank.
+          Text(
+            money.format(amount),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: context.colors.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -5067,20 +5067,27 @@ class _DestructionFinancialsSection extends StatelessWidget {
                           color: context.colors.customsBlue,
                         ),
                       ),
-                      // Advertising and auction are not destruction costs --
-                      // the goods go straight to the destroying contractor --
-                      // so they appear only where legacy data actually carries
-                      // one, instead of as permanently empty boxes.
-                      if (srFinancials!.advertisingExpense > 0) ...[
-                        const Gap(8),
-                        Expanded(
-                          child: _ExpenseCostBox(
-                            label: 'Advertising',
-                            amount: srFinancials!.advertisingExpense,
-                            color: context.colors.warningAmber,
-                          ),
+                      // ⚠️ ADVERTISING IS ALWAYS SHOWN, like Destruction,
+                      // Labour and Transport beside it.
+                      //
+                      // It used to appear only when non-zero, on the same
+                      // wrong premise the entry form carried: that a
+                      // destruction is never advertised. It is, and the cost
+                      // comes out of the destroying deposit -- so a blank
+                      // here means "nothing spent yet", which is information,
+                      // not an empty box to hide.
+                      const Gap(8),
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Advertising',
+                          amount: srFinancials!.advertisingExpense,
+                          color: context.colors.warningAmber,
                         ),
-                      ],
+                      ),
+                      // Auction stays conditional: a destroyed item is never
+                      // sold, so a figure here is legacy data rather than a
+                      // field anyone fills.
+
                       if (srFinancials!.auctionExpense > 0) ...[
                         const Gap(8),
                         Expanded(

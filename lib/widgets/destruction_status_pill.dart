@@ -35,7 +35,7 @@ const double kDestructionStatusColumnWidth = 214;
 /// destroyed. Only the yard confirms one, so [onMark] is supplied there and
 /// left null on Central Disposal, which reads the same state but cannot act on
 /// it. All three renderings share one box so the two tables match.
-class DestructionStatusPill extends StatelessWidget {
+class DestructionStatusPill extends ConsumerWidget {
   /// True once the destruction is confirmed.
   final bool destroyed;
 
@@ -43,10 +43,24 @@ class DestructionStatusPill extends StatelessWidget {
   /// null an unconfirmed row shows a read-only "Pending" pill instead.
   final VoidCallback? onMark;
 
-  const DestructionStatusPill({super.key, required this.destroyed, this.onMark});
+  /// The SR this row belongs to, so the pill can see whether Central Disposal
+  /// has costed the destruction yet.
+  ///
+  /// ⚠️ THE ORDER OF THE WORK, given directly: Central Disposal enters
+  /// what the destruction will cost, and only THEN may the yard confirm it
+  /// was carried out. Marking first would close the record while the money
+  /// side was still open -- and the cost form locks once a row is destroyed,
+  /// so the figure could never be entered at all.
+  ///
+  /// Optional only so a caller that genuinely has no SR can still render the
+  /// pill; every table passes one.
+  final String? srNumber;
+
+  const DestructionStatusPill(
+      {super.key, required this.destroyed, this.onMark, this.srNumber});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (destroyed) {
       return _pill(
         context,
@@ -63,6 +77,33 @@ class DestructionStatusPill extends StatelessWidget {
         label: 'Pending',
       );
     }
+
+    // ⚠️ Reuses the SAME page-scoped query the expense column already
+    // runs (one per page, not one per row) -- see [DestructionExpenseCell].
+    // Asking per row here would have put a second round trip behind every
+    // pill on the table.
+    final sr = srNumber?.trim() ?? '';
+    if (sr.isNotEmpty) {
+      final rowSrs = DestructionExpenseScope.of(context);
+      final spend = ref.watch(destructionSpendProvider(rowSrs));
+      final costed = (spend.valueOrNull?[sr] ?? 0) > 0;
+      if (!costed) {
+        // Not an error state -- the row is simply waiting its turn -- so it
+        // reads as muted rather than red, and says what is being waited for.
+        return Tooltip(
+          message: 'Central Disposal has not recorded the destruction costs '
+              'for this SR yet. The costs must be entered before the '
+              'destruction can be confirmed.',
+          child: _pill(
+            context,
+            color: context.colors.textMuted,
+            icon: Icons.lock_clock_rounded,
+            label: 'Awaiting Costs',
+          ),
+        );
+      }
+    }
+
     return _pill(
       context,
       color: context.colors.dangerRed,

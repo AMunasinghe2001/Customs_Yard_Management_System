@@ -621,6 +621,9 @@ class _DispositionCategoryScreenState
                                       DataCell(Center(
                                         child: DestructionStatusPill(
                                           destroyed: row.isDestroyed,
+                                          // Gates the button until Central
+                                          // Disposal has costed the SR.
+                                          srNumber: row.package.srNumber,
                                           onMark: row.isDestroyed
                                               ? null
                                               : () => _confirmMarkDestroyed(

@@ -110,6 +110,14 @@ void main() {
             // timer when the widget tree is torn down.
             dispositionHasPerishablesProvider
                 .overrideWith((ref, key) => Future.value(false)),
+            // ⚠️ The yard may only confirm a destruction once Central
+            // Disposal has costed it, so the pill asks this before offering
+            // the button. Un-stubbed it answers zero and the row correctly
+            // shows "Awaiting Costs" instead -- which is the rule working,
+            // not a failure. This SR is costed so the test can reach the
+            // state it is actually about.
+            destructionSpendProvider.overrideWith(
+                (ref, key) => Future.value({'CED/GL1/SR/01/2025': 1500.0})),
             // ⚠️ The page pages on the SERVER now, so it no longer reads
             // livePackagesProvider -- it asks the disposition_rows view for
             // one page and then fetches the packages behind it. These two

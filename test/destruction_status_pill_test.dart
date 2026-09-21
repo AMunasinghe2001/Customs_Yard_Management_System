@@ -137,11 +137,45 @@ void main() {
         File('lib/screens/disposal/disposal_dashboard_screen.dart')
             .readAsStringSync();
 
-    test('advertising and auction are not offered for a destruction', () {
+    test('a destruction IS advertised, so the field is offered', () {
+      // ⚠️ This test used to assert the opposite. The form excluded
+      // advertising on the reasoning that "the goods go straight to the
+      // destroying contractor, so nothing is advertised" -- and the officer
+      // corrected it: a destruction is advertised, out of the same
+      // destroying deposit.
       expect(
           form,
-          contains(
-              "static const _notForDestruction = {'advertising_expense', 'auction_expense'}"));
+          contains("static const _notForDestruction = {'auction_expense'}"),
+          reason: 'advertising must be enterable on a destruction');
+    });
+
+    test('but an auction is still never offered', () {
+      // A destroyed item is never sold, so a figure here would be a
+      // data-entry mistake rather than a field anyone needs.
+      expect(form, contains("_notForDestruction = {'auction_expense'}"));
+    });
+
+    test('the destruction notice names advertising too', () {
+      // The copy has to match the fields on screen; it told the officer only
+      // "costs entered here" while the disposal version named both.
+      expect(
+          form,
+          contains('Notice: Destruction and advertising costs entered here '
+              'are deducted from the lodged Destroying Deposit.'));
+    });
+
+    test('the details popup shows Advertising unconditionally', () {
+      // ⚠️ It was `if (advertisingExpense > 0)`, from the same wrong
+      // premise. A blank box means "nothing spent yet", which is information
+      // -- Destruction, Labour and Transport beside it are always shown.
+      final popup =
+          File('lib/widgets/package_details_dialog.dart').readAsStringSync();
+      final i = popup.indexOf("label: 'Advertising'");
+      expect(i, greaterThan(-1));
+      // Look back a little way: no `> 0` guard may wrap it.
+      final before = popup.substring(i - 400, i);
+      expect(before, isNot(contains('advertisingExpense > 0')),
+          reason: 'Advertising is hidden again when nothing is spent');
     });
 
     test('but anything already recorded under them still spends the deposit',
@@ -156,7 +190,11 @@ void main() {
     });
 
     test('the Destroyed Goods table opens it in its destruction shape', () {
-      expect(central, contains('RecordExpenseDialog(sr: sr, forDestruction: true)'));
+      // Matched loosely: `dart format` rewraps this call, and it now also
+      // carries `locked:`. The point is the destruction shape, not the
+      // line breaks.
+      expect(central, contains('RecordExpenseDialog('));
+      expect(central, contains('forDestruction: true'));
     });
   });
 }
