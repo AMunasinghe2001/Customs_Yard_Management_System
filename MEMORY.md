@@ -2091,6 +2091,93 @@ python tool/measure_toolbar.py     # search/filter/button: top, bottom, height
 
 ⚠️ **The auth back arrow is a page-corner control, not a heading ornament (2026-09-04).** Every login/signup/OTP screen used to put an `IconButton` inline, immediately left of its title — which pushed the heading off the panel's own margin and forced **every subtitle to carry a matching `EdgeInsets.only(left: 48)`** just to line up under it. It is now `AuthBackButton` (`lib/widgets/auth_back_button.dart`), dropped into the `Stack` each screen already keeps for its theme toggle and pinned `top: 24, left: 24`. Title and subtitle both start at the margin.
 
+### The left panel's animation is a CONSTELLATION (2026-09-21)
+
+⚠️ **Asked for a different design**, on the left panel of every login/signup
+page: black plus the team colour, with an animation that has some shape to
+it. The three drifting orbs were a soft wash with nothing to look at. Chosen
+from four options (aurora ribbons, constellation, contour lines, sweeping
+beam) — **constellation/network**, because consignments moving between
+points is what this system is a record of.
+
+Nodes drift on closed loops; a link is drawn only between pairs closer than
+`shortest * 0.30`, and its alpha falls with `closeness^2` so links fade in
+and out rather than snapping on at a threshold. Each node is a small bright
+core inside a soft halo, breathing on its own clock so they never brighten
+together. The orbs stay underneath as a dim ground — the constellation is
+the shape, the orbs are the light it sits in.
+
+⚠️ **The centre is protected TWICE, and the second one is the real guard.**
+The node table keeps clear of the middle by hand, but the nodes *drift* and
+the links *span between them* — so a link can run straight across the crest
+while both its ends stay well outside it. `_centreFade` is applied per node
+**and to each link's midpoint**. Positions alone promise nothing here.
+
+⚠️ **Paint order is load-bearing:** orbs → constellation → black pool. The
+pool must stay last, because it is what guarantees black behind the crest;
+a node drawn after it would put the accent straight back where the ship and
+the plane have to read as holes. A test asserts the ordering by source index.
+
+⚠️ **It takes the same `trim` as the orbs.** Gold is ~2.4x the next
+brightest accent, so without it gold's nodes read as lamps while purple's
+read as a tint — the exact complaint the orbs were trimmed for. The
+constellation is painted in `accent`, never a literal colour, so all six
+portals differ by team colour alone.
+
+Guarded in `test/brand_panel_test.dart` (`_theConstellation`): paint order,
+no node within 0.25 of the crest, `_centreFade` applied to link midpoints,
+near-neighbour linking, accent-only painting, trim applied, and the panel
+still animating. ⚠️ The node-position test was **verified by breaking it**
+— moving one node to (0.50, 0.42) fails it — because a regex that matches
+nothing passes silently.
+
+### Black spreads from the logo; the colour lives outside it
+
+⚠️ **The reason is the crest itself, not taste.** *"ලෝගෝ එක වටෙන් කහ නෙවෙයි කලු
+විහිදෙන්න ඕන — මොකද ලෝගෝ එකේ නැවයි ප්ලේන් එකයි කලුනේ."* The ship and the
+plane are **not transparent**; they are filled with the colour expected behind
+them (see [crestWithKnockout]), so they read as holes **only while that colour
+is really there**. Any accent reaching the middle turns them into gold
+stickers on a gold disc. So the area around the mark must be genuinely black,
+and the colour has to live further out.
+
+Three coordinated changes in
+[lib/widgets/brand_panel.dart](lib/widgets/brand_panel.dart):
+
+1. **The crest pool is now opaque and much wider** — `0.82 → 1.0`, radius
+   `0.72 → 0.95` of the shorter side, falloff `1.6 → 1.35`, and `7 → 11`
+   stops (a deeper, wider ramp banded at 7). Around the crest the black goes
+   from 0.49–0.82 to **0.73–1.00**.
+2. **`_behindCrest`'s accent lean cut `0.16 → 0.04`** — it was describing a
+   colour that is no longer there.
+3. **New `_knockoutColor`**, constant, built from `deepColor` + a neutral
+   white lift, and that — not `behind` — is what the crest is painted with.
+
+⚠️ **Do NOT freeze `_behindCrest` to fix the knockout.** My first attempt made
+it constant, which is correct for the crest and **wrong for the panel**: it is
+*also the gradient's middle stop*, so the whole animation stopped dead. Two
+existing tests caught it ("the panel feeds it the colour behind the crest",
+"one full cycle takes several seconds"). The value still travels; only the
+colour the **crest is painted with** is pinned, which is why they are now two
+separate members.
+
+⚠️ **A deeper pool means the orbs can have their light BACK.** `_brightnessTrim`
+had been steepened to `2.05` to keep gold out of the middle; the pool now does
+that at the centre, so holding the orbs down as well left the corners flat and
+took the movement with them. Eased to **1.70** — the brief asks for black
+around the mark *and* soft moving colour around that, and those pull against
+each other.
+
+⚠️ **One widget, every portal.** All 15 sign-in/sign-up screens mount
+`BrandPanel`, and both the pool (`deep`) and the knockout (`widget.deepColor`)
+come from `kBrandPanelBlack`, never per-portal — so no screen can drift.
+A test asserts the call-site count stays above 10.
+
+⚠️ **Two more tests had pinned the old constants** (`deep.withOpacity(0.82`,
+`orbTrim(gold) < 0.45`) and failed on contact. Both now parse the values out
+of the source and assert the *property* — opaque at the centre, radius ≥ 0.9
+— rather than the literal, the same fix the gold retune above needed.
+
 ### Darkening gold a third time — move the luminance term, not the base
 
 ⚠️ **"කහ වැඩියි, බ්ලැක් වැඩි වෙන්න ඕන"** on the gold sign-in panels

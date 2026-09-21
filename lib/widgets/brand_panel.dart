@@ -202,10 +202,40 @@ class _BrandPanelState extends State<BrandPanel> with TickerProviderStateMixin {
     // Raised 0.10 → 0.16 because the lift now starts from black rather than
     // from a navy-mixed colour, and without it the middle is too dark for the
     // crest's knockout to read as a hole rather than as a black patch.
+    //
+    // ⚠️ The accent lean is much smaller (0.16 → 0.04). The orb pool
+    // underneath is opaque black at the centre now, so a strong lean was
+    // describing a colour that is no longer there — and this is the ONE
+    // value that has to be right, because the ship and the plane are painted
+    // with it. Overstate it and the two shapes read as gold patches on a
+    // black disc, which is the exact failure the knockout exists to prevent.
+    //
+    // ⚠️ NOT zero, and not constant in `t`. A fixed colour here would freeze
+    // the gradient's middle stops with it — this value is the ramp's middle
+    // as well as the knockout — and the panel would stop moving altogether.
+    // Small and still travelling keeps the holes honest AND keeps the light
+    // alive; [_knockoutColor] is what the crest is actually painted with.
     final mid = Color.lerp(
         widget.deepColor, Colors.white, 0.06 * (1.8 - _accentDepth * 0.4))!;
-    return Color.lerp(mid, widget.accent, 0.16 * t * _accentDepth)!;
+    return Color.lerp(mid, widget.accent, 0.04 * t * _accentDepth)!;
   }
+
+  /// The colour the crest's ship and plane are actually painted.
+  ///
+  /// ⚠️ Separate from [_behindCrest], and CONSTANT. Those two shapes are not
+  /// transparent; they are filled with the colour expected behind them, so
+  /// they read as holes only while that colour is what is really there.
+  ///
+  /// The orb pool is opaque `deepColor` under the crest now, so what is
+  /// really there is the deep colour — no accent, no drift. It used to be
+  /// [_behindCrest], which travels, and the knockout had to chase it frame by
+  /// frame; the shapes were exact only at the moments the chase kept up.
+  ///
+  /// [_behindCrest] still moves, because it is also the gradient's middle
+  /// stop and freezing it would stop the panel animating. Only the value the
+  /// crest is painted with is pinned here.
+  Color get _knockoutColor => Color.lerp(
+      widget.deepColor, Colors.white, 0.06 * (1.8 - _accentDepth * 0.4))!;
 
   /// How far the accent corner is pulled back towards the deep colour.
   ///
@@ -472,7 +502,9 @@ class _BrandPanelState extends State<BrandPanel> with TickerProviderStateMixin {
                     _HaloedCrest(
                       source: _source!,
                       tint: ink,
-                      knockout: behind,
+                      // ⚠️ Not `behind`: that travels, and the crest must be
+                      // painted the colour the pool actually puts there.
+                      knockout: _knockoutColor,
                       accent: accent,
                       glow: _glow,
                     ),
@@ -741,7 +773,13 @@ class _OrbFieldPainter extends CustomPainter {
     final l = 0.2126 * channel(accent.r) +
         0.7152 * channel(accent.g) +
         0.0722 * channel(accent.b);
-    return (1.0 - (l - 0.08) * 2.05).clamp(0.30, 1.0);
+    // ⚠️ Eased back 2.05 → 1.70 once the crest pool went opaque. The trim was
+    // steepened to stop gold reaching the middle of the panel; the pool now
+    // does that job properly and at the centre, so holding the orbs this far
+    // down as well left the corners flat and took the movement with them.
+    // The brief asks for black around the mark AND a soft moving colour
+    // around that — the pool is the first half, these are the second.
+    return (1.0 - (l - 0.08) * 1.70).clamp(0.30, 1.0);
   }
 
   @override
@@ -803,6 +841,19 @@ class _OrbFieldPainter extends CustomPainter {
     }
     canvas.restore();
 
+    // ⚠️ THE CONSTELLATION, drawn over the glow and UNDER the pool.
+    //
+    // The orbs alone were a soft wash with nothing to look at -- asked for
+    // a design with some shape to it, on black and the team colour. A
+    // network of nodes and the links between them is the one that means
+    // something here: consignments moving between points is what this
+    // system is a record of.
+    //
+    // ⚠️ Under the pool, never over it. The pool is what guarantees black
+    // behind the crest, and a node drawn on top of it would put the accent
+    // straight back where the ship and the plane have to read as holes.
+    _paintConstellation(canvas, size, shortest, trim);
+
     // ⚠️ A pool of the DEEP colour over the middle, painted last.
     //
     // Keeping the orbs out at the corners is not enough on its own: they are
@@ -814,10 +865,26 @@ class _OrbFieldPainter extends CustomPainter {
     //
     // Transparent at the rim, so it darkens the middle without drawing an
     // edge of its own.
+    //
+    // ⚠️ IT IS BLACK THAT SPREADS FROM THE LOGO, NOT GOLD — given directly,
+    // and the reason is the crest itself: the ship and the plane are not
+    // transparent. They are painted the colour expected behind them (see
+    // [crestWithKnockout]), so they only read as holes while that colour is
+    // what is actually there. Any accent reaching the middle turns the two
+    // shapes into gold stickers on a gold disc.
+    //
+    // So the pool is now opaque at its centre (0.82 → 1.0) and reaches
+    // further out (0.72 → 0.95 of the shorter side), with a gentler falloff
+    // (1.6 → 1.35) so the black fades into the accent over a long distance
+    // instead of ending in a visible ring. The colour lives out at the edges
+    // of the panel, where the orbs and the gradient corner still carry it.
     final centre = Offset(size.width * 0.5, size.height * 0.42);
-    final vignetteRadius = shortest * 0.72;
+    final vignetteRadius = shortest * 0.95;
     final vignette = Rect.fromCircle(center: centre, radius: vignetteRadius);
-    const vSteps = 7;
+    // ⚠️ More stops than before. The pool is deeper AND wider now, so it
+    // ramps through more levels — at 7 stops the extra distance showed the
+    // same contour banding the orbs needed eight stops to cure.
+    const vSteps = 11;
     canvas.drawCircle(
       centre,
       vignetteRadius,
@@ -825,11 +892,140 @@ class _OrbFieldPainter extends CustomPainter {
         ..shader = RadialGradient(
           colors: [
             for (var i = 0; i < vSteps; i++)
-              deep.withOpacity(0.82 * math.pow(1 - i / (vSteps - 1), 1.6)),
+              deep.withOpacity(1.0 * math.pow(1 - i / (vSteps - 1), 1.35)),
           ],
           stops: [for (var i = 0; i < vSteps; i++) i / (vSteps - 1)],
         ).createShader(vignette),
     );
+  }
+
+  /// The constellation's nodes, as fractions of the panel.
+  ///
+  /// ⚠️ NONE of them in the middle, for the same reason the orbs are not:
+  /// the crest's ship and plane are painted the colour expected behind them,
+  /// so anything drifting across that spot breaks the knockout. The centre
+  /// of the panel is a hole in this layer too -- [_centreFade] enforces it
+  /// per-node rather than trusting the table, so a later edit cannot quietly
+  /// move one inward.
+  ///
+  /// ⚠️ Irrational-ish speeds again (see [_orbs]). Whole multiples would
+  /// bring the whole figure back to the same arrangement every cycle, and a
+  /// repeating background is exactly what the eye starts watching.
+  static const _nodes = <_Node>[
+    _Node(x: 0.13, y: 0.10, r: 2.2, dx: 0.035, dy: 0.028, speed: 1.00, phase: 0.0),
+    _Node(x: 0.30, y: 0.06, r: 1.6, dx: 0.026, dy: 0.034, speed: 0.72, phase: 1.3),
+    _Node(x: 0.06, y: 0.27, r: 1.9, dx: 0.030, dy: 0.024, speed: 1.23, phase: 2.6),
+    _Node(x: 0.25, y: 0.30, r: 1.4, dx: 0.022, dy: 0.030, speed: 0.61, phase: 4.0),
+    _Node(x: 0.88, y: 0.14, r: 2.0, dx: 0.032, dy: 0.026, speed: 0.87, phase: 0.8),
+    _Node(x: 0.72, y: 0.28, r: 1.5, dx: 0.024, dy: 0.032, speed: 1.37, phase: 3.1),
+    _Node(x: 0.94, y: 0.38, r: 1.7, dx: 0.028, dy: 0.022, speed: 0.66, phase: 5.2),
+    _Node(x: 0.10, y: 0.72, r: 2.1, dx: 0.034, dy: 0.027, speed: 0.93, phase: 1.9),
+    _Node(x: 0.28, y: 0.88, r: 1.5, dx: 0.025, dy: 0.031, speed: 1.16, phase: 4.7),
+    _Node(x: 0.07, y: 0.93, r: 1.8, dx: 0.029, dy: 0.023, speed: 0.78, phase: 2.2),
+    _Node(x: 0.86, y: 0.74, r: 2.0, dx: 0.031, dy: 0.029, speed: 1.08, phase: 0.4),
+    _Node(x: 0.68, y: 0.91, r: 1.6, dx: 0.027, dy: 0.025, speed: 0.69, phase: 3.6),
+    _Node(x: 0.95, y: 0.92, r: 1.4, dx: 0.023, dy: 0.033, speed: 1.29, phase: 5.8),
+  ];
+
+  /// How much of the constellation survives at a point, by how close it is
+  /// to the crest.
+  ///
+  /// ⚠️ Enforced in the PAINTER, not in the table. The node list above
+  /// keeps clear of the middle by hand, but the nodes drift and the links
+  /// span between them, so a link can cross the centre even when both its
+  /// ends are well outside it. This fades both to nothing across the crest's
+  /// zone, so the black pool never has to clean up after this layer.
+  static double _centreFade(Offset p, Size size, double shortest) {
+    final centre = Offset(size.width * 0.5, size.height * 0.42);
+    final d = (p - centre).distance / shortest;
+    // Fully clear inside the crest, full strength once well past it.
+    const inner = 0.34, outer = 0.62;
+    if (d <= inner) return 0.0;
+    if (d >= outer) return 1.0;
+    final u = (d - inner) / (outer - inner);
+    // Smoothstep, so there is no edge where the fade begins or ends.
+    return u * u * (3 - 2 * u);
+  }
+
+  /// Nodes joined to their near neighbours, drifting on closed loops.
+  void _paintConstellation(
+      Canvas canvas, Size size, double shortest, double trim) {
+    // Where every node is this frame, and how much of it shows.
+    final pts = <Offset>[];
+    final fades = <double>[];
+    for (final n in _nodes) {
+      final a = (t * n.speed) * 2 * math.pi + n.phase;
+      final p = Offset(
+        (n.x + math.cos(a) * n.dx) * size.width,
+        (n.y + math.sin(a) * n.dy) * size.height,
+      );
+      pts.add(p);
+      fades.add(_centreFade(p, size, shortest));
+    }
+
+    // ⚠️ The LINKS first, so a node always sits on top of the lines
+    // meeting it rather than being cut in half by one.
+    //
+    // ⚠️ Only between NEAR neighbours, and the closer the pair the
+    // brighter the link. Joining every pair would be a solid mesh -- the
+    // shape people recognise as a constellation comes from most pairs NOT
+    // being joined.
+    final linkReach = shortest * 0.30;
+    final linkPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < pts.length; i++) {
+      for (var j = i + 1; j < pts.length; j++) {
+        final d = (pts[i] - pts[j]).distance;
+        if (d >= linkReach) continue;
+        // Near the reach limit a link is invisible, so it fades IN and out
+        // as the nodes drift instead of snapping on at a threshold.
+        final closeness = 1 - d / linkReach;
+        // ⚠️ The midpoint is faded too: two nodes either side of the
+        // crest can both be clear of it while the line between them runs
+        // straight across the mark.
+        final mid = Offset.lerp(pts[i], pts[j], 0.5)!;
+        final fade =
+            math.min(fades[i] * fades[j], _centreFade(mid, size, shortest));
+        final alpha = 0.30 * closeness * closeness * fade * trim;
+        if (alpha <= 0.002) continue;
+        linkPaint
+          ..color = accent.withOpacity(alpha)
+          ..strokeWidth = 0.9;
+        canvas.drawLine(pts[i], pts[j], linkPaint);
+      }
+    }
+
+    // The nodes themselves: a small bright core in a soft halo, so they read
+    // as points of light rather than as dots painted on.
+    for (var i = 0; i < pts.length; i++) {
+      final fade = fades[i];
+      if (fade <= 0.01) continue;
+      final n = _nodes[i];
+      // A slow individual breath, off the shared clock, so they do not all
+      // brighten together.
+      final pulse =
+          0.78 + 0.22 * math.sin((t * n.speed * 2.0) * 2 * math.pi + n.phase);
+      final r = n.r * (shortest / 420).clamp(0.75, 1.6);
+
+      final halo = r * 4.2;
+      canvas.drawCircle(
+        pts[i],
+        halo,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [
+              accent.withOpacity(0.22 * pulse * fade * trim),
+              accent.withOpacity(0.0),
+            ],
+          ).createShader(Rect.fromCircle(center: pts[i], radius: halo)),
+      );
+      canvas.drawCircle(
+        pts[i],
+        r,
+        Paint()..color = accent.withOpacity(0.72 * pulse * fade * trim),
+      );
+    }
   }
 
   @override
@@ -861,6 +1057,31 @@ class _Orb {
     required this.dx,
     required this.dy,
     required this.a,
+    required this.speed,
+    required this.phase,
+  });
+}
+
+/// One point of the constellation. See [_OrbFieldPainter._nodes].
+class _Node {
+  /// Where it sits, as a fraction of the panel.
+  final double x, y;
+
+  /// Core radius in logical pixels at a 420px panel, scaled from there.
+  final double r;
+
+  /// How far it drifts from that spot, as a fraction of the panel.
+  final double dx, dy;
+
+  /// Multiplier on the shared clock, and where in its own loop it starts.
+  final double speed, phase;
+
+  const _Node({
+    required this.x,
+    required this.y,
+    required this.r,
+    required this.dx,
+    required this.dy,
     required this.speed,
     required this.phase,
   });

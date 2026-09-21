@@ -34,6 +34,8 @@ LinearGradient _gradient(WidgetTester t) {
 }
 
 void main() {
+  _blackSpreadsFromTheLogo();
+  _theConstellation();
   group('the knockout follows the background', () {
     // ⚠️ Tested against the REAL asset file, read from disk. A widget test
     // cannot see the SVG string -- rootBundle does not serve project assets in
@@ -393,7 +395,12 @@ void main() {
       // them only made this test an echo of the source.
       expect(orbTrim(purple), closeTo(1.00, 0.02),
           reason: 'the dim accents must keep their light');
-      expect(orbTrim(gold), lessThan(0.45),
+      // ⚠️ Loosened from 0.45 once the crest pool went opaque. The trim had
+      // been steepened to keep gold out of the MIDDLE of the panel; the pool
+      // does that at the centre now, so holding the orbs down this hard as
+      // well left the corners flat and took the movement with them. The
+      // brief wants black around the mark AND soft moving colour outside it.
+      expect(orbTrim(gold), lessThan(0.55),
           reason: 'gold is the accent that washes the panel');
       expect(orbTrim(gold), greaterThan(0.20),
           reason: 'trimmed, not extinguished');
@@ -460,7 +467,23 @@ void main() {
       // ship and plane are painted with ONE expected colour that cannot
       // track a drifting tint.
       expect(src, contains('final vignetteRadius'));
-      expect(src, contains('deep.withOpacity(0.82'));
+
+      // ⚠️ The pool must be OPAQUE at its centre. The ship and the plane are
+      // filled with `_knockoutColor`, which is the deep colour flat — so the
+      // deep colour is what has to be under them. At the old 0.82 the accent
+      // still showed through and the two shapes read as gold on black, which
+      // is the report this pool was strengthened for: "black should spread
+      // from around the logo, not gold".
+      final peak = RegExp(r'deep\.withOpacity\(([0-9.]+) \* math\.pow')
+          .firstMatch(src)!;
+      expect(double.parse(peak.group(1)!), closeTo(1.0, 0.001),
+          reason: 'anything under 1.0 lets the accent reach the crest');
+
+      // And it has to REACH: a deep pool over a small radius leaves a ring
+      // of accent right at the crest's edge.
+      final radius = RegExp(r'vignetteRadius = shortest \* ([0-9.]+)')
+          .firstMatch(src)!;
+      expect(double.parse(radius.group(1)!), greaterThanOrEqualTo(0.9));
     });
 
     test('it is painted LAST, after the orbs', () {
@@ -488,6 +511,165 @@ void main() {
       // so the colour reached the middle of the panel.
       expect(src, contains('_corner(accent), 0.08)'));
       expect(src, contains('_corner(accent), 0.24)'));
+    });
+  });
+}
+
+// ── Black spreads from the logo, not gold ───────────────────────────────────
+//
+// ⚠️ THE REPORT, given directly: "ලෝගෝ එක වටෙන් කහ නෙවෙයි කලු විහිදෙන්න ඕන.
+// මොකද ලෝගෝ එකේ නැවයි ප්ලේන් එකයි කලුනේ" — black must spread from around the
+// logo, because the ship and the plane in it ARE black. Then, outside that,
+// a soft moving colour: "ලොකුවට කහ පේන්න බෑ, බ්ලැක් තියෙන්න ඕන".
+//
+// Those two halves pull against each other, and the panel has to hold both:
+// opaque black under the mark, live colour out at the edges.
+void _blackSpreadsFromTheLogo() {
+  group('black spreads from the logo and colour lives outside it', () {
+    final src = File('lib/widgets/brand_panel.dart').readAsStringSync();
+
+    test('the crest is painted a CONSTANT colour, not the drifting one', () {
+      // ⚠️ The ship and plane are filled with whatever they are told is
+      // behind them. The pool under the crest is opaque `deepColor`, so that
+      // is the truth — and it does not move. Painting them `behind`, which
+      // travels, was right only while the gradient really was what showed
+      // through; now it would tint two shapes that sit on flat black.
+      expect(src, contains('Color get _knockoutColor'));
+      expect(src, contains('knockout: _knockoutColor'));
+      expect(src, isNot(contains('knockout: behind')));
+    });
+
+    test('_knockoutColor carries no accent at all', () {
+      final i = src.indexOf('Color get _knockoutColor');
+      final body = src.substring(i, src.indexOf(';', i));
+
+      // ⚠️ `widget.accent` is the HUE and must not appear. `_accentDepth`
+      // may: it is a brightness scalar that only sets how much NEUTRAL white
+      // lift the deep colour gets, so no portal colour enters the result.
+      expect(body, isNot(contains('widget.accent')),
+          reason: 'any accent hue here paints the holes gold on black');
+      expect(body, contains('widget.deepColor'));
+      expect(body, contains('Colors.white'));
+    });
+
+    testWidgets('but the panel still moves', (t) async {
+      // ⚠️ The first attempt at this pinned `_behindCrest` itself, which is
+      // ALSO the gradient's middle stop — so the whole panel stopped
+      // animating. Black around the mark must not cost the movement.
+      await t.pumpWidget(_host(_panel()));
+      await t.pump(const Duration(milliseconds: 100));
+      final a = _gradient(t).colors[1];
+      await t.pump(const Duration(seconds: 3));
+      final b = _gradient(t).colors[1];
+      expect(b, isNot(a), reason: 'the panel went static');
+    });
+
+    test('every portal gets this, not just the gold ones', () {
+      // ⚠️ "සේරම පෝට්‍රල්වල එකම විදිහට එන්න ඕන." The pool is painted from
+      // `deep`, which is `kBrandPanelBlack` for every portal, and the
+      // knockout is built from `widget.deepColor` — neither is per-portal,
+      // so no screen can drift from the others.
+      expect(src, contains('deep.withOpacity('));
+      expect(src, contains('widget.deepColor, Colors.white'));
+
+      // And all 15 sign-in/sign-up screens go through this one widget.
+      final users = Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .where((f) => f.readAsStringSync().contains('BrandPanel('))
+          .length;
+      expect(users, greaterThan(10),
+          reason: 'the panel is the single place every portal shares');
+    });
+  });
+}
+
+// ⚠️ The constellation ---------------------------------------------------
+//
+// Asked for a different design on the left panel of every login page:
+// black plus the team colour, with an animation that has some shape to it.
+// A network of nodes and their links was chosen over drifting glow, because
+// consignments moving between points is what this system is a record of.
+//
+// It has to hold the SAME promise the orbs do: nothing in the middle, where
+// the crest's ship and plane are painted the colour expected behind them.
+void _theConstellation() {
+  group('the constellation lights the edges and leaves the crest alone', () {
+    final src = File('lib/widgets/brand_panel.dart').readAsStringSync();
+
+    test('it is drawn UNDER the black pool, not over it', () {
+      // ⚠️ The pool is what guarantees black behind the crest. A node
+      // painted after it would put the accent straight back where the two
+      // shapes have to read as holes.
+      final constellation = src.indexOf('_paintConstellation(canvas');
+      final pool = src.indexOf('final vignetteRadius');
+      expect(constellation, greaterThan(-1));
+      expect(pool, greaterThan(constellation),
+          reason: 'the pool must paint last, over the constellation');
+    });
+
+    test('no node is placed in the middle of the panel', () {
+      // The table is hand-written, so this is the guard against someone
+      // later adding one over the crest.
+      final re = RegExp(r'_Node\(x: ([0-9.]+), y: ([0-9.]+)');
+      final found = re.allMatches(src).toList();
+      expect(found.length, greaterThan(6),
+          reason: 'the node table was not found');
+      for (final m in found) {
+        final x = double.parse(m.group(1)!);
+        final y = double.parse(m.group(2)!);
+        // Distance from the crest, which sits at (0.5, 0.42).
+        final d = math.sqrt(math.pow(x - 0.5, 2) + math.pow(y - 0.42, 2));
+        expect(d, greaterThan(0.25),
+            reason: 'node at ($x, $y) sits on the crest');
+      }
+    });
+
+    test('and the centre is enforced in the painter, not just the table',
+        () {
+      // ⚠️ The nodes DRIFT and the links span between them, so a link can
+      // cross the middle while both its ends stay clear of it. Positions
+      // alone cannot promise anything; the fade has to be applied per
+      // point, and to each link's midpoint as well.
+      expect(src, contains('static double _centreFade('));
+      expect(src, contains('_centreFade(mid, size, shortest)'),
+          reason: 'a link between two outer nodes can still cross the crest');
+    });
+
+    test('links only join NEAR neighbours', () {
+      // Joining every pair is a mesh; the shape people read as a
+      // constellation comes from most pairs not being joined.
+      expect(src, contains('final linkReach'));
+      expect(src, contains('if (d >= linkReach) continue;'));
+    });
+
+    test('it is painted in the accent, so each portal differs', () {
+      final i = src.indexOf('void _paintConstellation(');
+      final body = src.substring(i, src.indexOf('\n  }\n', i));
+      expect(body, contains('accent.withOpacity('));
+      // ...and never in a hardcoded colour, which would make all six the
+      // same and defeat the point of a team colour.
+      expect(body, isNot(contains('Color(0xFF')));
+    });
+
+    test('the same trim that holds gold back applies to it', () {
+      // ⚠️ Gold is ~2.4x the next brightest accent. Without the trim its
+      // nodes would read as lamps while purple's read as a tint -- the
+      // exact complaint the orbs were trimmed for.
+      expect(src, contains('_paintConstellation(canvas, size, shortest, trim)'));
+      final i = src.indexOf('void _paintConstellation(');
+      final body = src.substring(i, src.indexOf('\n  }\n', i));
+      expect(body, contains('* trim'));
+    });
+
+    testWidgets('every portal gets it, and it keeps moving', (t) async {
+      // One widget, so no screen can drift from the others.
+      await t.pumpWidget(_host(_panel()));
+      await t.pump(const Duration(milliseconds: 100));
+      final a = _gradient(t).colors[1];
+      await t.pump(const Duration(seconds: 3));
+      expect(_gradient(t).colors[1], isNot(a));
     });
   });
 }
