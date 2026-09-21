@@ -78,6 +78,46 @@ class AppEnv {
     return paths;
   }
 
+  /// Which named block of the `.env` is in force, e.g. `supabase` or
+  /// `local`. Empty means the plain, unsuffixed keys.
+  ///
+  /// ⚠️ ONE FILE, SEVERAL SERVERS. Before this, switching between the
+  /// Supabase project and the local database meant commenting out one block
+  /// and uncommenting another — every line of both — and a half-finished
+  /// edit produced a mixed configuration: a cloud host with a local
+  /// password, which fails as an authentication error and looks like a wrong
+  /// password rather than a half-applied change.
+  ///
+  /// Now every server keeps its own suffixed keys and only this one line
+  /// moves:
+  ///
+  ///     PG_PROFILE=supabase
+  ///     PG_HOST__supabase=aws-0-....pooler.supabase.com
+  ///     PG_HOST__local=localhost
+  ///
+  /// ⚠️ A double underscore, not a single one. `PG_SSL_VERIFY` already
+  /// contains underscores, so `PG_SSL_VERIFY_local` could not be told from a
+  /// key of that name in its own right.
+  static String get profile {
+    load();
+    return (_env?['PG_PROFILE'] ?? '').trim();
+  }
+
+  /// The raw value for [key] under the active profile, falling back to the
+  /// unsuffixed key.
+  ///
+  /// ⚠️ The fallback is what makes this safe to adopt gradually: a
+  /// `.env` with no profiles at all behaves exactly as it did, and a profile
+  /// that names only the keys that differ inherits the rest.
+  static String? _lookup(String key) {
+    final p = profile;
+    if (p.isNotEmpty) {
+      final scoped = _env?['${key}__$p'];
+      if (scoped != null && scoped.trim().isNotEmpty) return scoped;
+    }
+    return _env?[key];
+  }
+
   /// A value from the `.env`, or [fallback].
   ///
   /// [dartDefine] is the value `String.fromEnvironment` produced. It is passed
@@ -90,7 +130,7 @@ class AppEnv {
   }) {
     if (dartDefine.isNotEmpty) return dartDefine;
     load();
-    final v = _env?[key];
+    final v = _lookup(key);
     if (v != null && v.trim().isNotEmpty) return v.trim();
     return fallback;
   }
@@ -103,7 +143,7 @@ class AppEnv {
   }) {
     if (dartDefine != dartDefineSentinel) return dartDefine;
     load();
-    final v = _env?[key];
+    final v = _lookup(key);
     final parsed = v == null ? null : int.tryParse(v.trim());
     return parsed ?? fallback;
   }
@@ -117,7 +157,7 @@ class AppEnv {
     // .env is consulted whenever the define is false and can only turn it ON.
     if (dartDefine) return true;
     load();
-    final v = _env?[key]?.trim().toLowerCase();
+    final v = _lookup(key)?.trim().toLowerCase();
     if (v == null || v.isEmpty) return fallback;
     return v == 'true' || v == '1' || v == 'yes';
   }

@@ -36,11 +36,22 @@ void main() {
     final env = _lf(File('.env').readAsStringSync());
     // Leading whitespace is tolerated: AppEnv trims, and a hand-edited
     // .env picks up stray indentation.
-    String fromFile(String key) =>
-        RegExp('^' + r'\s*' + '$key=(.*)' + r'$', multiLine: true)
-        .firstMatch(env)!
-        .group(1)!
-        .trim();
+    // ⚠️ Honours PG_PROFILE, like AppEnv does. The .env now holds one
+    // suffixed block per server (`PG_HOST__supabase`, `PG_HOST__local`, ...)
+    // and a single PG_PROFILE line chooses between them, so a test that
+    // looked only for the bare `PG_HOST=` stopped finding anything and died
+    // on a null check.
+    final profile = AppEnv.profile;
+    String fromFile(String key) {
+      for (final k in [if (profile.isNotEmpty) '${key}__$profile', key]) {
+        final m = RegExp('^' + r'\s*' + '$k=(.*)' + r'$', multiLine: true)
+            .firstMatch(env);
+        if (m != null && m.group(1)!.trim().isNotEmpty) {
+          return m.group(1)!.trim();
+        }
+      }
+      fail('neither ${key}__$profile nor $key is set in .env');
+    }
 
     expect(PgConfig.database, fromFile('PG_DATABASE'));
     expect(PgConfig.username, fromFile('PG_USER'));

@@ -436,7 +436,13 @@ class PgConfig {
         : verifySsl
             ? 'TLS, verified'
             : 'TLS, unverified';
-    return '$username@$host:$port/$database ($tls)';
+    // ⚠️ The PROFILE is named when one is active. Switching servers is a
+    // one-line change now, so "which server am I actually on" has to be
+    // answerable from the screen -- otherwise a stale PG_PROFILE looks like
+    // a broken network.
+    final p = AppEnv.profile;
+    final tag = p.isEmpty ? '' : ' [$p]';
+    return '$username@$host:$port/$database ($tls)$tag';
   }
 }
 

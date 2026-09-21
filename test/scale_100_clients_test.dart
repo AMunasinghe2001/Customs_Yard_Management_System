@@ -52,10 +52,22 @@ void main() {
       );
     });
 
-    test('the shipped default pool is the small one', () {
+    test('the pool stays small enough to share a server', () {
       // Guards the regression directly: someone raising this back to 8 for a
       // snappier single-machine dev run would re-break the 12th user.
-      expect(PgConfig.poolSizeSetting, 3);
+      //
+      // ⚠️ A RANGE, not `== 3`. This reads the live `.env`, so it was
+      // really testing the developer's own config: the Supabase deployment
+      // sets PG_POOL_SIZE=1 (its free tier allows ~60 connections, and
+      // 9 officers x 2 = 18), which is MORE conservative and failed a test
+      // written to catch the opposite mistake.
+      //
+      // 3 is the office-server default; 1 is the cloud one. Anything above
+      // 4 is the actual regression -- at 8 a stock server runs out at the
+      // twelfth user.
+      expect(PgConfig.poolSizeSetting, greaterThanOrEqualTo(1));
+      expect(PgConfig.poolSizeSetting, lessThanOrEqualTo(4),
+          reason: 'a pool this large starves the other clients');
     });
 
     test('pooled connections are retired rather than held all day', () {

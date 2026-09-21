@@ -72,12 +72,33 @@ void main() {
   group('the CA certificate is loadable and reported', () {
     tearDown(PgConfig.resetSecurityContextCache);
 
-    test('no path means the OS trust store', () {
-      // Correct when the certificate comes from a real CA on a domain.
-      expect(PgConfig.sslRootCertPath, isEmpty);
-      expect(PgConfig.resolvedSslRootCertPath, isNull);
-      expect(PgConfig.sslRootCertProblem, isNull);
-      expect(PgConfig.securityContext, isNull);
+    test('whatever is configured, it is USABLE', () {
+      // ⚠️ This used to assert `sslRootCertPath` was EMPTY, which made it a
+      // test of the developer's own `.env` rather than of the code: pointing
+      // a local build at Supabase -- which needs a private CA -- failed it,
+      // even though that configuration is correct.
+      //
+      // The invariant that actually matters is that a configured certificate
+      // must RESOLVE and LOAD. A path that does not exist is the dangerous
+      // state, because `securityContext` falls back to the OS trust store
+      // and the connection then fails with a TLS error naming nothing.
+      expect(PgConfig.sslRootCertProblem, isNull,
+          reason: 'PG_SSL_ROOT_CERT points somewhere unusable');
+
+      if (PgConfig.sslRootCertPath.trim().isEmpty) {
+        // No CA configured: the OS trust store is used, which is right for a
+        // server whose certificate comes from a public CA.
+        expect(PgConfig.resolvedSslRootCertPath, isNull);
+        expect(PgConfig.securityContext, isNull);
+      } else {
+        // A CA IS configured, so it must resolve to a real file and build a
+        // context -- otherwise verification silently falls back.
+        expect(PgConfig.resolvedSslRootCertPath, isNotNull);
+        expect(File(PgConfig.resolvedSslRootCertPath!).existsSync(), isTrue,
+            reason: 'the configured CA file is not on disk');
+        expect(PgConfig.securityContext, isNotNull,
+            reason: 'the CA file exists but could not be loaded');
+      }
     });
 
     test('a missing file is a stated problem, not a silent downgrade', () {

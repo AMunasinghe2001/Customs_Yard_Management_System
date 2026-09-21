@@ -7,14 +7,16 @@
 ## Project Overview
 - **Purpose**: Sri Lanka Customs "SR" (Seizure Report) yard management — package inspection/intake, SR warehouse holds & charges, returns/dispositions, forfeiture→tender→sale, officer/admin management, dashboards & reports.
 - **Type**: Flutter **desktop** app, **Windows-first** (only [windows/](windows/) platform dir present; uses `window_manager`).
-- **Backend**: Supabase (PostgreSQL + Auth + Row-Level Security + Realtime). One **Edge Function** ([supabase/functions/admin-officers/](supabase/functions/admin-officers/index.ts)) for admin-creates-officer (service_role + Resend email); otherwise no custom backend server.
-- **Architecture**: Single Flutter client → Supabase directly. Service classes wrap all DB access; Riverpod providers expose data/state to widgets; realtime channels trigger re-fetch.
-- **Core tech**: Flutter/Dart (SDK `>=3.0.0 <4.0.0`), Riverpod (`flutter_riverpod` + `riverpod_annotation`/`riverpod_generator`), `go_router`, `supabase_flutter`, `data_table_2`, `fl_chart`, `pdf`/`printing`/`barcode`, `google_sign_in`, `window_manager`, `auto_updater` (background updates). See [pubspec.yaml](pubspec.yaml).
+- **Backend**: a **plain PostgreSQL server**, reached directly with the `postgres` Dart package. ⚠️ **NOT Supabase** — the project ran on it until **2026-08-30** and was migrated off; `supabase_flutter`, the `supabase/` directory and the Edge Function are all gone. Auth, row-level security and realtime are now the app's own layer in [lib/core/db/](lib/core/db/) (`pg_auth.dart`, 155 RLS policies in SQL, `pg_realtime.dart` over LISTEN/NOTIFY).
+- ⚠️ **The identifier `supabase` survives as a VARIABLE NAME** at ~198 call sites ([db_client.dart](lib/core/db_client.dart) re-exports it). It is a handle, not a dependency — renaming it would touch every data-layer call for no behavioural change. Seeing `supabase.from(...)` in this codebase does **not** mean Supabase.
+- **Architecture**: Single Flutter client → PostgreSQL directly. Service classes wrap all DB access; Riverpod providers expose data/state to widgets; realtime channels trigger re-fetch.
+- **Where the database lives**: configured per install, never compiled in — `--dart-define` > `.env` beside the .exe > built-in default ([app_env.dart](lib/core/app_env.dart), [pg_connection.dart](lib/core/db/pg_connection.dart)). Templates in [installer/env-templates/](installer/env-templates/): `local-server`, `cloud-server`, **`supabase`**.
+- **Core tech**: Flutter/Dart (SDK `>=3.0.0 <4.0.0`), Riverpod (`flutter_riverpod` + `riverpod_annotation`/`riverpod_generator`), `go_router`, **`postgres: ^3.5.12`**, `data_table_2`, `fl_chart`, `pdf`/`printing`/`barcode`, `google_sign_in`, `window_manager`. See [pubspec.yaml](pubspec.yaml).
 
 ## Repository Structure
-- [lib/main.dart](lib/main.dart) — entry: window_manager init, `Supabase.initialize` (non-persisted sessions), `ProviderScope`, `MaterialApp.router`, offline-on-close handler.
+- [lib/main.dart](lib/main.dart) — entry: window_manager init, `ProviderScope`, `MaterialApp.router`, offline-on-close handler. ⚠️ The first database call is deliberately NOT awaited at start-up: a dead server used to hang the app on a blank, uncloseable window.
 - [lib/core/](lib/core/) — app-wide singletons/config:
-  - [db_client.dart](lib/core/db_client.dart) — **hardcoded** Supabase URL + anon key; `supabase` getter.
+  - [db_client.dart](lib/core/db_client.dart) — re-exports the PostgreSQL layer under the legacy `supabase` name. No URL, no key: the connection is resolved at run time from `.env`.
   - [providers.dart](lib/core/providers.dart) — all Riverpod providers (services, state, futures, realtime triggers).
   - [router.dart](lib/core/router.dart) — `routerProvider` (GoRouter), redirect/auth guard, all routes.
   - [theme.dart](lib/core/theme.dart) — `AppTheme.lightTheme`/`darkTheme`, `context.colors` extension (themed color tokens).
@@ -2127,6 +2129,258 @@ large ones (`disposal_dashboard_screen`, `disposition_category_screen`)
 **kept their real edits** anyway, because those were already committed — so
 the checkout discarded only the reformat. Worth knowing before assuming a
 revert loses work.
+
+### Hosting: back to Supabase, on the free tier (2026-09-21)
+
+Evaluated Namecheap shared hosting, a VPS and Supabase. **Namecheap shared
+hosting was rejected outright**: no `CREATE ROLE`, no `CREATE EXTENSION`,
+so `yard_app` cannot exist and the 155 RLS policies have no roles to bind
+to. It also wanted the cPanel password in every officer's `.env` for an
+SSH tunnel — that password controls the whole hosting account.
+
+**Chosen: Supabase Free.** The schema was BORN on Supabase (migrated off
+2026-08-30), so `anon` / `authenticated` / `service_role` and the policy
+style are native there. Current scale is **3 yards + Head Office, ~9
+officers**, so the free tier fits with room to spare.
+
+Template: [installer/env-templates/supabase.env.txt](installer/env-templates/supabase.env.txt)
+
+```
+PG_HOST=aws-1-ap-southeast-2.pooler.supabase.com   # session pooler
+PG_USER=postgres.<project-ref>                     # ref IS in the username
+PG_SSL=true   PG_SSL_VERIFY=true
+PG_POOL_SIZE=1                                     # 9 officers x 2 = 18/60
+```
+
+⚠️ **The session pooler, never `db.<ref>.supabase.co`.** The direct host is
+**IPv6-only** and fails from an IPv4 network as *"Network is unreachable"*
+— which reads like a wrong password or a dead server. Note **`aws-1`**,
+not `aws-0`, and the **project ref inside the username**.
+
+⚠️ **I HAD THIS BACKWARDS, and it is the most important correction in
+this section.** I wrote that Supabase's `postgres` is `nobypassrls` so it
+was safe to connect as. **It is not.** Measured on the live project:
+
+```
+postgres       super=false  bypassrls=TRUE     <- skips every policy
+service_role   super=false  bypassrls=TRUE
+authenticator  super=false  bypassrls=false    (but inherit=false)
+authenticated  super=false  bypassrls=false
+```
+
+Connecting as `postgres` would have skipped all 155 per-yard policies.
+`pg_connection.dart` already refuses a `rolsuper`/`rolbypassrls` connection,
+so the app would not have started — the guard caught what I got wrong.
+
+⚠️ **Supabase DOES allow a custom role**: its `postgres` has
+`rolcreaterole`. So `yard_app` is created there too, by
+[postgres/91_supabase_yard_app_role.sql](postgres/91_supabase_yard_app_role.sql),
+and the rule is the same as the office server's — never connect as the
+admin account.
+
+⚠️ **NOT `authenticator`**, which looks like the obvious candidate: it is
+granted `service_role` (BYPASSRLS) and is `inherit=false`, so its privileges
+need a `SET ROLE` the app never issues.
+
+⚠️ **The pooler wants the ref in the username even for a custom role** —
+`yard_app.<ref>`. Measured with a throwaway role: a bare name is refused
+with `FATAL (ENOIDENTIFIER) no tenant identifier provided`; with the suffix
+it connects as the role itself, `rolbypassrls=false`.
+
+⚠️ **The connection budget is arithmetic, not a feeling.**
+`clients x (PG_POOL_SIZE + 1) <= limit`. At the office default of 3 only 15
+users fit in the free tier's ~60. At 1 it is 18 for 9 officers. Raise it
+**with the plan**, not because a dashboard feels slow — overrunning shows
+as `53300: too many connections`, which looks like a server fault.
+
+⚠️ **Supavisor TRANSACTION mode would break RLS.** The whole security
+model rests on `set_config('app.yard', ..., false)` per SESSION; under
+transaction pooling each query may land on a different connection and the
+setting is gone. **Session mode only.**
+
+#### Building the whole schema in one run: `install_all.ps1` (2026-09-21)
+
+Loading ~90 files by hand in the right order is what kept failing, so
+[postgres/install_all.ps1](postgres/install_all.ps1) does it:
+the four core files, then every numbered `postgres/` file, then every
+`migrations/` file, sorted by NUMBER (a string sort puts 10 before 2).
+
+```
+.\postgres\install_all.ps1 -Target supabase
+.\postgres\install_all.ps1 -Target local -DryRun
+```
+
+⚠️ **13 files FAIL their verify on a fresh database, and that is correct.**
+They assert against the office server's DATA — *"expected 228, got 11"*,
+*"the page shows 369,383,700"*. Proven by rebuilding an empty database:
+**101 clean, 13 verify failures, and the schema still comes out at 37
+tables / 25 views / 160 policies**, matching the live database exactly. So
+the script does not stop for them and prints the object counts as the real
+result.
+
+⚠️ **PowerShell 5.1 turns psql NOTICEs into terminating errors.** `2>&1 |`
+wraps each stderr line in an ErrorRecord, so the run died at **1/114** on
+*"extension already exists, skipping"*. Two fixes were needed: redirect
+stderr to a FILE, **and** drop `$ErrorActionPreference` to `Continue`
+around the call — the redirect alone was not enough.
+
+⚠️ **Match `:\s*ERROR:`, not the word ERROR.** PowerShell's own wrapper
+text contains `NativeCommandError`, so a bare `-match 'ERROR'` flagged
+**93 of 114** files when only 13 had failed — burying the real ones.
+
+⚠️ **Two files share the prefix `52_`** (`52_accrued_storage_view` and
+`52_user_security_policies`), so the sort falls back to name for ties.
+
+It deliberately does NOT create the login role: `postgres/91` (Supabase) or
+`postgres/66` (office) run afterwards, so their `grant on ALL tables`
+covers tables that exist by then.
+
+#### One `.env`, several servers: `PG_PROFILE` (2026-09-21)
+
+The file used to hold a block per server with all but one commented out.
+Switching meant editing every line of two blocks, and ⚠️ **a half-finished
+edit produced a MIXED configuration** — a cloud host with a local password
+— which fails as an authentication error and reads like a wrong password
+rather than a half-applied change.
+
+Now every server keeps `KEY__<profile>` keys and **one line** switches:
+
+```
+PG_PROFILE=supabase        # supabase | local | backup | office
+PG_HOST__supabase=aws-0-ap-south-1.pooler.supabase.com
+PG_HOST__local=localhost
+```
+
+⚠️ **A DOUBLE underscore.** `PG_SSL_VERIFY` already contains underscores,
+so `PG_SSL_VERIFY_local` could not be told from a key of that name.
+
+⚠️ **Unsuffixed keys still work**, which is what makes it safe to adopt
+gradually: a `.env` with no profiles behaves exactly as before, and a
+profile that names only what differs inherits the rest.
+
+⚠️ **`describe()` now appends `[profile]`**, so the "Cannot reach the
+database" screen says which server is in force — switching is one line, so
+a stale `PG_PROFILE` must not look like a broken network.
+
+Resolution lives in `AppEnv._lookup`, so `read`/`readInt`/`readBool` all
+honour it. Profiles: **supabase** (cloud), **local** (`Customs_SR_DB`),
+**backup** (`..._backup_20260914_1543`, the one with real data), **office**
+(10.10.71.15). Verified by switching all four and checking `describe()`.
+
+⚠️ **Two tests read the live `.env` and broke on it** — `app_env_test`
+looked for a bare `PG_DATABASE=` and died on a null check. It is now
+profile-aware and `fail()`s with a message naming the missing key.
+
+#### Supabase uses its OWN private CA (2026-09-21)
+
+⚠️ **`Bad server certificate` on first connect, and it is NOT a bug in
+the app.** The pooler presents `CN=*.pooler.supabase.com` issued by
+**"Supabase Intermediate 2021 CA"** under **"Supabase Root 2021 CA"** — a
+private root that is **not in the Windows trust store**. So `PG_SSL_VERIFY=true`
+fails on a link that is otherwise perfectly healthy.
+
+Measured with openssl, not guessed:
+
+```
+without the CA:  Verify return code: 19 (self-signed certificate in chain)
+with the CA:     Verify return code: 0  (ok)
+```
+
+⚠️ **I had this WRONG in the first template**, which claimed Supabase
+"presents a proper CA-signed certificate, so this works as-is". It does not.
+
+The root is extracted from the live chain (`openssl s_client -showcerts`,
+third cert) and shipped as
+[installer/certs/supabase-root-2021.crt](installer/certs/supabase-root-2021.crt);
+`PG_SSL_ROOT_CERT=supabase-root-2021.crt` resolves relative to the
+executable's folder. Valid to **2031-04-26**. A public certificate, so it is
+committed — there is no secret in it.
+
+⚠️ **The answer is NOT `PG_SSL_VERIFY=false`.** That silences the error
+and keeps the traffic encrypted **to whoever answered** — worse than not
+connecting. `main.dart`'s `_hint` now names the private-CA cause and says so
+explicitly, because "Bad server certificate" names TLS and nothing else.
+
+⚠️ **The pooler host carries the REGION and the prefix varies**:
+`aws-0-ap-south-1` (Mumbai) vs `aws-1-ap-southeast-2` (Sydney). The template
+now says copy it from the dashboard rather than shipping a guess.
+
+⚠️ **Two tests were reading the developer's live `.env`** and so failed
+the moment it held a real deployment: one asserted `sslRootCertPath` was
+EMPTY, the other `poolSizeSetting == 3`. Both now test the invariant — a
+configured CA must RESOLVE AND LOAD, and the pool must be 1..4 — instead of
+one machine's configuration.
+
+#### The check that actually matters: `dblink`
+
+[postgres/90_supabase_readiness_check.sql](postgres/90_supabase_readiness_check.sql)
+verifies the role, the three extensions (`uuid-ossp`, `pgcrypto`,
+**`dblink`**), an autonomous write, the schema and the connection count.
+
+⚠️ **`dblink` is the one likely to fail, and it fails SILENTLY.**
+Migration 032 logs a refused sign-in through `dblink` because the refusal
+rolls its own transaction back — an ordinary insert disappears with it. It
+connects with `dbname=<db> user=<user>` and **no password**, which works on
+the office server over a trusted local socket. Supabase reaches itself over
+TCP, where a password is required. And 032's handler is
+`exception when others then null`, so a broken `dblink` looks *exactly*
+like a working one: sign-ins are still refused, the audit log just stays
+empty. Nobody notices until it is needed as evidence.
+
+⚠️ **The probe row cannot be cleaned up.** `audit_logs` is append-only by
+trigger (postgres/53), so the script's `delete` raised and aborted the
+block on its first run. That rule is correct — the script now leaves its
+row and says so.
+
+⚠️ **Free tier pauses after 7 days idle.** The first officer in on a
+Monday would meet a connection error rather than a login screen. Keep it
+warm, or move to Pro before the yards depend on it.
+
+
+#### 047 · a refused sign-in is recorded even without dblink
+
+⚠️ **Three routes, first one that works wins.** `log_refused_device` now
+tries dblink-with-password (`app.selflink_conninfo`), then dblink over a
+trusted local socket (the office server, unchanged), then a **queue table**
+that needs no extension. Whichever runs stamps `logged_via` into the audit
+row, so "is logging working on this host" is answerable **from the data**
+rather than by reasoning about `pg_hba`.
+
+⚠️ **The raise could NOT be removed**, which was the obvious-looking fix.
+`auth.sign_in` raises to refuse a machine, and that rollback is what eats
+the audit row. But returning no rows instead makes `pg_auth.dart` report
+**"Invalid login credentials"** — telling the officer their *password* was
+wrong when the *machine* was refused — and three login screens match on the
+`42501` text to show the real message. So the autonomous-write problem had
+to be solved, not side-stepped.
+
+⚠️ **The queue is honest about what it does not do.** Its insert rolls
+back with the refusal, exactly like 032's did. What it guarantees is that
+the refusal is never *silently dropped*: the row is re-created on the next
+attempt and drained by `flush_refused_sign_ins()`, which the new
+`auth.sign_in` wrapper calls **before** the inner call (after it would
+never run on the refusal path). So a refusal lands seconds late, and for
+the case the register exists for — somebody retrying an unapproved machine
+— the second attempt flushes the first.
+
+Chain is now `sign_in` (flush) → `sign_in_before_flush` (device check +
+raise) → `sign_in_any_device` (password). Wrapped, not rewritten, because
+postgres/04 and 032 both re-create the inner ones.
+
+⚠️ **`app.selflink_conninfo` is left UNSET on purpose.** Setting it gets
+immediate logging but stores a password readable by anything that can run
+SQL as that role — on Supabase, the same account the app uses. The queue
+costs a few seconds and stores nothing.
+
+**Verified against the real data**, not just applied: route 2 passes
+normally; renaming `dblink_exec` out of reach proved route 3 queues
+instead of losing the row; and a drain test proved the round trip
+(queued → flushed → audit row tagged `pending_queue`). Re-running the
+migration left the chain at 3 functions, not 4.
+
+`postgres/90` now has a **check 3b** for the queue table, and check 3 was
+downgraded FAIL → WARN with a pointer to 047 — on Supabase a dblink
+failure is expected, and only *unpatched* is a problem.
 
 ### A field is ONE flat colour: the hover blend and the tint (2026-09-21)
 

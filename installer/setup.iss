@@ -1,4 +1,4 @@
-; ============================================================================
+﻿; ============================================================================
 ;  Sri Lanka Customs — SR Management System
 ;  Windows installer (Inno Setup 6)
 ;
@@ -95,6 +95,11 @@ Source: "DEPLOYMENT.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; is a far more confusing fault than the same message with none.
 Source: "env-templates\local-server.env.txt"; DestDir: "{app}\env-templates"; Flags: ignoreversion
 Source: "env-templates\cloud-server.env.txt"; DestDir: "{app}\env-templates"; Flags: ignoreversion
+Source: "env-templates\supabase.env.txt"; DestDir: "{app}\env-templates"; Flags: ignoreversion
+; The Supabase pooler is signed by Supabase's OWN root CA, which is not in
+; the Windows trust store. Without this file PG_SSL_VERIFY=true fails as
+; "Bad server certificate". It is a public certificate, not a secret.
+Source: "certs\supabase-root-2021.crt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppShortName}"; Filename: "{app}\{#AppExeName}"

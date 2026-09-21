@@ -189,6 +189,22 @@ class _DatabaseUnavailableAppState extends State<DatabaseUnavailableApp> {
     if (s.contains('failed host lookup')) {
       return 'That host name could not be resolved. Check PG_HOST.';
     }
+    // ⚠️ "Bad server certificate" names TLS and says nothing about the cause,
+    // and the cause is nearly always a private CA the OS has never heard of.
+    // Supabase is the case in hand: its pooler is signed by "Supabase Root
+    // 2021 CA", which is not in the Windows trust store, so verification
+    // fails on a link that is otherwise perfectly healthy.
+    //
+    // ⚠️ The hint deliberately does NOT suggest PG_SSL_VERIFY=false. That
+    // would make the message go away while leaving the connection encrypted
+    // to whoever answered — the one outcome worse than not connecting.
+    if (s.contains('certificate') || s.contains('handshake')) {
+      return 'The server\'s TLS certificate was not trusted. If this is '
+          'Supabase, its pooler uses a private CA: set '
+          'PG_SSL_ROOT_CERT=supabase-root-2021.crt and put that file beside '
+          'the application. Do NOT turn PG_SSL_VERIFY off — that keeps the '
+          'traffic encrypted but stops checking who it is encrypted to.';
+    }
     return 'The database could not be opened.';
   }
 
