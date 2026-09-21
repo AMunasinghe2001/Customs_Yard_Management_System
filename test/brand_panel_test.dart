@@ -663,6 +663,33 @@ void _theConstellation() {
       expect(body, contains('* trim'));
     });
 
+    test('the links are actually VISIBLE, not maths that renders black', () {
+      // ⚠️ THE BUG, reported as "it just looks like balls drifting
+      // about". The links were there in the geometry and invisible on
+      // screen: `0.30 * closeness^2` gave alpha 0.001..0.048 on the real
+      // panel, and gold's 0.36 trim took that under 2% on near-black.
+      //
+      // A squared falloff suits a GLOW, where the bright core is the
+      // point. A line either reads or it does not, so it needs a floor.
+      final i = src.indexOf('void _paintConstellation(');
+      final body = src.substring(i, src.indexOf('\n  }\n', i));
+
+      final m = RegExp(r'final alpha = ([0-9.]+) \* \(([0-9.]+) \+ ([0-9.]+) \* closeness\)')
+          .firstMatch(body);
+      expect(m, isNotNull,
+          reason: 'the link alpha must keep a floor, not fall to nothing');
+      final base = double.parse(m!.group(1)!);
+      final floor = double.parse(m.group(2)!);
+
+      // Worst case: the faintest link, on the accent that is trimmed
+      // hardest, still has to be above the ~2% that vanished before.
+      const goldTrim = 0.36;
+      expect(base * floor * goldTrim, greaterThan(0.05),
+          reason: 'the faintest link is invisible on black again');
+
+      // And never a squared closeness, which is what crushed it.
+      expect(body, isNot(contains('closeness * closeness')));
+    });
     testWidgets('every portal gets it, and it keeps moving', (t) async {
       // One widget, so no screen can drift from the others.
       await t.pumpWidget(_host(_panel()));

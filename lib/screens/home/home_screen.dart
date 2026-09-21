@@ -34,184 +34,228 @@ class HomeScreen extends StatelessWidget {
         // Nothing is lost: every sign-in screen and every dashboard carries
         // its own toggle, so the theme is still one click away wherever an
         // officer actually spends time.
-        SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints:
-                BoxConstraints(minHeight: MediaQuery.of(context).size.height),
-            child: IntrinsicHeight(
-              child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Spacer(),
-                    SvgPicture.asset(
-                      'Sri_Lanka_Customs_logo.svg',
-                      width: 132,
-                      height: 132,
-                    )
-                        .animate()
-                        .scale(
-                            begin: const Offset(0.8, 0.8),
-                            duration: 500.ms,
-                            curve: Curves.easeOutBack)
-                        .fadeIn(),
-                    const Gap(18),
-                    Text(
-                      'Sri Lanka Customs',
-                      style: TextStyle(
-                          color: context.colors.customsBlue,
-                          fontSize: 32,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2),
-                    )
-                        .animate()
-                        .slideY(begin: 0.4, duration: 500.ms, delay: 200.ms)
-                        .fadeIn(),
-                    const Gap(8),
-                    Text(
-                      'SR Management System',
-                      style: TextStyle(
-                          color: context.colors.textMuted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5),
-                    )
-                        .animate()
-                        .slideY(begin: 0.4, duration: 500.ms, delay: 300.ms)
-                        .fadeIn(),
-                    const Gap(28),
-                    // Helper line so users know what the cards are for.
-                    Text(
-                      'Select your portal to continue',
-                      style: TextStyle(
-                          color: context.colors.textSecondary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500),
-                    ).animate().fadeIn(delay: 400.ms),
-                    const Gap(28),
+        // ⚠️ The header SCALES with the viewport, rather than being one
+        // fixed size for every screen.
+        //
+        // Shown the same page on a laptop and on a desktop monitor: on the
+        // monitor it sat comfortably, on the laptop everything was cramped
+        // and two of the card titles wrapped onto a second line. The whole
+        // header was fixed -- a 132px seal, a 32pt title, 28px gaps -- so on
+        // a short screen it took the same room it does on a tall one and the
+        // cards got whatever was left.
+        //
+        // The seal is bigger on BOTH (asked for directly), and the gaps and
+        // the title now give ground on a short screen instead of squeezing
+        // the cards.
+        LayoutBuilder(builder: (context, view) {
+          // ⚠️ TWO scales, not one. `tall` grows the header when there is
+          // room to spare; `tight` SHRINKS it when there is not.
+          //
+          // With only `tall`, everything below 720px got the same minimum
+          // header -- so on a short window the page ran past the bottom and
+          // the whole thing scrolled: the seal was clipped at the top and the
+          // footer at the bottom. Measured, it overflowed by 1px at 768 and
+          // 41px at 720.
+          //
+          // The chooser is a doorway. Scrolling to reach a Sign In button on
+          // a page with six of them is the wrong behaviour at any size, so
+          // the header gives ground first -- it is decoration, the cards are
+          // the point.
+          final tall = ((view.maxHeight - 800) / 240).clamp(0.0, 1.0);
+          final tight = (1.0 - (view.maxHeight - 640) / 160).clamp(0.0, 1.0);
+          final sealSize = 148.0 + 26.0 * tall - 44.0 * tight;
+          final titleSize = 34.0 + 4.0 * tall - 6.0 * tight;
+          final gapAfterSeal = 14.0 + 6.0 * tall - 8.0 * tight;
+          final gapBeforeHint = 20.0 + 10.0 * tall - 12.0 * tight;
+          final gapBeforeCards = 20.0 + 10.0 * tall - 12.0 * tight;
 
-                    // Role cards side by side
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: IntrinsicHeight(
-                        child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Officer + Admin both belong to a yard → one combined
-                              // "Yard Access" card that goes to the chooser screen.
-                              Flexible(
-                                  child: _RoleCard(
-                                icon: Icons.warehouse_rounded,
-                                title: 'Yard Access',
-                                subtitle:
-                                    'Officers & Administrators\nSign in to your yard',
-                                accentColor: context.colors.accentLightBlue,
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: view.maxHeight),
+              child: IntrinsicHeight(
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Spacer(),
+                      SvgPicture.asset(
+                        'Sri_Lanka_Customs_logo.svg',
+                        width: sealSize,
+                        height: sealSize,
+                      )
+                          .animate()
+                          .scale(
+                              begin: const Offset(0.8, 0.8),
+                              duration: 500.ms,
+                              curve: Curves.easeOutBack)
+                          .fadeIn(),
+                      Gap(gapAfterSeal),
+                      Text(
+                        'Sri Lanka Customs',
+                        style: TextStyle(
+                            color: context.colors.customsBlue,
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2),
+                      )
+                          .animate()
+                          .slideY(begin: 0.4, duration: 500.ms, delay: 200.ms)
+                          .fadeIn(),
+                      const Gap(8),
+                      Text(
+                        'SR Management System',
+                        style: TextStyle(
+                            color: context.colors.textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5),
+                      )
+                          .animate()
+                          .slideY(begin: 0.4, duration: 500.ms, delay: 300.ms)
+                          .fadeIn(),
+                      Gap(gapBeforeHint),
+                      // Helper line so users know what the cards are for.
+                      Text(
+                        'Select your portal to continue',
+                        style: TextStyle(
+                            color: context.colors.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500),
+                      ).animate().fadeIn(delay: 400.ms),
+                      Gap(gapBeforeCards),
+
+                      // Role cards side by side
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: IntrinsicHeight(
+                          child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Officer + Admin both belong to a yard → one combined
+                                // "Yard Access" card that goes to the chooser screen.
+                                Flexible(
+                                    child: _RoleCard(
+                                  icon: Icons.warehouse_rounded,
+                                  title: 'Yard Access',
+                                  subtitle:
+                                      'Officers & Administrators\nSign in to your yard',
+                                  accentColor: context.colors.accentLightBlue,
+                                  tight: tight,
                                 onLogin: (ctx) => ctx.go('/yard-access'),
-                                showSignup: false,
-                                delay: 500,
-                              )),
-                              const Gap(16),
-                              Flexible(
-                                  child: _RoleCard(
-                                icon: Icons.balance_rounded,
-                                title: 'Appeal Directorate',
-                                subtitle:
-                                    'Review forfeited packages\n& hold appeals',
-                                accentColor: AppTheme.appealPurple,
+                                  showSignup: false,
+                                  delay: 500,
+                                )),
+                                const Gap(16),
+                                Flexible(
+                                    child: _RoleCard(
+                                  icon: Icons.balance_rounded,
+                                  title: 'Appeal Directorate',
+                                  subtitle:
+                                      'Review forfeited packages\n& hold appeals',
+                                  accentColor: AppTheme.appealPurple,
+                                  tight: tight,
                                 onLogin: (ctx) => ctx.go('/appeal/login'),
-                                onSignup: (ctx) => ctx.go('/appeal/signup'),
-                                delay: 750,
-                              )),
-                              const Gap(16),
-                              Flexible(
-                                  child: _RoleCard(
-                                icon: Icons.calculate_rounded,
-                                title: 'Valuation Directorate',
-                                subtitle:
-                                    'Value disposal requests\nbefore Central Disposal',
-                                accentColor: context.colors.primaryGold,
+                                  onSignup: (ctx) => ctx.go('/appeal/signup'),
+                                  delay: 750,
+                                )),
+                                const Gap(16),
+                                Flexible(
+                                    child: _RoleCard(
+                                  icon: Icons.calculate_rounded,
+                                  title: 'Valuation Directorate',
+                                  subtitle:
+                                      'Value disposal requests\nfor Central Disposal',
+                                  accentColor: context.colors.primaryGold,
+                                  tight: tight,
                                 onLogin: (ctx) => ctx.go('/valuation/login'),
-                                onSignup: (ctx) => ctx.go('/valuation/signup'),
-                                delay: 950,
-                              )),
-                              const Gap(16),
-                              Flexible(
-                                  child: _RoleCard(
-                                icon: Icons.gavel_rounded,
-                                title: 'Central Disposal Directorate',
-                                subtitle:
-                                    'View sold items across all yards\n& record tender sales',
-                                accentColor: context.colors.successGreen,
+                                  onSignup: (ctx) =>
+                                      ctx.go('/valuation/signup'),
+                                  delay: 950,
+                                )),
+                                const Gap(16),
+                                Flexible(
+                                    child: _RoleCard(
+                                  icon: Icons.gavel_rounded,
+                                  title: 'Central Disposal Directorate',
+                                  subtitle:
+                                      'Sold items across all yards\n& tender sales',
+                                  accentColor: context.colors.successGreen,
+                                  tight: tight,
                                 onLogin: (ctx) => ctx.go('/disposal/login'),
-                                onSignup: (ctx) => ctx.go('/disposal/signup'),
-                                delay: 1100,
-                              )),
-                              const Gap(16),
-                              Flexible(
-                                  child: _RoleCard(
-                                icon: Icons.shield_moon_rounded,
-                                title: 'Top Management Directorate',
-                                subtitle:
-                                    'DG / ADG · reports, valuations\n& tender committees',
-                                accentColor: AppTheme.executiveTeal,
+                                  onSignup: (ctx) => ctx.go('/disposal/signup'),
+                                  delay: 1100,
+                                )),
+                                const Gap(16),
+                                Flexible(
+                                    child: _RoleCard(
+                                  icon: Icons.shield_moon_rounded,
+                                  title: 'Top Management Directorate',
+                                  subtitle:
+                                      'DG / ADG · reports\n& tender committees',
+                                  accentColor: AppTheme.executiveTeal,
+                                  tight: tight,
                                 onLogin: (ctx) => ctx.go('/executive/login'),
-                                onSignup: (ctx) => ctx.go('/executive/signup'),
-                                delay: 1250,
-                              )),
-                              const Gap(16),
-                              Flexible(
-                                  child: _RoleCard(
-                                icon: Icons.terminal_rounded,
-                                title: 'ICT Directorate',
-                                subtitle:
-                                    'SDDC / DDC & Officers\nprovisioning & accounts',
-                                accentColor: AppTheme.ictCyan,
+                                  onSignup: (ctx) =>
+                                      ctx.go('/executive/signup'),
+                                  delay: 1250,
+                                )),
+                                const Gap(16),
+                                Flexible(
+                                    child: _RoleCard(
+                                  icon: Icons.terminal_rounded,
+                                  title: 'ICT Directorate',
+                                  subtitle:
+                                      'SDDC / DDC · provisioning\n& accounts',
+                                  accentColor: AppTheme.ictCyan,
+                                  tight: tight,
                                 onLogin: (ctx) => ctx.go('/ict/login'),
-                                onSignup: (ctx) => ctx.go('/ict/signup'),
-                                delay: 1350,
-                              )),
-                            ]),
+                                  onSignup: (ctx) => ctx.go('/ict/signup'),
+                                  delay: 1350,
+                                )),
+                              ]),
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    // ── Copyright / attribution ─────────────────────────────
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16, top: 8),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.copyright_rounded,
-                                  size: 13, color: context.colors.textMuted),
-                              const Gap(6),
-                              Text(
-                                '${DateTime.now().year} Anushanga Munasinghe · All rights reserved',
-                                style: TextStyle(
-                                  color: context.colors.textMuted,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
+                      const Spacer(),
+                      // ── Copyright / attribution ─────────────────────────────
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16, top: 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.copyright_rounded,
+                                    size: 13, color: context.colors.textMuted),
+                                const Gap(6),
+                                Text(
+                                  '${DateTime.now().year} Anushanga Munasinghe · All rights reserved',
+                                  style: TextStyle(
+                                    color: context.colors.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const Gap(2),
-                          Text(
-                            'Designed & developed by Anushanga Munasinghe · Unauthorised copying or redistribution is prohibited.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: context.colors.textMuted.withOpacity(0.7),
-                              fontSize: 10.5,
+                              ],
                             ),
-                          ),
-                        ],
-                      ).animate().fadeIn(delay: 1300.ms),
-                    ),
-                  ]),
+                            const Gap(2),
+                            Text(
+                              'Designed & developed by Anushanga Munasinghe · Unauthorised copying or redistribution is prohibited.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color:
+                                    context.colors.textMuted.withOpacity(0.7),
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ],
+                        ).animate().fadeIn(delay: 1300.ms),
+                      ),
+                    ]),
+              ),
             ),
-          ),
-        ),
+          );
+        }),
       ]),
     );
   }
@@ -365,6 +409,13 @@ class _RoleCard extends StatefulWidget {
   final bool showSignup;
   final int delay;
 
+  /// 0 on a roomy window, 1 on a short one.
+  ///
+  /// ⚠️ The card's text boxes are FIXED heights, so on a short screen
+  /// they were the reason the page ran past the bottom and the whole thing
+  /// scrolled. They give ground with the header rather than after it.
+  final double tight;
+
   const _RoleCard({
     required this.icon,
     required this.title,
@@ -374,6 +425,7 @@ class _RoleCard extends StatefulWidget {
     this.onSignup,
     this.showSignup = true,
     required this.delay,
+    this.tight = 0,
   });
 
   @override
@@ -468,13 +520,13 @@ class _RoleCardState extends State<_RoleCard> {
                 splashColor: widget.accentColor.withOpacity(0.12),
                 highlightColor: widget.accentColor.withOpacity(0.06),
                 child: Padding(
-                  padding: const EdgeInsets.all(28),
+                  padding: EdgeInsets.all(28 - 8 * widget.tight),
                   child: Column(mainAxisSize: MainAxisSize.max, children: [
                     AnimatedScale(
                       scale: _hovered ? 1.08 : 1.0,
                       duration: const Duration(milliseconds: 200),
                       child: Container(
-                        padding: const EdgeInsets.all(16),
+                        padding: EdgeInsets.all(16 - 4 * widget.tight),
                         decoration: BoxDecoration(
                           // Idle: soft accent tint. Hover: the SAME tint a
                           // shade stronger, opaque — a translucent white
@@ -489,12 +541,13 @@ class _RoleCardState extends State<_RoleCard> {
                                   .withOpacity(_hovered ? 0.55 : 0.4)),
                         ),
                         child: Icon(widget.icon,
-                            color: widget.accentColor, size: 34),
+                            color: widget.accentColor,
+                            size: 34 - 6 * widget.tight),
                       ),
                     ),
-                    const Gap(16),
+                    Gap(16 - 6 * widget.tight),
                     SizedBox(
-                      height: 56,
+                      height: 56 - 4 * widget.tight,
                       child: Center(
                         child: Text(widget.title,
                             textAlign: TextAlign.center,
@@ -507,11 +560,25 @@ class _RoleCardState extends State<_RoleCard> {
                       ),
                     ),
                     const Gap(8),
+                    // ⚠️ 58 -> 80, and four lines rather than three.
+                    //
+                    // Measured with a TextPainter at the real card widths,
+                    // every subtitle wanted 60-100px and was handed a 58px
+                    // box with `maxLines: 3` -- so the text was being CUT
+                    // OFF with an ellipsis on every screen, the 1920 monitor
+                    // included, and the box overflowed by 2px on top of it.
+                    // Nobody had noticed because the lost words are at the
+                    // end of a second line that already reads as complete.
+                    //
+                    // ⚠️ The `\n` in each subtitle is a HINT now, not a
+                    // guarantee: at 158px (a 1366 laptop) even one clause
+                    // wraps, so the line count cannot be assumed from the
+                    // literal. Four lines covers the narrowest card.
                     SizedBox(
-                      height: 58,
+                      height: 80 - 4 * widget.tight,
                       child: Text(widget.subtitle,
                           textAlign: TextAlign.center,
-                          maxLines: 3,
+                          maxLines: 4,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: _hovered
@@ -521,7 +588,7 @@ class _RoleCardState extends State<_RoleCard> {
                               height: 1.5)),
                     ),
                     const Spacer(),
-                    const Gap(20),
+                    Gap(20 - 8 * widget.tight),
                     // Primary action — white label on the saturated accent so it reads
                     // clearly on every card colour (the previous navy-on-accent was hard
                     // to see, especially on the blue/green cards).

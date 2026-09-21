@@ -2091,6 +2091,89 @@ python tool/measure_toolbar.py     # search/filter/button: top, bottom, height
 
 ⚠️ **The auth back arrow is a page-corner control, not a heading ornament (2026-09-04).** Every login/signup/OTP screen used to put an `IconButton` inline, immediately left of its title — which pushed the heading off the panel's own margin and forced **every subtitle to carry a matching `EdgeInsets.only(left: 48)`** just to line up under it. It is now `AuthBackButton` (`lib/widgets/auth_back_button.dart`), dropped into the `Stack` each screen already keeps for its theme toggle and pinned `top: 24, left: 24`. Title and subtitle both start at the margin.
 
+### The home page was cutting off its own card text (2026-09-21)
+
+Asked whether the seal could be bigger, and for any other home-page tidying
+— with two screenshots, a laptop and a desktop monitor. The laptop looked
+cramped. **Measuring it found a real defect the screenshots did not show.**
+
+⚠️ **Every card subtitle was being ellipsised, on every screen.** The box
+was `height: 58` with `maxLines: 3`; a `TextPainter` at the real card widths
+put each subtitle at **60–100px**. So the text overflowed the box by 2px
+*and* lost its last words — on the 1920 monitor too. Nobody had noticed
+because the words that go missing are at the end of a second line that
+already reads as a complete phrase.
+
+The real card width is the thing to compute, not guess:
+
+```
+window 1920 -> card 299px (capped 300) -> text 251px
+window 1536 -> card 235px             -> text 187px
+window 1366 -> card 206px             -> text 158px
+```
+
+Fixes: box `58 -> 80` and `maxLines 3 -> 4`, plus shorter copy on the four
+longest subtitles. At 1920 and 1536 nothing truncates now.
+
+⚠️ **The `\n` in a subtitle is a HINT, not a guarantee.** At 158px even a
+single clause wraps, so the rendered line count cannot be read off the
+literal. Any test here has to ask the text engine.
+
+⚠️ **The header now scales with the viewport.** A 132px seal, a 32pt title
+and 28px gaps were identical on a 768px laptop and a 1080p monitor, so the
+header took the same room on a short screen and the cards got the remainder.
+A `LayoutBuilder` interpolates on `((height - 720) / 320).clamp(0, 1)`: seal
+**148–174** (larger than the old 132 on *both*), title 34–38, gaps 14–20 and
+20–30.
+
+⚠️ **STILL BROKEN AT 1366px** and deliberately left: four subtitles clip
+there, because six 300px cards genuinely do not fit that width. The fix is a
+wrapping layout (two rows of three), which is a bigger change than was
+asked for — flagged to the user rather than done silently.
+
+Guarded by `test/home_page_fits_its_screen_test.dart`: it parses the box
+height, `maxLines` and all six subtitles out of the source, lays each one
+out with a `TextPainter` at the computed 1920 and 1536 card widths, and
+fails if any is truncated or overflows. ⚠️ Verified by **restoring one long
+subtitle** — the test fails, naming the card.
+
+#### ...and then it scrolled, because scaling only went one way
+
+⚠️ **A `LayoutBuilder` that only grows is half a fix.** The header scaled
+UP when there was room to spare but had no way to give ground when there
+was not, so every window below the floor got the same minimum header — and
+the page ran past the bottom. Reported with a screenshot: the seal clipped
+at the top, the footer clipped at the bottom.
+
+Measured with a real pump (`maxScrollExtent`), not estimated — my own
+arithmetic said it fitted:
+
+```
+1366x768 -> over by  1px
+1024x768 -> over by 16px
+1280x720 -> over by 41px   <- the size the app OPENS at
+```
+
+So the shipped default window was one of the broken ones.
+
+Two factors now, not one: `tall` grows the header, **`tight` shrinks it**
+(`(1 - (h - 640) / 160).clamp(0, 1)`). The header gives ground first — it is
+decoration and the cards are the point — and the card's fixed boxes shrink
+with it via a `tight` parameter, because the header alone cannot recover
+enough room. No scroll now from 1920x1080 down to 1024x640.
+
+⚠️ **The chooser is a doorway.** Scrolling to reach one of six Sign In
+buttons is wrong at any size; that is why this is a hard invariant with a
+test per window shape rather than a judgement call.
+
+⚠️ **A source-text test broke on its own subject.** The subtitle-height
+test from the previous fix parsed `height: ([0-9.]+),` out of the widget.
+Making the box an expression (`80 - 4 * widget.tight`) stopped the match,
+and it died on a null check — an error naming nothing. Regexes over source
+have to allow for the value becoming computed later. Both home-page tests
+were verified by **breaking the code** (pinning `tight = 0.0`, restoring a
+long subtitle) and watching them fail with the right message.
+
 ### The left panel's animation is a CONSTELLATION (2026-09-21)
 
 ⚠️ **Asked for a different design**, on the left panel of every login/signup

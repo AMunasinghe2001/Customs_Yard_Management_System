@@ -249,12 +249,25 @@ class AppTheme {
   static const Color _borderLight = Color(0xFFDDE3EC); // Soft border
   /// The inside of every text box and dropdown, light mode.
   ///
-  /// ⚠️ A real grey, NOT `_cardLight`. The fields used to be filled with the
-  /// card colour (#F7F9FC) on cards that were already that colour, so a box
-  /// only showed up where the page behind it happened to be white — which is
-  /// why some looked white and others grey in the same form. This reads as a
-  /// field wherever it sits.
-  static const Color _fieldFillLight = Color(0xFFEDF1F7);
+  /// ⚠️ A colour of its OWN, not `_cardLight`. The fields used to be filled
+  /// with the card colour (#F7F9FC) on cards that were already that colour,
+  /// so a box only showed up where the page behind it happened to be white —
+  /// which is why some looked white and others grey in the same form. It
+  /// still has to be its own token, and [one_field_height_test] enforces
+  /// that.
+  ///
+  /// ⚠️ LIGHTER than the page, not darker. This was #EDF1F7, which is darker
+  /// than `_bgLight` (#F0F4FA) — so on the sign-in pages, where the fields
+  /// sit straight on the page with no card under them, every box read as a
+  /// grey slab and the side looked heavy and washed out. Reported directly:
+  /// "අලු පාටක් ඇවිත් ලාවට, ටෙක්ස්බොක්ස් වල සුදු අලු මික්ස් වෙලා. ඒක තිබ්බ
+  /// විදිහට හදන්න."
+  ///
+  /// Near-white puts the field back on top of the page the way it used to
+  /// look, while staying a distinct value from both `_bgLight` and
+  /// `_cardLight` — so the problem this token was created for (a field
+  /// vanishing into the card behind it) does not come back.
+  static const Color _fieldFillLight = Color(0xFFFBFCFE);
   static const Color _textPrimaryLight = Color(0xFF1A1A24);
   static const Color _textSecondaryLight = Color(0xFF5A6372);
   static const Color _textMutedLight = Color(0xFF8A93A2);

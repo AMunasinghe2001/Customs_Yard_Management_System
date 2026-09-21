@@ -925,6 +925,13 @@ class _OrbFieldPainter extends CustomPainter {
     _Node(x: 0.86, y: 0.74, r: 2.0, dx: 0.031, dy: 0.029, speed: 1.08, phase: 0.4),
     _Node(x: 0.68, y: 0.91, r: 1.6, dx: 0.027, dy: 0.025, speed: 0.69, phase: 3.6),
     _Node(x: 0.95, y: 0.92, r: 1.4, dx: 0.023, dy: 0.033, speed: 1.29, phase: 5.8),
+    // A few more along the edges, so the figure reads as a NETWORK
+    // rather than as three separate clusters in the corners. Still
+    // outside the crest's zone -- the test asserts every one of them is.
+    _Node(x: 0.46, y: 0.04, r: 1.5, dx: 0.028, dy: 0.020, speed: 0.83, phase: 2.9),
+    _Node(x: 0.04, y: 0.50, r: 1.6, dx: 0.020, dy: 0.030, speed: 1.11, phase: 0.6),
+    _Node(x: 0.97, y: 0.60, r: 1.5, dx: 0.022, dy: 0.028, speed: 0.74, phase: 4.4),
+    _Node(x: 0.50, y: 0.96, r: 1.7, dx: 0.030, dy: 0.018, speed: 0.96, phase: 1.5),
   ];
 
   /// How much of the constellation survives at a point, by how close it is
@@ -970,7 +977,9 @@ class _OrbFieldPainter extends CustomPainter {
     // brighter the link. Joining every pair would be a solid mesh -- the
     // shape people recognise as a constellation comes from most pairs NOT
     // being joined.
-    final linkReach = shortest * 0.30;
+    // ⚠️ 0.30 -> 0.38. At 0.30 only the very closest pairs joined at all,
+    // and see the alpha note below for why even those did not show.
+    final linkReach = shortest * 0.38;
     final linkPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
@@ -987,11 +996,23 @@ class _OrbFieldPainter extends CustomPainter {
         final mid = Offset.lerp(pts[i], pts[j], 0.5)!;
         final fade =
             math.min(fades[i] * fades[j], _centreFade(mid, size, shortest));
-        final alpha = 0.30 * closeness * closeness * fade * trim;
+        // ⚠️ NOT `closeness^2`, and not a 0.30 base. That combination was
+        // the bug behind "it looks like balls drifting about": measured on
+        // the real 1067x1030 panel the 14 links that did exist came out at
+        // alpha 0.001..0.048, and gold's trim (0.36) took them to under 2%
+        // on near-black -- invisible. Only the nodes showed, so there was no
+        // network to see.
+        //
+        // A squared falloff is right for a GLOW, where the bright core is
+        // the point. A link is a line: it either reads or it does not, so it
+        // keeps a floor (0.35) and uses the remaining 0.65 to fade with
+        // distance. Measured again, this lands at 0.07..0.14 after gold's
+        // trim -- visible on black, still quiet enough to sit behind a form.
+        final alpha = 0.55 * (0.35 + 0.65 * closeness) * fade * trim;
         if (alpha <= 0.002) continue;
         linkPaint
           ..color = accent.withOpacity(alpha)
-          ..strokeWidth = 0.9;
+          ..strokeWidth = 1.1;
         canvas.drawLine(pts[i], pts[j], linkPaint);
       }
     }
