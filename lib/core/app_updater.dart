@@ -70,9 +70,6 @@ bool _feedAllowed() {
   return false;
 }
 
-/// How often (seconds) to re-check for updates while the app stays open.
-const int _checkIntervalSeconds = 6 * 60 * 60; // 6 hours
-
 /// Wires up background auto-updates. Desktop-only (Windows/macOS via WinSparkle/
 /// Sparkle). Safe to call unconditionally — every failure is swallowed so a
 /// missing feed / offline machine / unsupported platform never blocks startup.
@@ -82,11 +79,23 @@ Future<void> initAutoUpdater() async {
   if (updateFeedUrl.isEmpty) return;
   if (!_feedAllowed()) return;
   try {
+    // ⚠️ THE FEED IS SET, BUT NO AUTOMATIC CHECK IS STARTED.
+    //
+    // WinSparkle draws its own native Win32 window -- grey, with its own
+    // sun icon and its own fonts. Nothing in this package exposes its
+    // colours or layout, because the dialog belongs to a C library rather
+    // than to Flutter.
+    //
+    // The app already has a themed strip for this
+    // (widgets/update_banner.dart), fed by core/update_check.dart. Running
+    // both meant the officer got the native window ON TOP of the app's own
+    // notice, which is the one that matches everything else they use.
+    //
+    // So the feed is registered -- that is what makes the "Check for
+    // Updates" button work, and WinSparkle's window is reasonable when
+    // somebody ASKED for it -- but the unattended check stays off, and
+    // the strip is what appears by itself.
     await autoUpdater.setFeedURL(updateFeedUrl);
-    await autoUpdater.setScheduledCheckInterval(_checkIntervalSeconds);
-    // inBackground: true → silent check; the framework prompts the user only
-    // when a newer version is actually published in the appcast.
-    await autoUpdater.checkForUpdates(inBackground: true);
   } catch (e) {
     AppLog.warn('auto-updater init failed', error: e, tag: 'update');
   }

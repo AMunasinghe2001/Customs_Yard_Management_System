@@ -99,6 +99,47 @@ void main() {
     });
   });
 
+  group('bumping the version is a separate step', () {
+    final rel = File('tool/release.ps1').readAsStringSync();
+    final pub = File('tool/publish_release.ps1').readAsStringSync();
+
+    test('publish_release does NOT bump anything', () {
+      // ⚠️ It builds what the version files already say. Running it
+      // twice therefore publishes the SAME version twice, and an officer
+      // on that version is never offered the second one -- which is
+      // exactly what happened: two 1.3.0 installers, no update.
+      expect(pub, isNot(contains("-replace '(?m)^version:")));
+      expect(pub, contains('VERSION MISMATCH'),
+          reason: 'it should verify the three strings, not write them');
+    });
+
+    test('release.ps1 writes all three from one argument', () {
+      for (final f in const [
+        'pubspec.yaml',
+        'installer/setup.iss',
+        'lib/core/update_check.dart',
+      ]) {
+        expect(rel, contains(f));
+      }
+    });
+
+    test('it also raises the BUILD number', () {
+      // ⚠️ sparkle:version is `1.4.0+5`, build number included. Two
+      // releases sharing a build number are indistinguishable to
+      // WinSparkle even when the dotted version differs.
+      expect(rel, contains(r'[int]$Matches[2] + 1'));
+    });
+
+    test('-BumpOnly stops before a build with no defines', () {
+      // ⚠️ release.ps1's own `flutter build` passes no --dart-define,
+      // so it makes a binary with NO credentials and NO update feed.
+      // publish_release.ps1 passes both; -BumpOnly is what hands over.
+      expect(rel, contains(r'[switch]$BumpOnly'));
+      expect(rel, contains(r'if ($BumpOnly) {'));
+      expect(rel, contains('publish_release.ps1'));
+    });
+  });
+
   group('the release notes are readable', () {
     final src = File('tools/generate_appcast.py').readAsStringSync();
 
@@ -153,6 +194,40 @@ void main() {
       // which .exe the app downloads and runs.
       expect(src, contains('allowInsecureUpdateFeed'));
       expect(src, contains('_isPrivateHost'));
+    });
+  });
+
+  group('the app shows its OWN update notice, not WinSparkle''s', () {
+    final au = File('lib/core/app_updater.dart').readAsStringSync();
+    final banner = File('lib/widgets/update_banner.dart').readAsStringSync();
+
+    test('no unattended native check is started', () {
+      // ⚠️ WinSparkle draws a native Win32 window -- its own grey
+      // chrome, its own sun icon, its own fonts. Nothing in the package
+      // exposes its colours, because it belongs to a C library rather
+      // than to Flutter. Left running, it appeared ON TOP of the app's
+      // own themed notice.
+      expect(au, isNot(contains('setScheduledCheckInterval')));
+      expect(au, isNot(contains('checkForUpdates(inBackground: true)')));
+    });
+
+    test('but the feed is still registered', () {
+      // That is what makes the manual "Check for Updates" button work --
+      // and a native window is reasonable when somebody ASKED for it.
+      expect(au, contains('setFeedURL(updateFeedUrl)'));
+      expect(au, contains('autoUpdater.checkForUpdates()'));
+    });
+
+    test('the themed strip is what appears by itself', () {
+      expect(banner, contains('primaryGold'));
+      expect(banner, contains('showUpdateDialog'));
+    });
+
+    test('and it says the app must be closed to install', () {
+      // ⚠️ Windows refuses to overwrite a running .exe. An officer who
+      // leaves the app open sees the setup fail for a reason it never
+      // explains.
+      expect(banner, contains('CLOSED'));
     });
   });
 

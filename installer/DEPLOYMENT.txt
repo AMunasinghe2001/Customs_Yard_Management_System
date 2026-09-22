@@ -20,15 +20,37 @@ program, and only if the machine does not already have them.
 An ordinary office PC used for day-to-day work is enough.
 
 
-1. THE APP WILL NOT START WITHOUT THIS STEP
+1. NORMALLY THERE IS NOTHING TO DO HERE
 
-The installer deliberately ships NO database settings. They name the server
-and carry the application password, and they differ from office to office —
-putting one inside the setup file would hand a live credential to every copy
-of it and point every branch at the same server.
+The installer writes the database settings for you, on a first install, and
+the app connects to the Department's Supabase database over a verified TLS
+connection. Install it, start it, sign in.
 
-Started without them, the app shows "Cannot reach the database" and stops.
-That is the guard working, not a fault.
+The file it writes is
+
+    .env
+
+beside cus_yard_management.exe. ⚠️ An UPGRADE NEVER OVERWRITES IT, so a
+PC that has been pointed somewhere else stays there.
+
+Read on only if you need to point this PC at a different database, or if the
+app says "Cannot reach the database".
+
+
+1b. IF THE APP SAYS "Cannot reach the database"
+
+The screen names the server it tried and the exact error. Two common ones:
+
+  "password authentication failed"
+      The password in .env is not the one the server expects. Ask ICT.
+
+  "Network is unreachable" / "host lookup failed"
+      This PC has no route to the internet, or a firewall is blocking
+      outbound port 5432.
+
+If the setup was built WITHOUT credentials, no .env is written and the app
+stops with that message on purpose -- a missing password is better said out
+loud than guessed at. Section 2 explains how to write one by hand.
 
 
 2. WHAT TO DO

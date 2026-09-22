@@ -15,10 +15,33 @@
 ; what makes Windows treat a new setup as an UPGRADE of the installed copy
 ; rather than a second product: the officer runs it over the old one and
 ; keeps their shortcuts, their install folder and their .env.
-#define AppVersion     "1.3.0"
+#define AppVersion     "1.5.0"
 #define AppPublisher   "Sri Lanka Customs Department"
 #define AppExeName     "cus_yard_management.exe"
 #define BuildDir       "..\build\windows\x64\runner\Release"
+
+; ⚠️ The database password, for the .env this installer writes on a
+; first install. Passed in at COMPILE time, never committed:
+;
+;     ISCC.exe /DDbPassword="..." installer\setup.iss
+;
+; tool\publish_release.ps1 -DbPassword '<...>' does that. Left out,
+; no .env is written and the officer copies a template as before.
+#ifndef DbPassword
+  #define DbPassword ""
+#endif
+
+; The Supabase project. Every PC reaches this; there is no office
+; server.
+;
+; ⚠️ THE SESSION POOLER, never db.<ref>.supabase.co. The direct host
+; is IPv6-ONLY and fails from an IPv4 network -- most of Sri Lanka --
+; as "Network is unreachable", which reads like a dead server and is
+; not. The project ref belongs in the USERNAME here, not the host.
+#define DbHost     "aws-0-ap-south-1.pooler.supabase.com"
+#define DbPort     "5432"
+#define DbName     "postgres"
+#define DbUser     "yard_app.knqpwufqpcoevjaxuihp"
 
 [Setup]
 ; ⚠️ Never reuse this GUID for another product. Windows identifies the
@@ -50,6 +73,39 @@ SetupIconFile=..\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppShortName}
 
+; ⚠️ CLOSING THE APP BEFORE REPLACING ITS FILES.
+;
+; Windows locks the DLLs of a running process, so an install over a copy
+; that is still open failed partway through with
+;
+;     \auto_updater_windows_plugin.dll
+;     DeleteFile failed; code 5. Access is denied.
+;
+; and offered the officer "Try again", "Skip this file (not recommended)"
+; or "Cancel". None of those is safe -- skipping leaves a half-updated
+; install where the .exe is new and a plugin is old.
+;
+; AppMutex names a mutex the app creates at start-up (windows/runner/
+; main.cpp). Setup waits for it to disappear and asks the officer to close
+; the app, instead of discovering the lock mid-copy. The name must match
+; that file EXACTLY.
+AppMutex=Global\SLCustomsSRManagementSystem
+
+; Let Setup close the app itself where it can, and restart it afterwards.
+;
+; ⚠️ `force` also covers a window that is not responding to a polite
+; close. Without it, an app sitting on a modal dialog -- the update notice
+; itself, for instance -- blocks the install it was telling the officer to
+; run.
+CloseApplications=force
+RestartApplications=yes
+
+; ⚠️ And do NOT let the officer wave the failure through. The default
+; offers "Skip this file", which produces an install nobody can diagnose
+; later. With this, a locked file stops the install cleanly and it can be
+; run again once the app is closed.
+CloseApplicationsFilter=*.exe,*.dll
+
 OutputDir=output
 OutputBaseFilename=SLCustoms-SR-Setup-{#AppVersion}
 Compression=lzma2/max
@@ -70,7 +126,17 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 ; The whole release folder: the exe, the Flutter runtime, the plugin DLLs and
 ; the assets. Recursesubdirs picks up data\ and its flutter_assets.
-Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; ⚠️ EXCLUDES .env AND THE LOG.
+;
+; `flutter run` leaves a copy of the DEVELOPER'S .env in this folder, and
+; a bare wildcard swept it into the installer -- so every officer received
+; the developer's database password and the live Gmail App Password, and
+; their app pointed at `localhost` instead of the office server. Verified
+; by installing a build and reading the .env it produced.
+;
+; The [Code] section writes a correct .env after the copy; without this
+; exclusion it would find the stale one already there and leave it alone.
+Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".env,frame_watch.log"
 
 ; ⚠️ The .env is NOT installed.
 ;
@@ -144,3 +210,78 @@ Type: files; Name: "{app}\frame_watch.log"
 ; The templates themselves came from [Files] and Inno Setup removes them, but
 ; the folder holding them is not cleaned up on its own once they are gone.
 Type: dirifempty; Name: "{app}\env-templates"
+
+[Code]
+//  ⚠️ WRITE A .env ON A FIRST INSTALL, AND ONLY THEN.
+//
+//  Zero-configuration: the officer runs the setup and signs in. Without
+//  this they must find env-templates, copy a file up one level, rename it
+//  past Windows hidden-extension behaviour and type a password -- while
+//  the app says "Cannot reach the database", which reads like a broken
+//  install rather than an unfinished one.
+//
+//  ⚠️ AN EXISTING .env IS NEVER TOUCHED. It is how a branch points at
+//  its own server, and an upgrade that overwrote it would silently move
+//  every such office back to the default one. That is also why this is
+//  written here rather than in [Files]: `onlyifdoesntexist` would cover
+//  the overwrite, but not the "no password was compiled in" case below.
+procedure WriteDefaultEnv();
+var
+  Path: string;
+  Lines: TArrayOfString;
+  Pw: string;
+begin
+  Path := ExpandConstant('{app}\.env');
+  if FileExists(Path) then
+    Exit;
+
+  Pw := '{#DbPassword}';
+  if Pw = '' then
+    Exit;
+
+  //  ⚠️ QUOTE THE PASSWORD, ALWAYS.
+  //
+  //  dotenv treats an unquoted `#` as the start of a comment, so a
+  //  password containing one is silently truncated -- and the app then
+  //  reports "password authentication failed", which sends the reader to
+  //  the server instead of to this line. Quoting every password rather
+  //  than only the awkward ones leaves no rule to remember.
+  SetArrayLength(Lines, 12);
+  Lines[0] := '# Written by the installer on first install.';
+  Lines[1] := '# Edit this file to point this PC at another server, then';
+  Lines[2] := '# restart the app. An upgrade will NOT overwrite it.';
+  Lines[3] := 'PG_HOST={#DbHost}';
+  Lines[4] := 'PG_PORT={#DbPort}';
+  Lines[5] := 'PG_DATABASE={#DbName}';
+  Lines[6] := 'PG_USER={#DbUser}';
+  Lines[7] := 'PG_PASSWORD="' + Pw + '"';
+  //  ⚠️ TLS, VERIFIED, against Supabase's own root.
+  //
+  //  This connection crosses the public internet carrying the
+  //  password and every seizure record. PG_SSL alone encrypts but
+  //  accepts ANY certificate, so anything on the path could present
+  //  its own and read the lot -- PG_SSL_VERIFY is what stops that.
+  //
+  //  ⚠️ And the pooler is signed by Supabase's OWN root, which
+  //  Windows does not trust: without the .crt (shipped beside the
+  //  exe) a verified connection fails as "Bad server certificate".
+  //  Never answer that by setting PG_SSL_VERIFY=false.
+  Lines[8]  := 'PG_SSL=true';
+  Lines[9]  := 'PG_SSL_VERIFY=true';
+  Lines[10] := 'PG_SSL_ROOT_CERT=supabase-root-2021.crt';
+  //  The cloud is further away than a LAN server.
+  Lines[11] := 'PG_CONNECT_TIMEOUT=30';
+
+  //  ⚠️ Written WITHOUT a BOM. Innos UTF-8 mode prefixes one, and
+  //  dotenv reads those three bytes as part of the first key -- so
+  //  `PG_HOST` becomes an unrecognised name and the app falls back to
+  //  localhost with no visible reason. Every byte written above is plain
+  //  ASCII, so the ANSI form is exact.
+  SaveStringsToFile(Path, Lines, False);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    WriteDefaultEnv();
+end;

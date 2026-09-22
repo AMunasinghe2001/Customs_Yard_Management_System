@@ -50,6 +50,94 @@ class PgConfig {
   static const String _sslRootCertDefine =
       String.fromEnvironment('PG_SSL_ROOT_CERT');
 
+  // ──────────────────────────────────────────────────────────────────────
+  //  ZERO-CONFIGURATION DEFAULTS -- the Supabase project
+  //
+  //  So an officer can run the installer and sign in with no file to edit.
+  //  There is no office server: every PC reaches the managed Supabase
+  //  database over the internet.
+  //
+  //  These sit at the BOTTOM of the precedence chain, so a `.env` beside
+  //  the exe still overrides every one of them -- which is what keeps one
+  //  build usable against a local copy or a backup while testing.
+  //
+  //  ⚠️ THE PASSWORD IS NOT WRITTEN HERE, AND MUST NOT BE.
+  //
+  //  A literal in this file is committed to git, and a password in git is
+  //  public the moment the repo is cloned or a branch shared -- this
+  //  project already carries one such mistake (the Gmail App Password in
+  //  commit 875e445) that still needs revoking. It is also readable with
+  //  `strings` on the shipped .exe, and `yard_app` is a live login to
+  //  seizure records.
+  //
+  //  So it arrives at BUILD time instead:
+  //
+  //      tool\publish_release.ps1 -DbPassword '<the yard_app password>'
+  //
+  //  Left out, the build carries no credential and the app asks for a
+  //  .env, as it always did -- a missing credential is a clear failure,
+  //  not a silent one.
+  //
+  //  ⚠️ THE SESSION POOLER HOST, never db.<ref>.supabase.co. The direct
+  //  host is IPv6-ONLY and fails from an IPv4 network -- which is most of
+  //  Sri Lanka -- as "Network is unreachable", which reads like a dead
+  //  server and is not. The project ref is part of the USERNAME on the
+  //  pooler, not the host.
+  static const String _cloudHostDefine = String.fromEnvironment(
+      'PG_CLOUD_HOST',
+      defaultValue: 'aws-0-ap-south-1.pooler.supabase.com');
+  static const int _cloudPortDefine =
+      int.fromEnvironment('PG_CLOUD_PORT', defaultValue: 5432);
+  static const String _cloudDatabaseDefine =
+      String.fromEnvironment('PG_CLOUD_DATABASE', defaultValue: 'postgres');
+  static const String _cloudUserDefine = String.fromEnvironment(
+      'PG_CLOUD_USER',
+      defaultValue: 'yard_app.knqpwufqpcoevjaxuihp');
+  static const String _cloudPasswordDefine =
+      String.fromEnvironment('PG_CLOUD_PASSWORD');
+
+  /// The CA that signs the pooler's certificate.
+  ///
+  /// ⚠️ Supabase's pooler is signed by Supabase's OWN root, which is not
+  /// in the Windows trust store. Without this file a verified connection
+  /// fails as "Bad server certificate", and the tempting fix --
+  /// PG_SSL_VERIFY=false -- accepts ANY certificate, which is exactly the
+  /// attack TLS is there to stop on a link crossing the public internet.
+  /// The installer ships the .crt beside the exe.
+  static const String _cloudRootCertDefine = String.fromEnvironment(
+      'PG_CLOUD_SSL_ROOT_CERT',
+      defaultValue: 'supabase-root-2021.crt');
+
+  /// True when this build carries the cloud credentials, i.e. it was built
+  /// with `--dart-define=PG_CLOUD_PASSWORD=...`.
+  ///
+  /// ⚠️ Only the password decides this. The host, port, database and
+  /// user have harmless defaults; without a password there is nothing to
+  /// connect with, and pretending otherwise would turn "nobody supplied a
+  /// password" into "authentication failed", which sends the reader
+  /// hunting for the wrong fault.
+  static bool get hasBuiltInCredentials => _cloudPasswordDefine.isNotEmpty;
+
+  /// Whether the host actually in force is the managed cloud database.
+  ///
+  /// ⚠️ THE TLS DEFAULTS FOLLOW THE HOST, NOT THE BUILD. A build can
+  /// carry cloud credentials and still be pointed at `localhost` by a
+  /// `.env` -- a developer switching profiles, or an older installed copy
+  /// whose file predates this. Defaulting TLS on from
+  /// [hasBuiltInCredentials] alone made those fail with
+  ///
+  ///     Server does not support SSL, but it was required
+  ///
+  /// which blames the server for a setting this app chose. A local
+  /// PostgreSQL is normally built without TLS at all.
+  static bool get _hostLooksLikeCloud {
+    final h = host.toLowerCase();
+    if (h == 'localhost' || h.startsWith('127.') || h == '[::1]') {
+      return false;
+    }
+    return h.endsWith('.supabase.com') || h.endsWith('.supabase.co');
+  }
+
   /// The server PC on the office LAN. `localhost` suits running the app on the
   /// same machine as the database.
   ///
@@ -57,7 +145,13 @@ class PgConfig {
   /// raw value is normalised by [_normaliseHost], because a branch office is
   /// configured by someone pasting into Notepad rather than by a build script.
   static String get host => _normaliseHost(
-      AppEnv.read('PG_HOST', dartDefine: _hostDefine, fallback: 'localhost'));
+      AppEnv.read('PG_HOST',
+          dartDefine: _hostDefine,
+          // ⚠️ The cloud database, but only for a build that carries
+          // its password too. Otherwise `localhost`, which is what a
+          // developer's checkout expects.
+          fallback:
+              hasBuiltInCredentials ? _cloudHostDefine : 'localhost'));
 
   /// Trims the shapes people actually paste into a `.env`.
   ///
@@ -132,14 +226,26 @@ class PgConfig {
   static String debugNormaliseHost(String raw) => _normaliseHost(raw);
 
   static int get port => AppEnv.readInt('PG_PORT',
-      dartDefine: _portDefine, fallback: 5432, dartDefineSentinel: -1);
+      dartDefine: _portDefine,
+      fallback: hasBuiltInCredentials ? _cloudPortDefine : 5432,
+      dartDefineSentinel: -1);
 
   /// Created in pgAdmin 4 as `Customs_SR_DB`.
   static String get database => AppEnv.read('PG_DATABASE',
-      dartDefine: _databaseDefine, fallback: 'Customs_SR_DB');
+      dartDefine: _databaseDefine,
+      fallback: hasBuiltInCredentials
+          ? _cloudDatabaseDefine
+          : 'Customs_SR_DB');
 
   static String get username =>
-      AppEnv.read('PG_USER', dartDefine: _userDefine, fallback: 'postgres');
+      AppEnv.read('PG_USER',
+          dartDefine: _userDefine,
+          // ⚠️ `postgres` stays the bare default: the app REFUSES to
+          // start as a superuser (see the rolsuper check below), so a
+          // misconfigured build fails loudly instead of running with
+          // RLS bypassed.
+          fallback:
+              hasBuiltInCredentials ? _cloudUserDefine : 'postgres');
 
   /// ⚠️ The fallback is the stock PostgreSQL development password, and it is
   /// compiled into the binary. That is a convenience for a fresh local
@@ -152,7 +258,10 @@ class PgConfig {
   static const String defaultPassword = 'postgres';
 
   static String get password => AppEnv.read('PG_PASSWORD',
-      dartDefine: _passwordDefine, fallback: defaultPassword);
+      dartDefine: _passwordDefine,
+      fallback: hasBuiltInCredentials
+          ? _cloudPasswordDefine
+          : defaultPassword);
 
   /// True when no `.env` or `--dart-define` supplied a password and the
   /// compiled-in development default is being used.
@@ -161,7 +270,17 @@ class PgConfig {
   /// A LAN server usually has no TLS certificate, so the default is a plain
   /// connection. Set `PG_SSL=true` where the server does offer TLS.
   static bool get useSsl =>
-      AppEnv.readBool('PG_SSL', dartDefine: _sslDefine, fallback: false);
+      AppEnv.readBool('PG_SSL',
+          dartDefine: _sslDefine,
+          // ⚠️ TLS ON when the host IS the cloud database: that
+          // connection crosses the public internet carrying
+          // `yard_app`'s password and every seizure record.
+          //
+          // ⚠️ But OFF for localhost even in a cloud build -- see
+          // [_hostLooksLikeCloud]. A local PostgreSQL has no TLS,
+          // and requiring it there fails as "Server does not
+          // support SSL", which blames the server for our choice.
+          fallback: _hostLooksLikeCloud);
 
   /// Whether to VERIFY the server's certificate, not merely encrypt.
   ///
@@ -176,7 +295,15 @@ class PgConfig {
   /// credentials, it is not: set `PG_SSL_VERIFY=true` there. It is not the
   /// default only because it would break existing self-signed LAN installs.
   static bool get verifySsl => AppEnv.readBool('PG_SSL_VERIFY',
-      dartDefine: _sslVerifyDefine, fallback: false);
+      dartDefine: _sslVerifyDefine,
+      // ⚠️ VERIFIED for the cloud database, not merely encrypted.
+      // Over the public internet `require` alone accepts ANY
+      // certificate, so anything on the path can present its own
+      // and read every query in clear.
+      //
+      // Still false for a local or self-signed LAN server, which
+      // is what keeps existing installs working.
+      fallback: _hostLooksLikeCloud);
 
   /// Path to the server's CA certificate (`ca.crt`), for verified TLS.
   ///
@@ -195,7 +322,14 @@ class PgConfig {
   /// Empty means "use the operating system's trust store", which is correct
   /// when the certificate comes from a real CA (Let's Encrypt on a domain).
   static String get sslRootCertPath => AppEnv.read('PG_SSL_ROOT_CERT',
-      dartDefine: _sslRootCertDefine, fallback: '');
+      dartDefine: _sslRootCertDefine,
+      // ⚠️ Supabase's pooler is signed by Supabase's OWN root,
+      // which Windows does not trust. Without this file a verified
+      // connection fails as "Bad server certificate" -- and the
+      // tempting fix, PG_SSL_VERIFY=false, throws away the
+      // protection entirely. The installer ships the .crt beside
+      // the exe; a bare name is resolved from there.
+      fallback: _hostLooksLikeCloud ? _cloudRootCertDefine : '');
 
   /// [sslRootCertPath] resolved to something openable: absolute as given,
   /// relative taken from the executable's own folder rather than from
@@ -470,7 +604,12 @@ class PgConfig {
     // a broken network.
     final p = AppEnv.profile;
     final tag = p.isEmpty ? '' : ' [$p]';
-    return '$username@$host:$port/$database ($tls)$tag';
+    // ⚠️ Say when NOTHING supplied the settings but the build itself.
+    // "built-in" and "read from a .env I cannot find" produce the same
+    // connection string otherwise, and the difference is the whole
+    // diagnosis when an officer's copy reaches the wrong server.
+    final src = (AppEnv.loadedFrom == null && hasBuiltInCredentials) ? ' [built-in]' : '';
+    return '$username@$host:$port/$database ($tls)$tag$src';
   }
 }
 

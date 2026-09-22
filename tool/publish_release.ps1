@@ -50,6 +50,15 @@
 #>
 param(
   [string]$Notes = '',
+
+  # The Supabase `yard_app` password, baked into this build so an officer
+  # can install and sign in with no file to edit.
+  #
+  # ⚠️ NEVER COMMITTED, and never written into a source file. It is
+  # compiled into the binary and into the .env the installer writes, both of
+  # which ship -- so it is only as secret as the installer is. Left out, the
+  # build carries no credential and the officer supplies a .env, as before.
+  [string]$DbPassword = '',
   [switch]$NoUpdateFeed,
   [switch]$SkipFlutter
 )
@@ -128,6 +137,9 @@ if ($SkipFlutter) {
     $a += "--dart-define=UPDATE_FEED_URL=$FeedUrl"
     $a += "--dart-define=UPDATE_MANIFEST_URL=$ManifestUrl"
   }
+  if ($DbPassword) {
+    $a += "--dart-define=PG_CLOUD_PASSWORD=$DbPassword"
+  }
   & flutter @a
   if ($LASTEXITCODE -ne 0) { throw 'flutter build failed' }
 }
@@ -150,7 +162,17 @@ if (-not $iscc) {
   throw 'ISCC.exe (Inno Setup 6) not found - https://jrsoftware.org/isdl.php'
 }
 
-& $iscc 'installer\setup.iss'
+$isccArgs = @()
+if ($DbPassword) {
+  # ⚠️ Quoted as ONE argument. An office password containing `#` or a
+  # space would otherwise be split, and ISCC reports it as "You may not
+  # specify more than one script filename" -- which says nothing about the
+  # password. Measured with a `#` in it.
+  $isccArgs += "/DDbPassword=$DbPassword"
+}
+$isccArgs += 'installer\setup.iss'
+
+& $iscc @isccArgs
 if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
 
 $setupExe = "installer\output\SLCustoms-SR-Setup-$version.exe"

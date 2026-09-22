@@ -27,7 +27,15 @@
 param(
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^\d+\.\d+\.\d+$')]
-  [string]$Version
+  [string]$Version,
+
+  # Write the three version strings and STOP.
+  #
+  # ⚠️ Use this, then tool\publish_release.ps1. The build below passes
+  # no --dart-define, so it produces a binary with NO database credentials
+  # and NO update feed URL -- fine when this script was the whole release
+  # process, useless now. publish_release.ps1 passes both.
+  [switch]$BumpOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,6 +91,14 @@ if ($dart -notmatch "defaultValue: '\d+\.\d+\.\d+'") {
 $dart = $dart -replace "defaultValue: '\d+\.\d+\.\d+'", "defaultValue: '$Version'"
 Write-FileUtf8 'lib/core/update_check.dart' $dart
 Write-Host "  update_check.dart -> $Version"
+
+if ($BumpOnly) {
+  Write-Host ""
+  Write-Host "Version strings written. Now build and publish:" -ForegroundColor Green
+  Write-Host "    .\tool\publish_release.ps1 -DbPassword '<...>' -Notes '<what changed>'"
+  Write-Host ""
+  exit 0
+}
 
 # ── 4. Build ────────────────────────────────────────────────────────────────
 Write-Host "`nBuilding..." -ForegroundColor Cyan

@@ -2404,6 +2404,254 @@ Flutter, no Visual Studio, no PostgreSQL client, no .NET. Written up in
 section 0 of [DEPLOYMENT.txt](installer/DEPLOYMENT.txt) and pinned by
 [an_office_pc_needs_nothing_else_test.dart](test/an_office_pc_needs_nothing_else_test.dart).
 
+#### The installer was shipping the developer's .env (2026-09-22)
+
+⚠️ **FOUND WHILE TESTING ZERO-CONFIG INSTALL, and it is the most
+serious thing in this session.** `setup.iss` copies the build folder with
+a bare wildcard:
+
+```
+Source: "{#BuildDir}\*"; Flags: ignoreversion recursesubdirs ...
+```
+
+`flutter run` leaves a copy of the DEVELOPER'S `.env` in
+`build/windows/x64/runner/Release/`, so every installer built since then
+carried it. Verified by installing a build and reading the `.env` it
+produced: the developer's database password, `PG_HOST=localhost`, and the
+**live Gmail App Password**. That is why an office PC showed
+`yard_app@localhost` and `password authentication failed` -- it was using
+the developer's file, not one the officer wrote.
+
+Fixed with `Excludes: ".env,frame_watch.log"` on that line, and the stale
+file deleted. ⚠️ A wildcard over a build directory ships whatever a
+previous run left there; list what must NOT go, not only what must.
+
+#### Upgrading over a running app: AppMutex (2026-09-22)
+
+```
+C:\Program Files\SL Customs\...\auto_updater_windows_plugin.dll
+An error occurred while trying to replace the existing file:
+DeleteFile failed; code 5.  Access is denied.
+```
+
+⚠️ **Windows locks a running process's DLLs.** Inno's Restart Manager
+does not reliably close a Flutter window, so the copy got partway through
+and then offered the officer "Try again", "Skip this file (not
+recommended)" or "Cancel" -- and skipping leaves a new .exe beside an old
+plugin, which nobody can diagnose later.
+
+The app now creates a named mutex at start-up
+([main.cpp](windows/runner/main.cpp)) and `setup.iss` names the same one:
+
+```
+AppMutex=Global\SLCustomsSRManagementSystem
+CloseApplications=force
+RestartApplications=yes
+```
+
+⚠️ **`Global\`, not session-local** -- an app left running under another
+logged-in account locks the files just the same. ⚠️ **And the two names
+must match exactly**; a typo is silent, Setup simply never finds the mutex
+and the old failure returns. A test compares them, allowing for C++
+escaping the backslash while Inno takes it raw.
+
+Measured: the mutex exists while the app runs and is gone once it exits.
+Upgrading over a RUNNING copy now stops with *"Setup has detected that
+... is currently running. Please close all instances"* and exit code 1 --
+it refuses rather than half-installing. With the app closed, exit code 0
+and the `.env` preserved.
+
+#### The update prompt is the app's own, not WinSparkle's (2026-09-22)
+
+⚠️ **WinSparkle's "Software Update" window cannot be themed.** It is a
+native Win32 dialog drawn by a C library -- its own grey chrome, its own
+sun icon, its own fonts -- and nothing in `auto_updater` exposes any of
+it. Asked to make it match the app; it cannot be done from Dart.
+
+But the app already had a themed strip and dialog
+([update_banner.dart](lib/widgets/update_banner.dart)) fed by
+`update_check.dart`. BOTH were running, so the native window appeared on
+top of the app's own notice. `initAutoUpdater` now registers the feed but
+starts **no** unattended check:
+
+- the gold strip is what appears by itself
+- WinSparkle's window only when somebody presses "Check for Updates",
+  where a native dialog is reasonable because they asked for it
+
+#### TLS defaults must follow the HOST, not the build (2026-09-22)
+
+```
+Server does not support SSL, but it was required
+```
+
+⚠️ A build can carry cloud credentials and still be pointed at
+`localhost` by a `.env` -- a developer switching profiles, or an installed
+copy whose file predates the zero-config change. Defaulting TLS on from
+`hasBuiltInCredentials` alone broke exactly those: a local PostgreSQL has
+no TLS at all, and the message blames the server for a setting this app
+chose.
+
+`useSsl`, `verifySsl` and `sslRootCertPath` now fall back on
+`_hostLooksLikeCloud` -- the host actually in force -- so localhost stays
+plain while the pooler stays verified.
+
+#### Two releases, one version number (2026-09-22)
+
+Two 1.3.0 installers were built hours apart and no PC was ever offered an
+update. ⚠️ **`publish_release.ps1` does not bump anything** -- it builds
+what the version files already say, so running it twice publishes the same
+version twice. WinSparkle compares versions, not dates or file sizes.
+
+The bump belongs to `tool\release.ps1 -Version x.y.z`, which writes all
+three strings and raises the BUILD number too (`1.4.0+5`) -- and that
+matters, because `sparkle:version` carries the build number.
+
+⚠️ **But release.ps1's own `flutter build` passes NO --dart-define**, so
+it produces a binary with no database credentials and no update feed URL.
+That was fine when it was the whole release process; it is wrong now. It
+has a `-BumpOnly` switch that stops after writing the version strings, and
+the correct sequence is:
+
+```powershell
+tool\release.ps1 -Version 1.4.0 -BumpOnly
+tool\publish_release.ps1 -DbPassword '<...>' -Notes '<what changed>'
+```
+
+⚠️ release.ps1 writes with `UTF8Encoding($false)` rather than
+`Set-Content -Encoding utf8`, which in PowerShell 5.1 adds a BOM and
+re-encodes the file -- the first run turned every warning marker in
+setup.iss into mojibake. Checked after this bump: 19 markers intact, no
+`â€` sequences.
+
+Pinned by
+[the_update_feeds_are_publishable_test.dart](test/the_update_feeds_are_publishable_test.dart).
+
+#### There is no office server: Supabase is the deployment (2026-09-22)
+
+The `10.10.71.15` box is not in use. Every PC -- office or otherwise --
+reaches the managed Supabase project, so that is what the installer writes
+and what the binary falls back to. `tool/migrate_office_server.ps1` was
+written for a server that does not exist and has been deleted.
+
+What a first install now writes to `{app}\.env`:
+
+```
+PG_HOST=aws-0-ap-south-1.pooler.supabase.com
+PG_PORT=5432
+PG_DATABASE=postgres
+PG_USER=yard_app.knqpwufqpcoevjaxuihp
+PG_PASSWORD="<quoted>"
+PG_SSL=true
+PG_SSL_VERIFY=true
+PG_SSL_ROOT_CERT=supabase-root-2021.crt
+PG_CONNECT_TIMEOUT=30
+```
+
+⚠️ **VERIFIED TLS, not merely encrypted.** The link crosses the public
+internet carrying `yard_app`'s password and every seizure record.
+`PG_SSL` alone accepts ANY certificate, so anything on the path could
+present its own and read the lot.
+
+⚠️ **And the CA must ship with it.** The pooler is signed by Supabase's
+OWN root, which Windows does not trust; without the `.crt` a verified
+connection fails as "Bad server certificate", and the tempting answer --
+`PG_SSL_VERIFY=false` -- throws the protection away entirely. The
+installer already placed that file beside the exe; a test now pins that
+the path and the shipped file agree.
+
+⚠️ **The session pooler host, never `db.<ref>.supabase.co`.** The direct
+host is IPv6-ONLY and unreachable from most Sri Lankan networks, failing
+as "Network is unreachable" -- which reads like a dead server. The project
+ref belongs in the USERNAME on the pooler.
+
+Verified end to end: built with `-DbPassword`, installed to a temp folder,
+read the generated `.env`, and connected with exactly those settings --
+`verified TLS connect OK as yard_app`. ⚠️ The Supabase password contains
+a `#`, so this also proved the quoting: unquoted, dotenv would treat the
+rest of the line as a comment and the app would report "password
+authentication failed".
+
+The build-time parameter is now `-DbPassword` (was `-OfficePassword`), the
+defines `PG_CLOUD_*`, and the flag `hasBuiltInCredentials`.
+
+#### Zero-configuration install (2026-09-22)
+
+An officer now runs the setup and signs in -- no `.env` to create, rename
+past Windows' hidden-extension behaviour, or fill in.
+
+`setup.iss` has a `[Code]` section that writes `{app}\.env` on
+`ssPostInstall`, and `PgConfig` carries the same values as compiled-in
+fallbacks. Both are the BOTTOM of the precedence chain, so a `.env` beside
+the exe still wins and one build still serves office, backup and Supabase.
+
+⚠️ **The password is never written into a source file.** It arrives at
+build time and nowhere else:
+
+```powershell
+tool\publish_release.ps1 -OfficePassword '<the office yard_app password>'
+```
+
+which passes `--dart-define=PG_OFFICE_PASSWORD=...` to Flutter and
+`/DOfficePassword=...` to ISCC. A literal in `pg_connection.dart` would be
+committed to git, and `installer/output/` is **not** gitignored either. A
+test asserts that `String.fromEnvironment('PG_OFFICE_PASSWORD')` has no
+`defaultValue:`.
+
+Details that were measured rather than assumed:
+
+- ⚠️ **An existing `.env` is never touched** -- `if FileExists(Path)
+  then Exit`. It is how a branch points at its own server; an upgrade that
+  overwrote it would move them back silently. Tested by re-installing over
+  a hand-written file.
+- ⚠️ **The password is always quoted** in the generated file. dotenv
+  treats an unquoted `#` as a comment, so a password containing one is
+  truncated and fails as "password authentication failed".
+- ⚠️ **No password compiled in means no `.env` written.** An empty
+  `PG_PASSWORD=` would fail as an authentication error; the template flow
+  is the honest fallback.
+- ⚠️ Written **without a BOM**. Inno's UTF-8 mode adds one and dotenv
+  reads those bytes as part of the first key.
+- ⚠️ `/DOfficePassword=` must be ONE argument. A `#` in the password
+  split it and ISCC answered "You may not specify more than one script
+  filename", which says nothing about the password.
+- The start-up banner appends `[built-in]` when no `.env` was found, so
+  "built in" and "a .env I cannot see" are distinguishable.
+
+#### Code 4551: Application Control blocks the unsigned build (2026-09-22)
+
+```
+CreateProcess failed; code 4551.
+An Application Control policy has blocked this file.
+```
+
+Measured: `Get-AuthenticodeSignature` reports **NotSigned** for both the
+setup and the app. Smart App Control / WDAC / AppLocker refuse unsigned
+executables, which is why the same installer runs on some PCs and not
+others. Not an app fault and not fixable in code.
+
+[README_WINDOWS_POLICIES.md](installer/README_WINDOWS_POLICIES.md) is
+written for the Department's IT staff: an AppLocker path rule over
+`C:\Program Files\SL Customs\*` (safe because only administrators can
+write there), or a code-signing certificate as the real fix. ⚠️ Smart
+App Control takes no exceptions and **cannot be re-enabled** once turned
+off -- that belongs next to the advice, not in a footnote.
+
+#### tool/migrate_office_server.ps1 (2026-09-22)
+
+Runs the 47 accumulated migrations against `10.10.71.15`, then rebuilds
+the sign-in chain. ⚠️ It DROPS `sr_auth.sign_in`, `sign_in_before_flush`
+and `sign_in_any_device` first: the renames in 032/047 sit behind
+`if not exists`, so on a database built before the rename the old body
+survives and no amount of re-running fixes it.
+
+⚠️ It deliberately does NOT run `postgres/02_schema.sql` -- that file
+carries the seed block that deletes every package, warehouse entry and
+audit row. `-DryRun` lists the 51 files without touching anything.
+
+⚠️ The request named `postgres/032_...`, `postgres/047_...` and
+`postgres/migrations/`; none of those exist. The real paths are
+`migrations/032_...`, `migrations/047_...` and `migrations/`.
+
 #### Auto-update: two feeds, published to Supabase Storage (2026-09-22)
 
 ⚠️ **THE APP HAS TWO INDEPENDENT UPDATE PATHS.** Neither replaced the
