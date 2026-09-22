@@ -120,7 +120,7 @@ create or replace function public.tender_sale_items_enforce_round_limit()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_rounds    int;

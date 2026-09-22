@@ -50,7 +50,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = sr_auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
   select coalesce(
     (select (now() - coalesce(p.password_updated_at, p.created_at))
@@ -72,7 +72,7 @@ create or replace function sr_auth.begin_session(p_user_id text, p_role text)
 returns void
 language plpgsql
 security definer
-set search_path = sr_auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_id      uuid;
@@ -196,7 +196,7 @@ begin
     returns void
     language plpgsql
     security definer
-    set search_path = sr_auth, public
+    set search_path = sr_auth, public, extensions
     as $body$
     declare
       v_caller uuid;

@@ -53,7 +53,7 @@ create or replace function public.notify_db_change_scoped()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   yards text[] := '{}';

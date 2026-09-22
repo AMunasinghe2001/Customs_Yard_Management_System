@@ -37,7 +37,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
   select coalesce(u.last_sign_in_at, p.created_at)
            < now() - make_interval(days => public.account_dormant_after_days())
@@ -52,7 +52,7 @@ create or replace function public.disable_dormant_accounts()
 returns integer
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_count integer;
@@ -86,7 +86,7 @@ create or replace function public.reactivate_account(p_id uuid)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 begin
   if not public.auth_user_is_ict() then

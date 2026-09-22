@@ -82,7 +82,7 @@ returns text
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
   select yard from public.warehouses where id = p_warehouse_id;
 $function$;

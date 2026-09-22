@@ -65,7 +65,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
   select exists (select 1 from public.approved_devices where is_active);
 $fn$;
@@ -75,7 +75,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
   select case
            -- No machine approved yet: the register is not in use.
@@ -114,7 +114,7 @@ create or replace function public.log_refused_device(
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_sql text;
@@ -163,6 +163,22 @@ begin
                     and p.proname = 'sign_in_any_device') then
     alter function sr_auth.sign_in(text, text) rename to sign_in_any_device;
   end if;
+
+  -- ⚠️ RE-ASSERT THE search_path ON THE RENAMED FUNCTION, every run.
+  --
+  -- The rename happens ONCE; after that this block is skipped, and
+  -- `sign_in_any_device` keeps forever whatever settings it was created
+  -- with. So when `extensions` was added to 04_auth.sql's `sign_in` -- the
+  -- body that does the bcrypt compare -- the fix never reached the renamed
+  -- copy, and the login screen kept failing with
+  --
+  --     function crypt(text, text) does not exist
+  --
+  -- on a database where 04_auth, sign_in and sign_up all looked correct.
+  -- pgcrypto lives in `extensions` on Supabase, and a function's own
+  -- search_path wins, so the renamed one has to be corrected in place.
+  alter function sr_auth.sign_in_any_device(text, text)
+    set search_path = sr_auth, public, extensions;
 end $$;
 
 create or replace function sr_auth.sign_in(p_identifier text, p_password text)
@@ -170,7 +186,7 @@ returns table (id uuid, email text, raw_user_meta_data jsonb,
                email_confirmed_at timestamptz)
 language plpgsql
 security definer
-set search_path = sr_auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_device text := nullif(current_setting('app.device_id', true), '');
@@ -204,7 +220,7 @@ create or replace function public.touch_device(p_device_id text)
 returns void
 language sql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
   update public.approved_devices
      set last_seen_at = now()

@@ -2166,6 +2166,35 @@ INFO 5                14 of 60 connections
 that is correct — that account does bypass RLS. Run it as `yard_app`, which
 is what the app connects as.
 
+#### A re-run LOCKED THE APP OUT of a working database (2026-09-22)
+
+⚠️ **The worst kind of bug: a cosmetic re-assertion broke a deployment
+that was already working.** `postgres/91` did, inside one DO block:
+
+```sql
+alter role yard_app password '<pw>';
+alter role yard_app nosuperuser nocreatedb nocreaterole inherit nobypassrls;
+```
+
+On Supabase the admin is **CREATEROLE but NOT superuser**, and only a
+superuser may change another role's ATTRIBUTES. The second statement failed
+with `permission denied to alter role`, the whole block rolled back —
+**including the password change** — and `yard_app` was left with a password
+nobody knew. The app, which had been connecting fine, started reporting
+`28P01: password authentication failed`.
+
+⚠️ **The password must be its own statement.** Both role files now set it
+alone, then attempt the attributes in a nested block that tolerates
+`insufficient_privilege`. The attributes were correct at CREATE time and
+nothing short of a superuser can have changed them, so failing to re-state
+them costs nothing — and the verification at the bottom still proves them.
+
+Repair for a project already locked out:
+[postgres/reset_yard_app_password.ps1](postgres/reset_yard_app_password.ps1)
+— one statement as the admin, plus a check that the account is still
+`nosuperuser nobypassrls login inherit`. ⚠️ A password reset that also
+handed the role BYPASSRLS would be worse than the lockout it fixes.
+
 #### The login role must be created MID-RUN (2026-09-22)
 
 ⚠️ **`role "yard_app" does not exist` was not cosmetic** — it was the whole
@@ -2231,6 +2260,118 @@ the app agree), so it was left alone — the two functions genuinely differ.
 ⚠️ **A fresh build is the only thing that finds this class of bug.**
 The office and local databases have been carrying the mismatch for months
 without symptoms.
+
+#### ...and the FIRST pass missed the sign_in chain (2026-09-22)
+
+⚠️ **`function crypt(text, text) does not exist` at the login screen**,
+after the earlier `extensions` fix. The first pass only touched files whose
+OWN TEXT calls `crypt`/`gen_salt` — but `sr_auth.sign_in` is re-created as a
+WRAPPER by migrations 021, 032 and 047, and those files never mention crypt.
+The innermost body (04_auth.sql) does the bcrypt compare, and **a function's
+own search_path wins**, so the wrapper's path governs the whole call. Live:
+
+```
+sign_up              sr_auth, public, extensions   <- fixed first pass
+change_password      sr_auth, public, extensions   <- fixed first pass
+sign_in              sr_auth, public               <- NOT
+sign_in_before_flush sr_auth, public               <- NOT
+sign_in_any_device   sr_auth, public               <- NOT
+```
+
+Now `extensions` is on **every** function search_path in postgres/ and
+migrations/ (84 clauses, 24 files), not only the ones that look like they
+need it. ⚠️ Grepping for the CALL misses a wrapper; the rule has to be
+applied to the chain.
+
+#### ...and the renamed pair inherited the PRE-FIX search_path (2026-09-22)
+
+⚠️ **`crypt(text, text) does not exist` SURVIVED the fix above**, on a
+database where every .sql file was correct and a freshly built database
+tested clean. Live on Supabase:
+
+```
+sign_in              sr_auth, public, extensions   <- correct
+sign_in_any_device   sr_auth, public               <- stale
+sign_in_before_flush sr_auth, public               <- stale
+```
+
+`sign_in_any_device` and `sign_in_before_flush` are not written as
+`create function` anywhere. Migrations 032 and 047 **rename**
+`sr_auth.sign_in` into them. `ALTER FUNCTION ... RENAME` carries the stored
+settings across unchanged, so both inherited the search_path `sign_in` had
+**on the day this database was built** -- before `extensions` was added.
+
+⚠️ **The guard is what makes it permanent.** Each rename sits behind
+`if not exists`, so it runs exactly ONCE, on first build. Re-running the
+migrations can never correct an existing database: the guard skips and the
+stale setting survives. `sign_in` itself is re-created by a later file, so
+it picked the fix up and *looks* right -- but it only delegates; the bcrypt
+compare happens two calls down, in the stale pair.
+
+Reproduced from scratch (create without `extensions` -> rename -> call):
+`function gen_salt(unknown) does not exist`, then one `alter function ...
+set search_path` makes it pass.
+
+⚠️ A renamed function is NOT reachable by editing `create function`
+text. 032 and 047 now re-assert the setting **outside** the guard, so every
+future install keeps it right; `alter ... set` is idempotent, and that is
+the part that actually repairs a live database:
+
+```sql
+alter function sr_auth.sign_in_any_device(text, text)
+  set search_path = sr_auth, public, extensions;
+```
+
+For a database already in the broken state, run
+[fix_sign_in_search_path.sql](postgres/fix_sign_in_search_path.sql) **in the
+Supabase SQL Editor** -- changing a function's settings requires its OWNER,
+and `yard_app` deliberately owns nothing, so the app's own account gets
+`must be owner of function`.
+
+⚠️ `public.schema_migrations` only exists from migration 043 onward, so
+a missing low number there proves nothing about whether it ran. Diagnose
+from `pg_proc.proconfig` on the LIVE database, not from the file list.
+
+#### A taken e-mail was only refused AFTER the OTP (2026-09-22)
+
+The account is created in `verifySignupOtp`, not in `requestSignupOtp`, so
+`user_already_exists` surfaced at the very end -- the officer waited for a
+mail, opened it, typed six digits, and only then learned they already had an
+account. Asked for directly: say it when the button is pressed.
+
+[services.dart](lib/services/services.dart) `requestSignupOtp` now calls
+`_emailIsRegistered()` **before** `GmailOtpService.sendCode`. Two details
+that are deliberate:
+
+- It reads **`sr_auth.users`**, where sign-up's own unique constraint lives.
+  Checking `profiles` would miss an account whose profile row failed to
+  write, and the sign-up would still die on a duplicate key at the end.
+  All stored e-mails are lowercase, so `email.toLowerCase()` is a valid
+  comparison.
+- A failed lookup returns **false**, not an error. A signed-out client may
+  not be able to read that table on every deployment, and blocking a
+  legitimate sign-up because the CHECK errored is worse than letting it
+  reach the existing duplicate guard at the end.
+
+⚠️ It also stops a stranger confirming an address is registered by
+making the app mail a real code to it, and stops the OTP quota being spent
+on sign-ups that cannot succeed. One fix serves all 7 sign-up screens.
+Pinned by
+[a_taken_email_is_refused_before_the_otp_test.dart](test/a_taken_email_is_refused_before_the_otp_test.dart)
+-- including that the check comes BEFORE the send, which is the whole point.
+
+#### The border was blue, the fill was neutral (2026-09-22)
+
+⚠️ **"one side white, one side grey"** on the ICT screens — and it was
+never an ICT problem. The border was `#DDE3EC`, which leans blue hard
+(R-B = **-15**), while `_fieldFillLight` is neutral (**-2**). A box then
+reads as two colours: a cool outline round a neutral centre. The dark plum
+ICT panel simply made the existing mismatch visible.
+
+`#E2E2E6` keeps the same visible contrast against the fill (55 vs 53 by
+channel sum) and drops the cast to -4. ⚠️ Matching the TINT matters more
+than matching the lightness — that is what makes an outline and its centre
+read as one colour.
 
 #### pgcrypto lives in `extensions` on Supabase (2026-09-22)
 

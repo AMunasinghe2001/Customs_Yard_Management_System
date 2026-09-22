@@ -46,10 +46,18 @@ begin
       'nosuperuser nocreatedb nocreaterole inherit nobypassrls', v_pw);
     raise notice 'created role yard_app';
   else
+    -- ⚠️ TWO STATEMENTS, and the second may fail. A CREATEROLE-but-not-
+    -- superuser admin (Supabase) cannot change another role's ATTRIBUTES,
+    -- and combining them meant the password change died with them -- the
+    -- role kept its old password and the app could not log in.
     execute format('alter role yard_app password %L', v_pw);
-    execute 'alter role yard_app nosuperuser nocreatedb nocreaterole '
-            'inherit nobypassrls';
-    raise notice 'role yard_app already existed - password and attributes reset';
+    raise notice 'role yard_app already existed - password reset';
+    begin
+      execute 'alter role yard_app nosuperuser nocreatedb nocreaterole '
+              'inherit nobypassrls';
+    exception when insufficient_privilege then
+      raise notice '  (cannot re-assert attributes here - not superuser)';
+    end;
   end if;
 end $role$;
 

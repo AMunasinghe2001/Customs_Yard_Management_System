@@ -24,7 +24,7 @@ create or replace function public.tender_bids_reject_committee_round()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_attempt int;

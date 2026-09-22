@@ -95,7 +95,7 @@ create or replace function public.flush_refused_sign_ins()
 returns integer
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   n int := 0;
@@ -135,7 +135,7 @@ create or replace function public.log_refused_device(
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_sql       text;
@@ -244,6 +244,15 @@ begin
                     and p.proname = 'sign_in_before_flush') then
     alter function sr_auth.sign_in(text, text) rename to sign_in_before_flush;
   end if;
+
+  -- ⚠️ Same trap as migration 032: the rename runs ONCE, so the renamed
+  -- function keeps forever the search_path it was created with. pgcrypto is
+  -- in `extensions` on Supabase and a function's own path wins, so a later
+  -- fix to 04_auth.sql never reaches this copy -- the login screen then
+  -- fails with `function crypt(text, text) does not exist` on a database
+  -- where every file looks correct. Re-assert it on every run.
+  alter function sr_auth.sign_in_before_flush(text, text)
+    set search_path = sr_auth, public, extensions;
 end $$;
 
 create or replace function sr_auth.sign_in(p_identifier text, p_password text)
@@ -251,7 +260,7 @@ returns table (id uuid, email text, raw_user_meta_data jsonb,
                email_confirmed_at timestamptz)
 language plpgsql
 security definer
-set search_path = sr_auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 begin
   -- ⚠️ BEFORE the inner call, not after. The inner function raises for a

@@ -31,7 +31,7 @@ create or replace function public.yard_toggle_other_delivery(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
 declare
   v_yard text;

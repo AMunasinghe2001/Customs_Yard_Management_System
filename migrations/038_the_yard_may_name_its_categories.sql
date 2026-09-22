@@ -95,7 +95,7 @@ create or replace function public.package_category_stamp()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 begin
   new.updated_at := now();

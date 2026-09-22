@@ -3643,11 +3643,56 @@ class AdminService {
     String? directorate,
     String? profileImageUrl,
   }) async {
+    // ⚠️ REFUSE A DUPLICATE BEFORE SENDING THE CODE.
+    //
+    // The account is only created in [verifySignupOtp], so a taken e-mail
+    // used to surface as `user_already_exists` AFTER the officer had waited
+    // for a mail, opened it and typed six digits -- at the one moment they
+    // expect to be finished. Asked for directly: say it when the button is
+    // pressed.
+    //
+    // ⚠️ Also stops a stranger confirming an address is registered by
+    // making the app mail a real code to it, and stops the OTP quota being
+    // spent on sign-ups that cannot succeed.
+    final taken = await _emailIsRegistered(email.trim());
+    if (taken) {
+      throw AuthException('An account already exists for this e-mail. '
+          'Sign in instead, or use Forgot password.',
+          code: 'user_already_exists');
+    }
+
     // E-mail a self-issued code via Gmail (not Supabase). The account itself is
     // created only after the code is verified, in [verifySignupOtp].
     await GmailOtpService.instance
         .sendCode(email.trim(),
             recipientName: fullName, purpose: OtpPurpose.createAccount);
+  }
+
+  /// Whether [email] already has an account.
+  ///
+  /// ⚠️ Reads `sr_auth.users`, which is where sign-up's own unique
+  /// constraint lives -- checking `profiles` instead would miss an account
+  /// whose profile row failed to write, and then the sign-up would still
+  /// fail at the end with a duplicate key.
+  ///
+  /// ⚠️ Returns FALSE when the lookup itself fails. A signed-out client
+  /// may not be able to read that table on every deployment, and refusing a
+  /// legitimate sign-up because a check errored is worse than letting it
+  /// reach the existing `user_already_exists` guard at the end.
+  Future<bool> _emailIsRegistered(String email) async {
+    try {
+      // ⚠️ `sr_auth.users`, via the same handle the rest of this file
+      // uses. The query layer quotes a schema-qualified name correctly
+      // ("sr_auth"."users"), which pg_query_sql_test pins.
+      final rows = await supabase
+          .from('sr_auth.users')
+          .select('id')
+          .eq('email', email.toLowerCase())
+          .limit(1);
+      return (rows as List).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> verifySignupOtp({

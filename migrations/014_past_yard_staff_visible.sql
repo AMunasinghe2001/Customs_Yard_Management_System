@@ -31,7 +31,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
   select exists (
     select 1

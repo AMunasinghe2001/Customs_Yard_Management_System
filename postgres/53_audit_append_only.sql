@@ -143,7 +143,7 @@ create or replace function public.purge_old_audit_logs()
 returns integer
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_deleted integer;
@@ -238,7 +238,7 @@ create or replace function sr_auth.record_failed_login(p_email text)
 returns void
 language plpgsql
 security definer
-set search_path = sr_auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_user_id     uuid;
@@ -304,7 +304,7 @@ create or replace function public.profiles_audit_privilege_change()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_changes jsonb := '{}'::jsonb;

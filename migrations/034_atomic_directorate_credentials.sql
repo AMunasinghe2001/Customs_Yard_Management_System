@@ -14,7 +14,7 @@ create or replace function public.reset_directorate_credentials(
 returns void
 language plpgsql
 security definer
-set search_path = public, auth
+set search_path = public, auth, extensions
 as $fn$
 declare
   v_email text;

@@ -74,12 +74,33 @@ begin
       'nosuperuser nocreatedb nocreaterole inherit nobypassrls', v_pw);
     raise notice 'created role yard_app';
   else
-    -- Re-run: refresh the password and re-assert the safety attributes, in
-    -- case somebody granted something in between.
+    -- Re-run: refresh the password, then re-assert the safety attributes.
+    --
+    -- ⚠️ TWO STATEMENTS, and the second is allowed to fail.
+    --
+    -- On Supabase the admin account is CREATEROLE but NOT superuser, and
+    -- PostgreSQL only lets a superuser change another role's attributes
+    -- (NOSUPERUSER / NOBYPASSRLS / ...). A single combined ALTER therefore
+    -- died with `permission denied to alter role` -- and because the
+    -- password was in that same failed statement, the role was left with
+    -- its OLD password and the app could no longer log in. A cosmetic
+    -- re-assertion broke a working deployment.
+    --
+    -- The password is the part that must succeed, so it goes first and
+    -- alone. The attributes were set correctly at CREATE time and nothing
+    -- short of a superuser can have changed them since, so failing to
+    -- re-state them is not a problem -- the verification below still
+    -- proves they are right.
     execute format('alter role yard_app password %L', v_pw);
-    execute 'alter role yard_app nosuperuser nocreatedb nocreaterole '
-            'inherit nobypassrls';
-    raise notice 'role yard_app already existed - password and attributes reset';
+    raise notice 'role yard_app already existed - password reset';
+
+    begin
+      execute 'alter role yard_app nosuperuser nocreatedb nocreaterole '
+              'inherit nobypassrls';
+    exception when insufficient_privilege then
+      raise notice '  (cannot re-assert attributes here - not superuser; '
+                   'they are checked below instead)';
+    end;
   end if;
 end $$;
 

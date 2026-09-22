@@ -33,7 +33,7 @@ returns boolean
 language plpgsql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
 declare
   hit boolean;

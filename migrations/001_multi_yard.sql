@@ -37,7 +37,7 @@ returns text
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select yard from public.profiles where id = sr_auth.uid();
 $$;

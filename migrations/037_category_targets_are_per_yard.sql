@@ -97,7 +97,7 @@ create or replace function public.package_category_target_is_sane()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 begin
   if new.target_warehouse_id is not null then

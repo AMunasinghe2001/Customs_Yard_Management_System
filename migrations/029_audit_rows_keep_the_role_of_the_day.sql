@@ -43,7 +43,7 @@ create or replace function public.audit_logs_stamp_actor_role()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 begin
   if new.actor_role is null and new.user_id is not null then

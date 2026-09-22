@@ -617,7 +617,7 @@ returns text
 language plpgsql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   found_email text;
@@ -673,7 +673,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select exists(
     select 1 from public.profiles
@@ -739,7 +739,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select not exists (
     select 1 from public.profiles
@@ -824,7 +824,7 @@ create or replace function public.disposal_mark_sale_item_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited uuid;
@@ -954,7 +954,7 @@ create or replace function public.disposal_toggle_delivery_status(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_yard text;
@@ -1139,7 +1139,7 @@ create or replace function public.disposal_mark_sale_item_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited uuid;
@@ -1253,7 +1253,7 @@ create or replace function public.disposal_toggle_delivery_status(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   update public.tender_sale_items
@@ -1339,7 +1339,7 @@ create or replace function public.disposal_mark_sale_item_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited uuid;
@@ -1477,7 +1477,7 @@ create or replace function public.disposal_mark_sale_item_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited uuid;
@@ -1592,7 +1592,7 @@ create or replace function public.disposal_toggle_delivery_status(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_yard text;
@@ -1696,7 +1696,7 @@ create or replace function public.disposal_mark_destruction_item_destroyed(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited uuid;
@@ -1851,7 +1851,7 @@ create or replace function public.disposal_mark_forfeited_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_package uuid;
@@ -2000,7 +2000,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select exists(
     select 1 from public.profiles
@@ -2042,7 +2042,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select not exists (
     select 1 from public.profiles
@@ -2063,7 +2063,7 @@ create or replace function public.set_appeal_hold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_deadline timestamptz;
@@ -2106,7 +2106,7 @@ create or replace function public.disposal_mark_sale_item_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited uuid;
@@ -2225,7 +2225,7 @@ create or replace function public.disposal_mark_destruction_item_destroyed(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited uuid;
@@ -2472,7 +2472,7 @@ create or replace function public.release_appeal_with_decision(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   if not public.auth_user_is_appeal() then
@@ -2567,7 +2567,7 @@ create or replace function public.purge_old_audit_logs()
 returns integer
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_deleted integer;
@@ -2678,7 +2678,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select exists(
     select 1 from public.profiles
@@ -2733,7 +2733,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select not exists (
     select 1 from public.profiles
@@ -2805,7 +2805,7 @@ create or replace function public.valuation_set_costs(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   k text;
@@ -2883,7 +2883,7 @@ create or replace function public.disposal_toggle_destruction_delivery(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_yard text;
@@ -2939,7 +2939,7 @@ create or replace function public.set_appeal_hold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_deadline    timestamptz;
@@ -3054,7 +3054,7 @@ returns text
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select yard from public.profiles where id = sr_auth.uid();
 $$;
@@ -3652,7 +3652,7 @@ create or replace function public.disposal_mark_destruction_item_destroyed(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited   uuid;
@@ -3861,7 +3861,7 @@ create or replace function public.disposal_mark_sale_item_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited    uuid;
@@ -4074,7 +4074,7 @@ create or replace function public.disposal_mark_destruction_item_destroyed(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited    uuid;
@@ -4223,7 +4223,7 @@ create or replace function public.tsi_autofill_package_item()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   if new.package_item_id is null then
@@ -4246,7 +4246,7 @@ create or replace function public.di_autofill_package_item()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   if new.package_item_id is null then
@@ -4325,7 +4325,7 @@ create or replace function public.disposal_mark_sale_item_sold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited     uuid;
@@ -4480,7 +4480,7 @@ create or replace function public.disposal_mark_destruction_item_destroyed(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_forfeited    uuid;
@@ -4719,7 +4719,7 @@ create or replace function public.set_appeal_hold(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_deadline    timestamptz;
@@ -4813,7 +4813,7 @@ create or replace function public.release_appeal_with_decision(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_item_ids uuid[];
@@ -4944,7 +4944,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select exists(
     select 1 from public.profiles
@@ -5008,7 +5008,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select not exists (
     select 1 from public.profiles
@@ -5272,7 +5272,7 @@ create or replace function public.valuation_set_item_cost(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   if not public.auth_user_is_valuation() then
@@ -5293,7 +5293,7 @@ create or replace function public.valuation_forward_item(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_request uuid;
@@ -5336,7 +5336,7 @@ create or replace function public.valuation_forward_all(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_missing int;
@@ -5787,7 +5787,7 @@ create or replace function public.appeal_ensure_forfeited_row(
 ) returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_id       uuid;
@@ -6899,7 +6899,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
   select exists (
     select 1 from public.profiles p
@@ -7396,7 +7396,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select exists (
     select 1
@@ -7655,7 +7655,7 @@ returns text
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
   select yard from public.warehouses where id = p_warehouse_id;
 $function$;
@@ -7989,7 +7989,7 @@ create or replace function public.yard_toggle_other_delivery(
 ) returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
 declare
   v_yard text;
@@ -8091,7 +8091,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
   select exists (
     select 1
@@ -8497,7 +8497,7 @@ returns boolean
 language plpgsql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $function$
 declare
   hit boolean;
@@ -8823,7 +8823,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = sr_auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
   select coalesce(
     (select (now() - coalesce(p.password_updated_at, p.created_at))
@@ -8845,7 +8845,7 @@ create or replace function sr_auth.begin_session(p_user_id text, p_role text)
 returns void
 language plpgsql
 security definer
-set search_path = sr_auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_id      uuid;
@@ -8969,7 +8969,7 @@ begin
     returns void
     language plpgsql
     security definer
-    set search_path = sr_auth, public
+    set search_path = sr_auth, public, extensions
     as $body$
     declare
       v_caller uuid;

@@ -46,7 +46,7 @@ create or replace function public.disposal_toggle_outcome_delivery(
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 begin
   update public.unsold_proposals

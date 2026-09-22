@@ -246,7 +246,19 @@ class AppTheme {
       Color(0xFFFFFFFF); // Pure white for generic container surfaces
   static const Color _cardLight =
       Color(0xFFF7F9FC); // Subtly distinguished white for cards
-  static const Color _borderLight = Color(0xFFDDE3EC); // Soft border
+  /// The outline of every field, card and divider, light mode.
+  ///
+  /// ⚠️ NEUTRAL, to match `_fieldFillLight`. This was #DDE3EC, which
+  /// leans blue hard (R-B = -15) while the fill is neutral (-2). A box then
+  /// reads as TWO colours -- a cool outline round a neutral centre -- and
+  /// against a dark accent panel that shows up as "one side white, one side
+  /// grey". Reported on the ICT screens, but it was never an ICT problem:
+  /// the dark plum panel simply made the existing mismatch visible.
+  ///
+  /// #E2E2E6 keeps the same visible contrast against the fill (55 vs 53 by
+  /// channel sum) and drops the cast to -4, so the outline and the centre
+  /// read as one colour.
+  static const Color _borderLight = Color(0xFFE2E2E6);
   /// The inside of every text box and dropdown, light mode.
   ///
   /// ⚠️ A colour of its OWN, not `_cardLight`. The fields used to be filled
