@@ -165,9 +165,17 @@ if ($DryRun) {
 # ── Password ───────────────────────────────────────────────────────────────
 # Asked for rather than taken on the command line, so it stays out of the
 # PowerShell history file.
-$sec = Read-Host "Password for $User" -AsSecureString
-$env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-  [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+# ⚠️ Reuse a password the CALLER already put in the environment, so a
+# wrapper script (migrate_local_to_sr_auth.ps1) does not make the operator
+# type the same one once per database. Typed here as before when it is not
+# already set.
+if ($env:PGPASSWORD) {
+  Write-Host "Password : reusing PGPASSWORD from the caller" -ForegroundColor DarkGray
+} else {
+  $sec = Read-Host "Password for $User" -AsSecureString
+  $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+}
 
 # ⚠️ Supabase's pooler is signed by its OWN root CA, which Windows does not
 # trust. Without this psql fails the handshake and the message names TLS
@@ -183,6 +191,17 @@ if ($PgHost -like '*supabase*') {
     Write-Host 'supabase-root-2021.crt not found - TLS verification will fail.' -ForegroundColor Red
     exit 1
   }
+} else {
+  # ⚠️ CLEAR IT for a local server. PGSSLMODE is an ENVIRONMENT
+  # variable, so a value left over from an earlier Supabase run in the same
+  # PowerShell window still applies here -- and a local PostgreSQL built
+  # without SSL then refuses every connection with
+  #
+  #     server does not support SSL, but SSL was required
+  #
+  # which reads like a broken server rather than a stale variable.
+  Remove-Item Env:PGSSLMODE     -ErrorAction SilentlyContinue
+  Remove-Item Env:PGSSLROOTCERT -ErrorAction SilentlyContinue
 }
 $env:PGCONNECT_TIMEOUT = '30'
 

@@ -2054,7 +2054,7 @@ popup out again.
 - ⚠️ **A month is picked in TWO steps — year, then month** (`_pickMonth` calls `_pickYear` first). One flat list of "September 2026, August 2026, …" only reaches as far back as someone decided to build it (it was twelve months), so the month before that was unreachable however much log there was. The month list is months alone (`MMMM`, not `MMMM yyyy`) since the year is already chosen, and in the current year it stops at this month — a window over a future month is empty by definition.
 - `ictLogYearsProvider` is its own query for the same reason `ictLogEntityTypesProvider` is. ⚠️ Widget tests must override **both** or the tab opens real DB sockets.
 
-Local psql lives at `C:\pgsql-extract\pgsqlin\psql.exe` (not under Program Files) — the service `postgresql-18` runs from `C:\pgsql-extract`.
+Local psql lives at `C:\pgsql-extract\pgsql\bin\psql.exe` (not under Program Files) — the service `postgresql-18` runs from `C:\pgsql-extract`.
 
 ⚠️ **The search box really WAS shorter than the filters, and every layout measurement said otherwise (2026-09-04).** Both sat in a `SizedBox(height: kIctControlHeight)`, so `getSize` on either returned 34 and three separate tests passed. What differed was the **intrinsic** height: a Material `prefixIcon` is a 48x48 tap target, so the dropdown's `InputDecorator` wanted **48** against the search field's **36** (which constrains its own prefix). Forced into 34, the search box fitted and the dropdown **painted its border outside the box**. Fix: `StyledDropdownFormField` gained an optional `prefixIconConstraints` (⚠️ null keeps Material's default — every other portal's dropdowns rely on it), and `IctSelect` passes the same constraints `IctSearchField` does.
 
@@ -2331,6 +2331,86 @@ and `yard_app` deliberately owns nothing, so the app's own account gets
 ⚠️ `public.schema_migrations` only exists from migration 043 onward, so
 a missing low number there proves nothing about whether it ran. Diagnose
 from `pg_proc.proconfig` on the LIVE database, not from the file list.
+
+#### PGSSLMODE leaks from a Supabase run into the next local one (2026-09-22)
+
+```
+psql: error: server does not support SSL, but SSL was required
+```
+
+`install_all.ps1` sets `PGSSLMODE=verify-full` for a Supabase host but never
+cleared it otherwise. ⚠️ It is an ENVIRONMENT variable, so it survives in
+the PowerShell window: run against Supabase, then against `local` in the
+same terminal, and the local server -- built without SSL -- refuses every
+connection. The message blames the server, not the stale variable.
+
+Both `install_all.ps1` and
+[migrate_local_to_sr_auth.ps1](postgres/migrate_local_to_sr_auth.ps1) now
+`Remove-Item Env:PGSSLMODE` / `Env:PGSSLROOTCERT` on the non-Supabase path,
+so there is no need for `$env:PGSSLMODE="disable"` by hand.
+
+`install_all.ps1` also reuses a `PGPASSWORD` the caller already set (and
+says so), because the wrapper runs it once per database. Clearing it at the
+end is still correct, so the wrapper re-sets it each iteration from a
+variable rather than re-prompting.
+
+#### Generated Windows paths lost characters to Python escapes (2026-09-22)
+
+```
+psql: error: D:/.../migrations8_the_auth_schema_becomes_sr_auth.sql:
+      No such file or directory
+```
+
+⚠️ `migrate_local_to_sr_auth.ps1` was written by a Python heredoc, and a
+Windows path in an ordinary Python string is processed for escapes:
+`'migrations\048_...'` collapsed to chr(4) + `8_...`, and two
+`...\bin\psql.exe` became chr(8) + `in...`. Three paths shipped with
+invisible control characters -- which is also why psql was not found and
+had to be added to PATH by hand.
+
+`\0` (octal) and `\b` (backspace) are the dangerous pair, and they look
+correct in the generating script. Use forward slashes, `chr(92)`, or a raw
+string -- then ASSERT the output contains no character with `ord(c) < 32`
+outside CR/LF/TAB. That assertion is what found the two the eye missed, and
+the first attempt to write the memory file about this bug corrupted itself
+the same way.
+
+#### local and backup stopped starting: the rename was Supabase-only (2026-09-22)
+
+```
+Severity.error 3F000: schema "sr_auth" does not exist
+```
+
+Switching `PG_PROFILE` to `local` or `backup` hit the "Cannot reach the
+database" screen while `supabase` worked. Migration 048 renames our `auth`
+schema to `sr_auth` and the Dart code now asks for `sr_auth` everywhere --
+but 048 had only ever been run against the Supabase project. Measured:
+
+```
+Customs_SR_DB                       auth (owner postgres, 2 users)
+Customs_SR_DB_backup_20260914_1543  auth (owner postgres, 13 users)
+```
+
+Nothing is broken in them; they are one migration behind. The multi-profile
+switching the user relies on means **a schema migration has to be applied to
+every profile, not just the one being tested that day.**
+
+⚠️ **The rename alone is not enough.** `alter schema ... rename` does
+not reach inside function bodies, and 48 of them still name the old schema,
+so the first login fails with `schema "auth" does not exist`. The
+definitions must then be re-applied from the (already renamed) .sql files.
+The recipe is **048, then install_all.ps1** -- 048's own verification
+refuses to pass while any body still says `auth.`.
+
+[migrate_local_to_sr_auth.ps1](postgres/migrate_local_to_sr_auth.ps1) does
+both steps for both databases in one command. It connects as `postgres`, not
+`yard_app`: renaming a schema and replacing functions needs an owner.
+`-IctPassword` is not needed -- these databases already have their accounts;
+that argument only seeds a new ICT login on a fresh build.
+
+048 is safe to re-run and refuses outright to touch a Supabase-owned `auth`
+(it recognises it by OWNER, not by hostname, so a restored dump cannot fool
+it). local and backup share one `yard_app` password; Supabase's differs.
 
 #### The ICT staff dialog sent one code and no more (2026-09-22)
 
