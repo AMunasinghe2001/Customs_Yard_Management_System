@@ -59,6 +59,15 @@ param(
   # which ship -- so it is only as secret as the installer is. Left out, the
   # build carries no credential and the officer supplies a .env, as before.
   [string]$DbPassword = '',
+
+  # The Gmail App Password that sends the sign-in codes.
+  #
+  # ⚠️ Without it a fresh install reaches the database and then
+  # stops at "E-mail is not configured" -- sign-in sends a one-time
+  # code, so no mail means nobody can get in at all.
+  #
+  # Never committed, same as -DbPassword.
+  [string]$GmailPassword = '',
   [switch]$NoUpdateFeed,
   [switch]$SkipFlutter
 )
@@ -140,6 +149,9 @@ if ($SkipFlutter) {
   if ($DbPassword) {
     $a += "--dart-define=PG_CLOUD_PASSWORD=$DbPassword"
   }
+  if ($GmailPassword) {
+    $a += "--dart-define=GMAIL_APP_PASSWORD=$GmailPassword"
+  }
   & flutter @a
   if ($LASTEXITCODE -ne 0) { throw 'flutter build failed' }
 }
@@ -169,6 +181,9 @@ if ($DbPassword) {
   # specify more than one script filename" -- which says nothing about the
   # password. Measured with a `#` in it.
   $isccArgs += "/DDbPassword=$DbPassword"
+}
+if ($GmailPassword) {
+  $isccArgs += "/DGmailPassword=$GmailPassword"
 }
 $isccArgs += 'installer\setup.iss'
 

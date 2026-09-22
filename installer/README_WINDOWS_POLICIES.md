@@ -99,6 +99,36 @@ Only sensible on a single test machine.
 one-way door; the only way back is reinstalling Windows. Do not do this on
 an officer's PC to work around an install.
 
+## The other blue screen: "Windows protected your PC"
+
+```
+Microsoft Defender SmartScreen prevented an unrecognized app from
+starting. Running this app might put your PC at risk.
+```
+
+Same root cause as code 4551, different gatekeeper. SmartScreen checks
+whether a downloaded file is **signed** and whether that signature has
+a reputation; an unsigned installer has neither, so every officer who
+downloads it sees this.
+
+⚠️ **It cannot be fixed in the app or the installer script.** No
+setting, manifest entry or Inno Setup option removes it. Only a
+code-signing certificate does -- the same one that fixes 4551.
+
+Until then, the officer can get past it:
+
+1. Click **More info**
+2. Click **Run anyway**
+
+⚠️ That button appears only after "More info". The first screen shows
+just "Don't run", which is why it looks like a dead end.
+
+⚠️ **The in-app Update button avoids this entirely.** WinSparkle
+downloads and launches the installer itself rather than handing the
+officer a file in Downloads, so SmartScreen's download check does not
+run. A file fetched with a browser or a download manager still gets the
+blue screen -- which is one more reason the app updates itself.
+
 ## What to tell the officer
 
 > This is our own Department software. Windows blocks it because it is not

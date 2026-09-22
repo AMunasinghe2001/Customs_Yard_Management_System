@@ -1,4 +1,4 @@
-﻿; ============================================================================
+; ============================================================================
 ;  Sri Lanka Customs — SR Management System
 ;  Windows installer (Inno Setup 6)
 ;
@@ -15,7 +15,7 @@
 ; what makes Windows treat a new setup as an UPGRADE of the installed copy
 ; rather than a second product: the officer runs it over the old one and
 ; keeps their shortcuts, their install folder and their .env.
-#define AppVersion     "1.5.0"
+#define AppVersion     "1.5.2"
 #define AppPublisher   "Sri Lanka Customs Department"
 #define AppExeName     "cus_yard_management.exe"
 #define BuildDir       "..\build\windows\x64\runner\Release"
@@ -29,6 +29,28 @@
 ; no .env is written and the officer copies a template as before.
 #ifndef DbPassword
   #define DbPassword ""
+#endif
+
+; ⚠️ THE GMAIL APP PASSWORD, for the same .env.
+;
+; Without it the app reaches the database fine and then stops at
+; "E-mail is not configured" -- because sign-in sends a one-time code,
+; so no mail means nobody can get in at all. A fresh install with no
+; Gmail keys is not a half-configured app; it is a locked one.
+;
+; Passed at COMPILE time, never committed, exactly like DbPassword:
+;
+;     ISCC.exe /DGmailPassword="..." installer\setup.iss
+;
+; tool\publish_release.ps1 -GmailPassword '<...>' does that.
+#ifndef GmailPassword
+  #define GmailPassword ""
+#endif
+#ifndef GmailUser
+  #define GmailUser "otpproject3@gmail.com"
+#endif
+#ifndef GmailFromName
+  #define GmailFromName "SL Customs"
 #endif
 
 ; The Supabase project. Every PC reaches this; there is no office
@@ -201,15 +223,45 @@ Name: "{autodesktop}\{#AppShortName}"; Filename: "{app}\{#AppExeName}"; Tasks: d
 Filename: "{app}\{#AppExeName}"; Description: "Start {#AppShortName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; ⚠️ Files the APP writes, which the installer never copied and so would
-; otherwise be left behind: the connection settings the operator placed here,
-; and the diagnostic log. Everything else came from [Files] and is removed by
-; Inno Setup itself.
+; ⚠️ EVERYTHING THE APP WROTE, which the installer never copied and
+; so would otherwise be left behind for the next install to inherit.
+;
+; That inheritance is not hypothetical: a stale .env left in place is
+; exactly what made an installed copy keep reaching for `localhost` and
+; keep using a revoked Gmail password, long after the build carried the
+; right settings. An uninstall has to leave nothing behind, or "uninstall
+; and reinstall" -- the first thing anybody tries -- fixes nothing.
+;
+; Order matters: files and subfolders first, the folder itself last.
+
+; The connection settings, and the copy this installer set aside when it
+; replaced a stale one.
 Type: files; Name: "{app}\.env"
-Type: files; Name: "{app}\frame_watch.log"
-; The templates themselves came from [Files] and Inno Setup removes them, but
-; the folder holding them is not cleaned up on its own once they are gone.
-Type: dirifempty; Name: "{app}\env-templates"
+Type: files; Name: "{app}\.env.replaced-by-setup"
+
+; Diagnostic logs -- frame_watch.log today, by wildcard whatever is added
+; later, so this does not have to be revisited.
+Type: files; Name: "{app}\*.log"
+
+; ⚠️ `data` HOLDS ONLY SHIPPED ASSETS -- the Flutter runtime, fonts,
+; icons. The app keeps nothing of the officer's there (its logs live in
+; %APPDATA%, and the records are in PostgreSQL), so removing it destroys
+; no work. Inno removes the files it copied, but a stray file dropped in
+; beside them leaves the tree standing.
+Type: filesandordirs; Name: "{app}\data"
+
+; The templates came from [Files] and are removed with them; the folder
+; holding them is not cleaned up on its own once they are gone.
+Type: filesandordirs; Name: "{app}\env-templates"
+
+; ⚠️ AND THE FOLDER ITSELF, last.
+;
+; `dirifempty` and not a blanket delete, deliberately: if anything the
+; installer does not know about is still in there -- an export somebody
+; saved next to the program, a note -- it stays, and so does the folder.
+; Removing a directory by wildcard would take those with it, and an
+; uninstaller has no business deleting files it never created.
+Type: dirifempty; Name: "{app}"
 
 [Code]
 //  ⚠️ WRITE A .env ON A FIRST INSTALL, AND ONLY THEN.
@@ -225,19 +277,80 @@ Type: dirifempty; Name: "{app}\env-templates"
 //  every such office back to the default one. That is also why this is
 //  written here rather than in [Files]: `onlyifdoesntexist` would cover
 //  the overwrite, but not the "no password was compiled in" case below.
-procedure WriteDefaultEnv();
+//  Whether an existing .env still points somewhere this build can use.
+//
+//  ⚠️ AN UPGRADE MUST NOT SILENTLY RE-POINT A BRANCH PC. A .env is
+//  how a machine is deliberately aimed at a local copy, a backup or a
+//  test database, and overwriting every one of them on upgrade would
+//  move those back to the default server with nothing said.
+//
+//  But a file left by an OLD installer is a different thing: the
+//  wildcard copy used to sweep the developer's own .env into the
+//  package, so installed copies carried `PG_HOST=localhost` and a
+//  since-revoked Gmail password. Those are not a choice anybody made
+//  and they cannot work -- the app shows "Cannot reach the database"
+//  or fails to send the sign-in code.
+//
+//  So: replace a file that is BROKEN, keep one that is merely
+//  DIFFERENT. A .env naming a real server -- any host that is not
+//  loopback -- is somebody's decision and is left alone.
+function EnvLooksStale(const Path: string): Boolean;
 var
-  Path: string;
   Lines: TArrayOfString;
-  Pw: string;
+  I: Integer;
+  L, HostVal: string;
 begin
-  Path := ExpandConstant('{app}\.env');
-  if FileExists(Path) then
+  Result := False;
+  HostVal := '';
+  if not LoadStringsFromFile(Path, Lines) then
     Exit;
 
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    L := Trim(Lines[I]);
+    if (L = '') or (Copy(L, 1, 1) = '#') then
+      Continue;
+    if Pos('PG_HOST=', L) = 1 then
+      HostVal := LowerCase(Trim(Copy(L, Length('PG_HOST=') + 1,
+                                     Length(L))));
+  end;
+
+  //  ⚠️ Only a LOOPBACK host counts as stale. `localhost` in an
+  //  installed copy means the sweep put it there -- no officer PC runs
+  //  its own PostgreSQL. A LAN address or any other hostname is a
+  //  deliberate choice and is never touched.
+  //
+  //  A .env with no PG_HOST at all is also replaced: it cannot connect
+  //  anywhere, so there is nothing to preserve.
+  Result := (HostVal = '') or (HostVal = 'localhost') or
+            (HostVal = '127.0.0.1') or (HostVal = '[::1]');
+end;
+
+procedure WriteDefaultEnv();
+var
+  Path, Backup: string;
+  Lines: TArrayOfString;
+  Pw, GmailPw: string;
+begin
+  Path := ExpandConstant('{app}\.env');
+
   Pw := '{#DbPassword}';
+  GmailPw := '{#GmailPassword}';
   if Pw = '' then
     Exit;
+
+  if FileExists(Path) then
+  begin
+    if not EnvLooksStale(Path) then
+      Exit;
+
+    //  ⚠️ KEPT, NOT DISCARDED. It may hold a password or a note
+    //  nobody else has a copy of. Renaming costs nothing and makes
+    //  this reversible; deleting it would not be.
+    Backup := Path + '.replaced-by-setup';
+    DeleteFile(Backup);
+    RenameFile(Path, Backup);
+  end;
 
   //  ⚠️ QUOTE THE PASSWORD, ALWAYS.
   //
@@ -246,10 +359,11 @@ begin
   //  reports "password authentication failed", which sends the reader to
   //  the server instead of to this line. Quoting every password rather
   //  than only the awkward ones leaves no rule to remember.
-  SetArrayLength(Lines, 12);
+  SetArrayLength(Lines, 18);
   Lines[0] := '# Written by the installer on first install.';
   Lines[1] := '# Edit this file to point this PC at another server, then';
-  Lines[2] := '# restart the app. An upgrade will NOT overwrite it.';
+  Lines[2] := '# restart the app. An upgrade keeps it, unless it still';
+  Lines[12] := '# points at localhost, which no officer PC can serve.';
   Lines[3] := 'PG_HOST={#DbHost}';
   Lines[4] := 'PG_PORT={#DbPort}';
   Lines[5] := 'PG_DATABASE={#DbName}';
@@ -271,6 +385,20 @@ begin
   Lines[10] := 'PG_SSL_ROOT_CERT=supabase-root-2021.crt';
   //  The cloud is further away than a LAN server.
   Lines[11] := 'PG_CONNECT_TIMEOUT=30';
+
+  //  ⚠️ The Gmail keys go in the SAME file, because sign-in needs
+  //  them. Quoted like the database password: a Google App Password is
+  //  shown as four space-separated groups, and an unquoted value with
+  //  spaces is a different string once dotenv has read it.
+  //
+  //  Left blank at compile time, the keys are written empty rather
+  //  than omitted, so the file still SHOWS what is missing when an
+  //  officer opens it after "E-mail is not configured".
+  Lines[13] := '';
+  Lines[14] := '# The account that sends the sign-in codes.';
+  Lines[15] := 'GMAIL_USER={#GmailUser}';
+  Lines[16] := 'GMAIL_APP_PASSWORD="' + GmailPw + '"';
+  Lines[17] := 'GMAIL_FROM_NAME={#GmailFromName}';
 
   //  ⚠️ Written WITHOUT a BOM. Innos UTF-8 mode prefixes one, and
   //  dotenv reads those three bytes as part of the first key -- so

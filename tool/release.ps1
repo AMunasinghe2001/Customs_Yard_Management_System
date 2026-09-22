@@ -18,16 +18,39 @@
 
   This script writes all three from one argument, so they cannot disagree.
 
+.PARAMETER Patch
+  A small fix.   4.2.1 -> 4.2.2
+
+.PARAMETER Minor
+  A new feature. 4.2.2 -> 4.3.0
+
+.PARAMETER Major
+  A big release. 4.3.0 -> 5.0.0
+
 .PARAMETER Version
-  The new version, e.g. 1.2.0
+  An exact version, when none of the three fits.
 
 .EXAMPLE
-  .\tool\release.ps1 -Version 1.2.0
+  .\tool\release.ps1 -Patch -BumpOnly
+  .\tool\release.ps1 -Minor -BumpOnly
+  .\tool\release.ps1 -Version 2.0.0 -BumpOnly
 #>
 param(
-  [Parameter(Mandatory = $true)]
+  # ⚠️ THREE PARTS, ALWAYS. Not a style preference: pubspec.yaml
+  # takes `x.y.z+n`, and Flutter writes that into the binary as
+  # Windows' four-number FILEVERSION with the BUILD number in the
+  # fourth slot. A four-part version like 4.2.2.1 would leave nowhere
+  # for it to go.
+  #
+  # 4.2.2 is a patch of 4.2, which is what a "small update" needs.
   [ValidatePattern('^\d+\.\d+\.\d+$')]
   [string]$Version,
+
+  # Raise one part of the CURRENT version instead of naming a new one.
+  # Exactly one of these, or -Version.
+  [switch]$Patch,
+  [switch]$Minor,
+  [switch]$Major,
 
   # Write the three version strings and STOP.
   #
@@ -41,6 +64,42 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+
+# --- Work out the new version ---------------------------------------
+#
+# ⚠️ Exactly one way of saying it. Passing both -Minor and an
+# explicit -Version is a contradiction, and silently preferring one
+# would ship a release numbered differently from what was typed.
+$bumps = @($Patch, $Minor, $Major) | Where-Object { $_ }
+if ($Version -and $bumps.Count -gt 0) {
+  throw 'Give -Version OR one of -Patch/-Minor/-Major, not both.'
+}
+if (-not $Version -and $bumps.Count -eq 0) {
+  throw 'Give one of -Patch, -Minor, -Major, or -Version <x.y.z>.'
+}
+if ($bumps.Count -gt 1) {
+  throw 'Give only one of -Patch, -Minor, -Major.'
+}
+
+if (-not $Version) {
+  $cur = Get-Content 'pubspec.yaml' -Raw -Encoding UTF8
+  if ($cur -notmatch '(?m)^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$') {
+    throw 'Could not read the current version from pubspec.yaml'
+  }
+  $ma = [int]$Matches[1]; $mi = [int]$Matches[2]; $pa = [int]$Matches[3]
+  $was = "$ma.$mi.$pa"
+
+  # ⚠️ A minor bump RESETS the patch, and a major resets both.
+  # 4.2.2 followed by -Minor is 4.3.0, never 4.3.2 -- otherwise the
+  # numbers stop meaning anything and an officer cannot tell which
+  # release is newer.
+  if     ($Major) { $ma++; $mi = 0; $pa = 0 }
+  elseif ($Minor) { $mi++; $pa = 0 }
+  else            { $pa++ }
+
+  $Version = "$ma.$mi.$pa"
+  Write-Host ("Bumping {0} -> {1}" -f $was, $Version) -ForegroundColor DarkGray
+}
 
 Write-Host "Releasing $Version" -ForegroundColor Cyan
 

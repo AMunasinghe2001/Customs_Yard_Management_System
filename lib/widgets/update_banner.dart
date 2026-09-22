@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_dialog.dart';
 import '../core/theme.dart';
+import '../core/app_updater.dart';
 import '../core/update_check.dart';
 import 'styled_form_dialog.dart';
 
@@ -118,7 +119,7 @@ class _Bar extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             ElevatedButton.icon(
-              onPressed: () => openUpdateDownload(update.downloadUrl),
+              onPressed: () => startUpdate(context, update),
               icon: const Icon(Icons.download_rounded, size: 16),
               style: ElevatedButton.styleFrom(
                 backgroundColor: colors.primaryNavy,
@@ -141,6 +142,44 @@ class _Bar extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Start the update the officer just asked for.
+///
+/// ⚠️ WinSparkle FIRST, and a browser only if it is unavailable.
+///
+/// Opening the download URL in a browser was the original behaviour, and
+/// it works, but it is not what "Update" should mean: the officer got a
+/// file in Downloads, had to find it, run it, and answer SmartScreen --
+/// and on a PC with a download manager installed, that manager grabbed
+/// the link instead and the app never heard of it again.
+///
+/// WinSparkle fetches the installer itself, shows its own progress, and
+/// launches it when it is done. It is the same installer from the same
+/// https feed either way -- nothing is downloaded that was not already
+/// going to be.
+///
+/// ⚠️ The app still does NOT fetch and execute an .exe on its own.
+/// That is what makes the browser an acceptable fallback rather than
+/// hand-rolled download-and-run code: a build with no UPDATE_FEED_URL
+/// has no WinSparkle feed to use, and the browser is where "should I
+/// run this?" already has an answer.
+Future<void> startUpdate(BuildContext context, AvailableUpdate update)
+    async {
+  final messenger = ScaffoldMessenger.of(context);
+  final outcome = await checkForUpdatesNow();
+  if (outcome == UpdateCheckOutcome.started) return;
+
+  // No feed compiled in, or the updater failed. Fall back to the
+  // browser so the officer is never left with a dead button.
+  final opened = await openUpdateDownload(update.downloadUrl);
+  if (!opened && context.mounted) {
+    messenger.showSnackBar(SnackBar(
+      content: Text('Could not start the update. Ask ICT for version '
+          '${update.version}.'),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 }
 
@@ -176,11 +215,11 @@ Future<void> showUpdateDialog(
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           icon: const Icon(Icons.download_rounded, size: 18),
-          label: const Text('Download update',
+          label: const Text('Update now',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           onPressed: () {
-            openUpdateDownload(update.downloadUrl);
             Navigator.pop(ctx);
+            startUpdate(ctx, update);
           },
         ),
       ],

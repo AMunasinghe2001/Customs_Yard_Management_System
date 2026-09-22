@@ -34,14 +34,28 @@ const String _gmailNameDefine = String.fromEnvironment('GMAIL_FROM_NAME');
 String get kGmailUser =>
     AppEnv.read('GMAIL_USER', dartDefine: _gmailUserDefine, fallback: '');
 
-/// A 16-character Google App Password for [kGmailUser] (spaces removed).
+/// A 16-character Google App Password for [kGmailUser].
+///
+/// ⚠️ SPACES ARE STRIPPED, because Google shows the password WITH them.
+/// The account page presents it as four groups — `abcd efgh ijkl mnop` —
+/// and that is what anyone copying it pastes into `.env`. SMTP wants the
+/// 16 characters with no spaces, so a verbatim paste authenticates as the
+/// wrong password and the app reports
+///
+///     Could not send the verification e-mail. Please check your
+///     connection and the Gmail configuration
+///
+/// which points at the network and the config rather than at four
+/// invisible characters. Stripping them here means both forms work.
 ///
 /// ⚠️ There is deliberately NO default. An earlier version hard-coded a real
 /// App Password here, and it is still in the git history (commit 875e445) —
 /// anyone with the repo can read it. That password should be REVOKED in the
 /// Google account and a fresh one put in `.env`.
-String get kGmailAppPassword => AppEnv.read('GMAIL_APP_PASSWORD',
-    dartDefine: _gmailPassDefine, fallback: '');
+String get kGmailAppPassword =>
+    AppEnv.read('GMAIL_APP_PASSWORD', dartDefine: _gmailPassDefine,
+            fallback: '')
+        .replaceAll(' ', '');
 
 /// Display name shown as the sender.
 String get kGmailFromName => AppEnv.read('GMAIL_FROM_NAME',

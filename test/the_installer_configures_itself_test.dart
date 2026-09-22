@@ -131,6 +131,69 @@ void main() {
     });
   });
 
+  group('a stale .env is replaced, a deliberate one is not', () {
+    test('an upgrade replaces a .env still pointing at loopback', () {
+      // ⚠️ An old installer swept the DEVELOPER'S .env into the
+      // package, so installed copies carried PG_HOST=localhost and a
+      // revoked Gmail password. No officer PC runs its own PostgreSQL,
+      // so loopback in an installed copy is never a choice anybody
+      // made -- and the app cannot connect at all.
+      expect(iss, contains('EnvLooksStale'));
+      expect(iss, contains("HostVal = 'localhost'"));
+      expect(iss, contains("HostVal = '127.0.0.1'"));
+    });
+
+    test('but a .env naming a real server is left alone', () {
+      // ⚠️ THE POINT OF THE CHECK. A .env is how a machine is aimed
+      // at a local copy, a backup or a test database. Overwriting
+      // every one on upgrade would re-point those with nothing said.
+      expect(iss, contains('if not EnvLooksStale(Path) then'));
+      expect(iss, contains('Exit;'));
+    });
+
+    test('the replaced file is kept, not discarded', () {
+      // It may hold a password nobody else has a copy of. Renaming
+      // costs nothing and makes the change reversible.
+      expect(iss, contains('.replaced-by-setup'));
+      expect(iss, contains('RenameFile(Path, Backup)'));
+    });
+  });
+
+  group('uninstalling leaves nothing behind', () {
+    // ⚠️ Not tidiness. A stale .env left in place is what made an
+    // installed copy keep reaching for localhost long after the build
+    // carried the right settings -- so "uninstall and reinstall", the
+    // first thing anybody tries, fixed nothing.
+    final start = iss.indexOf('[UninstallDelete]');
+    final block = iss.substring(start, iss.indexOf('[Code]', start));
+
+    test('the .env and its backup go', () {
+      expect(block, contains(r'{app}\.env"'));
+      expect(block, contains(r'{app}\.env.replaced-by-setup"'));
+    });
+
+    test('every log goes, by wildcard', () {
+      // So a log added later does not need this revisited.
+      expect(block, contains(r'{app}\*.log"'));
+    });
+
+    test('the data tree goes', () {
+      // It holds shipped assets only -- the officer's records are in
+      // PostgreSQL and the app's own logs are under %APPDATA%.
+      expect(block, contains('filesandordirs'));
+      expect(block, contains(r'{app}\data"'));
+    });
+
+    test('the folder itself goes ONLY if it is empty', () {
+      // ⚠️ `dirifempty`, never a blanket wildcard: an export somebody
+      // saved beside the program must survive. An uninstaller has no
+      // business deleting files it did not create.
+      expect(block, contains('Type: dirifempty; Name: "{app}"'));
+      expect(block, isNot(contains(r'Type: filesandordirs; Name: "{app}"')),
+          reason: 'that would take the user\'s own files with it');
+    });
+  });
+
   group('an upgrade over a running app', () {
     final cpp = File('windows/runner/main.cpp').readAsStringSync();
 

@@ -2426,6 +2426,169 @@ Fixed with `Excludes: ".env,frame_watch.log"` on that line, and the stale
 file deleted. ⚠️ A wildcard over a build directory ships whatever a
 previous run left there; list what must NOT go, not only what must.
 
+#### "Update" now installs itself (2026-09-22)
+
+The gold strip's Update button called `openUpdateDownload`, which opens
+the installer URL in the officer's BROWSER. That was a deliberate safety
+choice -- the app never fetches and runs an .exe itself -- but it is not
+what the button promises:
+
+- the officer got a file in Downloads to find and run by hand
+- ⚠️ on a PC with **Free Download Manager** installed, FDM grabbed the
+  link and the app never heard of it again
+- the downloaded file then hit SmartScreen
+
+`startUpdate()` in [update_banner.dart](lib/widgets/update_banner.dart)
+now calls `checkForUpdatesNow()` first -- WinSparkle downloads, shows its
+own progress and launches the installer. The browser stays as the
+fallback for a build with no `UPDATE_FEED_URL`, and a snack bar covers
+the case where neither works, so the button is never dead.
+
+Same installer, same https feed either way; nothing is downloaded that
+was not already going to be.
+
+#### A fresh install could not sign in: no Gmail keys (2026-09-22)
+
+```
+Sign in failed: E-mail is not configured. Add the Gmail address and
+App Password in lib/core/otp_config.dart.
+```
+
+⚠️ **The installer wrote the database settings but no `GMAIL_*` keys.**
+Sign-in sends a one-time code, so a fresh install reached the database
+and then stopped dead -- not half-configured, locked.
+
+`setup.iss` now writes `GMAIL_USER`, `GMAIL_APP_PASSWORD` and
+`GMAIL_FROM_NAME` into the same `.env`, from a `/DGmailPassword=` define
+(`tool\publish_release.ps1 -GmailPassword '<...>'`). ⚠️ Quoted, because
+Google shows an App Password as four space-separated groups and an
+unquoted value with spaces is a different string once dotenv has read
+it. Verified: `GMAIL_APP_PASSWORD="abcd efgh ijkl mnop"`.
+
+Left blank at compile time the keys are written EMPTY rather than
+omitted, so the file still shows what is missing.
+
+#### "Windows protected your PC" is the same unsigned-build problem
+
+⚠️ **Not fixable in code.** SmartScreen checks whether a downloaded
+file is signed and whether that signature has a reputation; measured,
+the installer is `NotSigned`. No manifest entry or Inno option removes
+it -- only a code-signing certificate, the same one that fixes code
+4551.
+
+⚠️ The officer must click **More info** first; the initial screen shows
+only "Don't run", which is why it looks like a dead end. Written up in
+[README_WINDOWS_POLICIES.md](installer/README_WINDOWS_POLICIES.md).
+
+The in-app Update button sidesteps it: WinSparkle launches the installer
+directly rather than leaving a downloaded file for SmartScreen to judge.
+
+#### Upgrade replaces a STALE .env, keeps a deliberate one (2026-09-22)
+
+Asked to make an upgrade overwrite `.env` outright. ⚠️ A blanket
+overwrite would also re-point a PC somebody had deliberately aimed at a
+local copy, a backup or a test database -- silently. The stale-file
+problem came from one bad file, not from the no-overwrite rule.
+
+So `WriteDefaultEnv` now asks whether the existing file is BROKEN
+rather than merely DIFFERENT:
+
+- `PG_HOST` is loopback (`localhost`, `127.0.0.1`, `[::1]`) or absent
+  -> replace. No officer PC runs its own PostgreSQL, so loopback in an
+  installed copy is never a choice anybody made -- it is what the old
+  wildcard sweep left behind, and it cannot connect.
+- any other host -> keep. That is somebody's decision.
+
+⚠️ The replaced file is RENAMED to `.env.replaced-by-setup`, never
+deleted: it may hold a password nobody else has a copy of, and renaming
+makes the change reversible.
+
+Measured, on a real install: stale `localhost` file -> replaced, backup
+written; `PG_HOST=10.20.30.40` -> untouched.
+
+#### A clean uninstall (2026-09-22)
+
+`[UninstallDelete]` now removes `.env`, `.env.replaced-by-setup`,
+`*.log` (by wildcard, so a log added later needs no edit here),
+`data\` and `env-templates\` as `filesandordirs`, then the folder.
+
+⚠️ **This is not tidiness.** A stale `.env` surviving an uninstall is
+what made "uninstall and reinstall" -- the first thing anybody tries --
+fix nothing: the reinstall found the bad file still there and left it
+alone.
+
+⚠️ **The folder itself is `dirifempty`, never a blanket wildcard.** An
+export somebody saved beside the program must survive; an uninstaller
+has no business deleting files it did not create. Verified both ways: a
+normal install leaves no folder at all, and one with a stray
+`SR-export-2026.csv` keeps exactly that file.
+
+⚠️ A test that slices the `[UninstallDelete]` block must search for
+`[Code]` FROM the start of that block -- a comment near the top of
+setup.iss mentions `[Code]` a hundred lines earlier, and a bare
+`indexOf` runs backwards.
+
+#### The stale leaked .env kept overriding everything (2026-09-22)
+
+The installed app still showed `yard_app@localhost` and then
+`Could not send the verification e-mail`, on a build whose compiled-in
+defaults were Supabase and whose new credentials were correct.
+
+⚠️ **A `.env` beside the exe beats every built-in default -- by
+design.** The file in `C:\Program Files\SL Customs\...` was the one an
+older installer had swept in from the build folder, carrying
+`PG_HOST=localhost` and the OLD Gmail App Password. Both symptoms came
+from that single file.
+
+⚠️ **And the installer will never replace it**: `WriteDefaultEnv`
+exits when one exists, which is right (a branch's own settings must
+survive an upgrade) but means a bad file has to be deleted by hand.
+Deleting it needs administrator rights; the app then falls back to the
+built-in Supabase settings.
+
+Diagnosis order that worked: read the INSTALLED `.env`, not the project
+one -- they are different files and only the installed one explains
+what the installed app does.
+
+#### Google shows App Passwords WITH spaces (2026-09-22)
+
+`GMAIL_APP_PASSWORD` was 19 characters: Google presents it as
+`abcd efgh ijkl mnop` and that is what gets pasted. `otp_config.dart`
+now strips spaces, and its doc comment already claimed it did.
+
+⚠️ **But this was NOT the cause of the failure.** Measured against
+smtp.gmail.com: the password authenticates **both** with and without
+spaces, so Gmail tolerates the display form. The strip is still worth
+having -- it removes a way to get it wrong -- but the real fault was
+the old revoked password in the stale installed `.env`. Worth
+remembering: a plausible-looking difference is not a cause until it is
+tested.
+
+#### Semantic version bumping (2026-09-22)
+
+`tool\release.ps1` now takes `-Patch`, `-Minor` or `-Major` instead of
+always naming a version:
+
+```
+-Patch   1.5.0 -> 1.5.1   a small fix
+-Minor   1.5.1 -> 1.6.0   a feature
+-Major   1.6.0 -> 2.0.0   a big release
+```
+
+⚠️ **A minor bump resets the patch, a major resets both.** Otherwise
+4.2.2 + `-Minor` would be 4.3.2 and the numbers stop meaning anything.
+
+⚠️ **Three parts only, and that is a hard constraint, not a style
+choice.** `pubspec.yaml` takes `x.y.z+n`, and Flutter writes it into
+Windows' four-number FILEVERSION with the BUILD number in the fourth
+slot -- so `4.2.2.1` would leave nowhere for `+n` to go. A patch
+release IS the "small update" case.
+
+Giving both `-Version` and a bump flag is refused rather than resolved,
+so a release cannot end up numbered differently from what was typed.
+All three paths were exercised against a restored copy of the version
+files.
+
 #### Upgrading over a running app: AppMutex (2026-09-22)
 
 ```

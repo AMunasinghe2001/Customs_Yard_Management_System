@@ -130,6 +130,35 @@ void main() {
       expect(rel, contains(r'[int]$Matches[2] + 1'));
     });
 
+    test('one part at a time: -Patch, -Minor, -Major', () {
+      // 4.2.1 -> 4.2.2 (a small fix), 4.2.2 -> 4.3.0 (a feature),
+      // 4.3.0 -> 5.0.0 (a big release).
+      for (final f in const [r'$Patch', r'$Minor', r'$Major']) {
+        expect(rel, contains('[switch]' + f));
+      }
+    });
+
+    test('a minor bump RESETS the patch, a major resets both', () {
+      // ⚠️ Otherwise 4.2.2 + -Minor would be 4.3.2, the numbers stop
+      // meaning anything, and an officer cannot tell which release is
+      // newer.
+      expect(rel, contains(r'if     ($Major) { $ma++; $mi = 0; $pa = 0 }'));
+      expect(rel, contains(r'elseif ($Minor) { $mi++; $pa = 0 }'));
+    });
+
+    test('it refuses -Version together with a bump flag', () {
+      // ⚠️ A contradiction. Silently preferring one would ship a
+      // release numbered differently from what was typed.
+      expect(rel, contains('not both.'));
+    });
+
+    test('the version stays THREE parts', () {
+      // ⚠️ Not style: pubspec takes `x.y.z+n`, and Flutter writes that
+      // into Windows' four-number FILEVERSION with the build number in
+      // the fourth slot. 4.2.2.1 would leave nowhere for it.
+      expect(rel, contains(r"[ValidatePattern('^\d+\.\d+\.\d+$')]"));
+    });
+
     test('-BumpOnly stops before a build with no defines', () {
       // ⚠️ release.ps1's own `flutter build` passes no --dart-define,
       // so it makes a binary with NO credentials and NO update feed.
@@ -228,6 +257,59 @@ void main() {
       // leaves the app open sees the setup fail for a reason it never
       // explains.
       expect(banner, contains('CLOSED'));
+    });
+  });
+
+  group('Update means update, not download', () {
+    final banner = File('lib/widgets/update_banner.dart').readAsStringSync();
+
+    test('the button starts WinSparkle, not a browser', () {
+      // ⚠️ Opening the URL handed the officer a file in Downloads to
+      // find and run -- and on a PC with a download manager installed,
+      // that manager grabbed the link and the app never heard of it
+      // again. WinSparkle fetches and launches the installer itself.
+      expect(banner, contains('startUpdate('));
+      expect(banner, contains('checkForUpdatesNow()'));
+      expect(banner, isNot(contains('onPressed: () => openUpdateDownload(')),
+          reason: 'the strip button must not open a browser');
+    });
+
+    test('the browser stays as a fallback', () {
+      // A build with no UPDATE_FEED_URL has no WinSparkle feed to use.
+      // ⚠️ The app still never downloads and executes an .exe itself;
+      // that is what makes the browser acceptable here.
+      expect(banner, contains('openUpdateDownload(update.downloadUrl)'));
+      expect(banner, contains('UpdateCheckOutcome.started'));
+    });
+
+    test('a dead button always says something', () {
+      expect(banner, contains('Could not start the update'));
+    });
+  });
+
+  group('a fresh install can actually sign in', () {
+    final iss = File('installer/setup.iss').readAsStringSync();
+
+    test('the installer writes the Gmail keys too', () {
+      // ⚠️ Sign-in sends a one-time code. Without these the app
+      // reaches the database and then stops at "E-mail is not
+      // configured" -- a fresh install is not half-configured, it is
+      // locked.
+      expect(iss, contains('GMAIL_USER='));
+      expect(iss, contains('GMAIL_APP_PASSWORD='));
+      expect(iss, contains('GMAIL_FROM_NAME='));
+    });
+
+    test('the App Password is quoted', () {
+      // ⚠️ Google shows it as four space-separated groups, and an
+      // unquoted value with spaces is a different string once dotenv
+      // has read it.
+      expect(iss, contains(r"""'GMAIL_APP_PASSWORD="' + GmailPw + '"'"""));
+    });
+
+    test('it comes from a compile-time define, not the source', () {
+      expect(iss, contains('#ifndef GmailPassword'));
+      expect(iss, contains("GmailPw := '{#GmailPassword}';"));
     });
   });
 
