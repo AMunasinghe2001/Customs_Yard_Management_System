@@ -71,3 +71,7 @@ app.*.map.json
 
 # Database dumps. They carry real account rows, so they stay local.
 backups/
+
+# Real account names and e-mail addresses read out of the
+# databases. Useful locally, not something to publish.
+ACCOUNTS.md

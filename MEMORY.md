@@ -2332,6 +2332,153 @@ and `yard_app` deliberately owns nothing, so the app's own account gets
 a missing low number there proves nothing about whether it ran. Diagnose
 from `pg_proc.proconfig` on the LIVE database, not from the file list.
 
+#### 02_schema.sql cannot be re-run on a database with real data (2026-09-22)
+
+⚠️ **It carries `20260620_seed_data.sql`, which begins with**
+
+```sql
+DELETE FROM public.packages;
+DELETE FROM public.warehouse_entries;
+DELETE FROM public.audit_logs;
+```
+
+On the backup that is 176 packages, 395 warehouse entries, 318 forfeited
+packages and 1388 audit rows -- the real data. The block is written for an
+EMPTY database. **Never re-run 02_schema.sql to "refresh" a populated
+one.**
+
+This came up while chasing `17 function body(ies) still name the old auth
+schema`. Those functions live in 02_schema.sql and the source is correct;
+they were stale because the file ABORTS part-way through on a populated
+database. Each abort was a separate historical assumption:
+
+| Line | Failure | Why |
+|---|---|---|
+| ~667 | `profiles_role_check is violated` | restates the role list as it GREW (3 roles, 4, 5, 6, then 7). The early stages reject today's `ict` / `executive` rows. |
+| ~1266 | `cannot change name of input parameter "p_price"` | the live function predates a rename to `p_sold_price`; `create or replace` cannot rename a parameter. |
+| ~1872 | `already member of publication` | `alter publication ... add table` has no IF NOT EXISTS. |
+| ~2690 | `forfeited_packages_source_check is violated` | same history problem; `perishable` is added later by `postgres/07`. |
+| ~3149 | `profiles_directorate_has_no_yard` | a backfill sets `yard='GL1'` for EVERY profile; `migrations/027` later forbids a yard on directorate accounts. |
+| ~3165 | `audit_logs is append-only: UPDATE` | the backfill predates `postgres/53`. |
+| ~3263 | `audit_logs is append-only: DELETE` | **the seed block above.** |
+
+The first six are now guarded in place (skip-if-the-data-outgrew-it, or a
+`drop function` first), so the file is re-runnable up to the seed block.
+⚠️ The seed block is deliberately NOT guarded -- a file that silently
+deletes everything is better left failing loudly.
+
+Since some stale functions are defined AFTER the seed block, there is no
+safe path through the file at all. The repair is
+[repair_stale_auth_functions.sql](postgres/repair_stale_auth_functions.sql):
+the 15 function definitions copied verbatim from the LAST definition of
+each in 02_schema.sql, touching no table, policy or row.
+
+⚠️ **Extracting them needs dollar-quote awareness.** A regex ending at
+the first `$$;` overshoots for functions written with a named tag
+(`$fn$ ... $fn$;`) that contain a nested `$$` block, and silently swallows
+the `alter table` / `create view` statements that follow. Walk the opening
+tag to its own match instead, then assert the output has no stray DDL.
+
+⚠️ **`create or replace` cannot replace an overload.** `set_appeal_hold`
+and `release_appeal_with_decision` gained a `p_item_id` argument, so the
+3-arg originals were left behind -- dead (services.dart always passes
+`p_item_id`) and broken (still naming `auth`). They are dropped by name.
+
+#### The other half: orphaned profiles blocked the foreign keys
+
+`repair_backup_split_auth.sql` moved the accounts but reported
+`only 0 foreign key(s) point at sr_auth.users - expected 9`, because
+`profiles` held 18 rows against 13 accounts. All six extras were blank
+'New User' placeholders created between 14:06 and 14:11 that afternoon --
+debris from migrations 035/036, whose self-checks insert a profile and
+whose rollback did not reach the row when a later statement failed.
+
+⚠️ Two `audit_logs` rows pointed at them, and audit_logs refuses UPDATE
+as firmly as DELETE -- including the `on delete set null` cascade, which
+arrives as an UPDATE and is rejected. Both rows were
+`action = 'Migration NNN self-check'`, so
+[repair_orphan_profiles.sql](postgres/repair_orphan_profiles.sql) removes
+them under the retention job's own `app.audit_purge` flag -- and refuses
+to run at all if any affected audit row is NOT a self-check, or if any
+orphaned profile carries a real username, yard or badge.
+
+#### Repairing the half-migrated backup: why NOT `drop schema cascade`
+
+The obvious repair for the split -- drop the empty `sr_auth`, rename `auth`
+onto it -- is WRONG here, and measuring first is what showed it. In that
+database the install had got further than creating the schema:
+
+```
+21 RLS policies already call sr_auth.uid()
+16 RLS policies still call auth.uid()
+9  foreign keys in public still REFERENCE auth.users(id)
+```
+
+⚠️ `drop schema sr_auth cascade` would take those 21 policies with it,
+SILENTLY. A table whose policies are gone is not locked down -- it is
+readable by every role that can reach it. Far worse than the broken login
+being fixed.
+
+[repair_backup_split_auth.sql](postgres/repair_backup_split_auth.sql)
+therefore moves the DATA into the sr_auth tables that already exist and
+leaves the schema, its 16 functions and every policy alone. Three traps it
+has to handle, each found by checking rather than assuming:
+
+- ⚠️ **The column ORDER differs.** `auth.users` has
+  raw_user_meta_data/created_at/updated_at before
+  failed_login_attempts/locked_until; `sr_auth.users` has them after. A
+  positional `insert ... select *` lines jsonb up against integer. Every
+  column is named explicitly.
+- ⚠️ **Separate sequences.** Copying explicit ids leaves
+  `sr_auth.password_history_id_seq` at 1, so the next password change
+  collides on the primary key. `setval` past `max(id)` afterwards.
+- ⚠️ **9 foreign keys still point at `auth.users`.** The old table
+  cannot be dropped while they exist, and CASCADE would delete the
+  constraints outright, leaving created_by/updated_by pointing at nobody.
+  Each is rebuilt against `sr_auth.users` with the same name and the same
+  delete rule -- `profiles_id_fkey` carries ON DELETE CASCADE, which the
+  verification checks for by name.
+
+The whole thing runs inside one transaction with the verification before
+`commit`, so a failed check rolls back rather than leaving a third state.
+
+⚠️ **Forgot-password cannot diagnose this.** It says "if that account
+exists, a code has been sent" whether or not it does, deliberately, so that
+an address cannot be enumerated. On the half-migrated database it therefore
+looked identical to a mail that never arrived -- the account simply was not
+in the empty `sr_auth`.
+
+#### 048 must run BEFORE install_all, or you get two auth schemas (2026-09-22)
+
+The backup database ended up holding BOTH:
+
+```
+auth.users               13 rows   <- the real accounts
+auth.password_history    13 rows
+sr_auth.users             0 rows   <- created empty, never used
+sr_auth.password_history  0 rows
+```
+
+⚠️ `install_all.ps1` runs `postgres/01_auth_and_session.sql` (which
+CREATES `sr_auth`) as one of its first files, and `migrations/048` (which
+RENAMES `auth` to `sr_auth`) as one of its last. On a database still using
+`auth`, 01 therefore makes an empty `sr_auth` first, and 048 then refuses to
+run -- correctly, because with two candidate schemas it will not guess which
+is current. Guessing wrong would lose every account.
+
+So the order in `migrate_local_to_sr_auth.ps1` is not a preference: **048
+first, install_all second.** If install_all reaches an un-migrated database
+first, the repair is
+[repair_backup_split_auth.sql](postgres/repair_backup_split_auth.sql) --
+it re-counts both schemas, aborts unless `sr_auth` is empty and `auth` is
+not, then drops the placeholder and renames the real one.
+
+⚠️ `Customs_SR_DB` and the backup hold DIFFERENT accounts. The backup is
+the full set (13, `Anushanga` / anushangamunasinghe@gmail.com); the local DB
+has only 2 (`anushanga.kaushan633` and `ict_admin`, both on
+`projectdb988+...` aliases). A login that works on one will not work on the
+other, which reads exactly like a broken build.
+
 #### PGSSLMODE leaks from a Supabase run into the next local one (2026-09-22)
 
 ```

@@ -662,10 +662,32 @@ grant execute on function public.email_for_login(text) to anon, authenticated;
 -- ============================================================================
 
 -- 1. ── Allow the new role ───────────────────────────────────────────────────
-alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles
-  add constraint profiles_role_check
-  check (role in ('admin', 'officer', 'disposal'));
+-- ⚠️ APPLIED ONLY IF THE DATA STILL FITS.
+--
+-- This file is a history: the role list grew as directorates were added,
+-- and each stage is restated here as it happened. On an EMPTY database
+-- every stage passes. On a POPULATED one the early stages describe a
+-- world that no longer exists -- an `ict` or `executive` profile violates
+-- this one -- and psql then ABORTS THE WHOLE FILE, so the ~6000 lines
+-- after it never run. That is how 17 function bodies were left calling
+-- the pre-rename `auth.uid()` on a database where this file reported an
+-- error near the top.
+--
+-- The final stage at the end of this file is the one that must hold. An
+-- intermediate stage that the data has outgrown is simply skipped.
+do $role_stage$
+begin
+  if exists (select 1 from public.profiles
+              where role is not null and role not in ('admin', 'officer', 'disposal')) then
+    raise notice 'skipping an earlier role stage - the data already has '
+                 'roles it did not allow';
+  else
+    alter table public.profiles drop constraint if exists profiles_role_check;
+    alter table public.profiles
+      add constraint profiles_role_check
+      check (role in ('admin', 'officer', 'disposal'));
+  end if;
+end $role_stage$;
 
 -- 2. ── Helper: is the caller a Central Disposal Directorate user? ───────────
 create or replace function public.auth_user_is_disposal()
@@ -1131,6 +1153,21 @@ alter table public.tender_sale_items
   add column if not exists delivered_at timestamptz;
 
 -- Update the mark sold RPC to save price and taxes
+-- ⚠️ DROPPED FIRST: `create or replace` CANNOT RENAME A PARAMETER.
+--
+-- An older build of this function took (p_item_id, p_receipt, p_price,
+-- p_taxes). The names here are p_sold_price / p_applied_taxes, and on a
+-- database carrying the older version PostgreSQL refuses outright:
+--
+--     ERROR: cannot change name of input parameter "p_price"
+--
+-- psql then aborts the whole file, so everything below -- including the
+-- helper functions near the end -- silently never runs. Dropping the old
+-- signature first is what makes this file re-runnable on an existing
+-- database, not only on an empty one.
+drop function if exists public.disposal_mark_sale_item_sold(
+  uuid, text, numeric, jsonb);
+
 create or replace function public.disposal_mark_sale_item_sold(
   p_item_id uuid,
   p_receipt text default null,
@@ -1832,7 +1869,21 @@ create policy disposal_manage_tender_disposals on public.tender_disposals
 --  20260612_disposal_requests_realtime.sql
 -- ==========================================================================
 
-alter publication supabase_realtime add table disposal_requests;
+-- ⚠️ GUARDED: `alter publication ... add table` has no IF NOT EXISTS,
+-- and re-adding a table that is already published is a hard ERROR that
+-- aborts the rest of this file. Every other such block here is already
+-- written this way; this one was not.
+do $pub$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'disposal_requests'
+  ) then
+    alter publication supabase_realtime add table public.disposal_requests;
+  end if;
+end $pub$;
 
 -- ==========================================================================
 --  20260612_mark_forfeited_sold.sql
@@ -1989,10 +2040,32 @@ alter table public.tenders
 -- ============================================================================
 
 -- 1. ── Allow the new role ───────────────────────────────────────────────────
-alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles
-  add constraint profiles_role_check
-  check (role in ('admin', 'officer', 'disposal', 'appeal'));
+-- ⚠️ APPLIED ONLY IF THE DATA STILL FITS.
+--
+-- This file is a history: the role list grew as directorates were added,
+-- and each stage is restated here as it happened. On an EMPTY database
+-- every stage passes. On a POPULATED one the early stages describe a
+-- world that no longer exists -- an `ict` or `executive` profile violates
+-- this one -- and psql then ABORTS THE WHOLE FILE, so the ~6000 lines
+-- after it never run. That is how 17 function bodies were left calling
+-- the pre-rename `auth.uid()` on a database where this file reported an
+-- error near the top.
+--
+-- The final stage at the end of this file is the one that must hold. An
+-- intermediate stage that the data has outgrown is simply skipped.
+do $role_stage$
+begin
+  if exists (select 1 from public.profiles
+              where role is not null and role not in ('admin', 'officer', 'disposal', 'appeal')) then
+    raise notice 'skipping an earlier role stage - the data already has '
+                 'roles it did not allow';
+  else
+    alter table public.profiles drop constraint if exists profiles_role_check;
+    alter table public.profiles
+      add constraint profiles_role_check
+      check (role in ('admin', 'officer', 'disposal', 'appeal'));
+  end if;
+end $role_stage$;
 
 -- 2. ── Helper: is the caller an Appeal Directorate user? ────────────────────
 create or replace function public.auth_user_is_appeal()
@@ -2612,9 +2685,23 @@ select public.purge_old_audit_logs();
 alter table public.forfeited_packages
   drop constraint if exists forfeited_packages_source_check;
 
-alter table public.forfeited_packages
-  add constraint forfeited_packages_source_check
-    check (source in ('forfeit', 'abandoned', 'other'));
+-- ⚠️ APPLIED ONLY IF THE DATA STILL FITS -- same reason as the role
+-- stages above. `postgres/07_perishable_source.sql` later adds
+-- 'perishable', and it runs AFTER this file. On a database that already
+-- holds perishable rows, this earlier stage is violated, psql aborts, and
+-- every statement below never runs.
+do $src_stage$
+begin
+  if exists (select 1 from public.forfeited_packages
+              where source is not null and source not in ('forfeit', 'abandoned', 'other')) then
+    raise notice 'skipping an earlier source stage - the data already has '
+                 'sources it did not allow';
+  else
+    alter table public.forfeited_packages
+      add constraint forfeited_packages_source_check
+        check (source in ('forfeit', 'abandoned', 'other'));
+  end if;
+end $src_stage$;
 
 
 -- ==========================================================================
@@ -2667,10 +2754,32 @@ create index if not exists idx_forfeited_packages_item_id
 -- ============================================================================
 
 -- 1. ── Allow the new role ───────────────────────────────────────────────────
-alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles
-  add constraint profiles_role_check
-  check (role in ('admin', 'officer', 'disposal', 'appeal', 'valuation'));
+-- ⚠️ APPLIED ONLY IF THE DATA STILL FITS.
+--
+-- This file is a history: the role list grew as directorates were added,
+-- and each stage is restated here as it happened. On an EMPTY database
+-- every stage passes. On a POPULATED one the early stages describe a
+-- world that no longer exists -- an `ict` or `executive` profile violates
+-- this one -- and psql then ABORTS THE WHOLE FILE, so the ~6000 lines
+-- after it never run. That is how 17 function bodies were left calling
+-- the pre-rename `auth.uid()` on a database where this file reported an
+-- error near the top.
+--
+-- The final stage at the end of this file is the one that must hold. An
+-- intermediate stage that the data has outgrown is simply skipped.
+do $role_stage$
+begin
+  if exists (select 1 from public.profiles
+              where role is not null and role not in ('admin', 'officer', 'disposal', 'appeal', 'valuation')) then
+    raise notice 'skipping an earlier role stage - the data already has '
+                 'roles it did not allow';
+  else
+    alter table public.profiles drop constraint if exists profiles_role_check;
+    alter table public.profiles
+      add constraint profiles_role_check
+      check (role in ('admin', 'officer', 'disposal', 'appeal', 'valuation'));
+  end if;
+end $role_stage$;
 
 -- 2. ── Helper: is the caller a Valuation Directorate user? ───────────────────
 create or replace function public.auth_user_is_valuation()
@@ -3037,14 +3146,41 @@ alter table public.tender_disposals  add column if not exists yard text;
 alter table public.audit_logs        add column if not exists yard text;
 
 -- 2. ── Backfill existing data to Grey Line 1 ───────────────────────────────
-update public.profiles          set yard = 'GL1' where yard is null;
+-- ⚠️ NOT the directorate accounts. When this backfill was written every
+-- profile belonged to a yard. `migrations/027` later established that a
+-- directorate account must have NO yard, and enforces it with
+-- `profiles_directorate_has_no_yard`. Re-running the unqualified update on
+-- a current database puts GL1 on the ICT / Appeal / Valuation / Executive
+-- profiles and the constraint rejects it, aborting the rest of this file.
+update public.profiles          set yard = 'GL1'
+ where yard is null
+   and coalesce(role, '') not in
+       ('ict', 'valuation', 'appeal', 'disposal', 'executive');
 update public.packages          set yard = 'GL1' where yard is null;
 update public.package_items     set yard = 'GL1' where yard is null;
 update public.warehouse_entries set yard = 'GL1' where yard is null;
 update public.forfeited_packages set yard = 'GL1' where yard is null;
 update public.tenders           set yard = 'GL1' where yard is null;
 update public.tender_disposals  set yard = 'GL1' where yard is null;
-update public.audit_logs        set yard = 'GL1' where yard is null;
+-- ⚠️ SKIPPED once audit_logs is append-only. This backfill predates
+-- `postgres/53_audit_append_only.sql`, whose trigger refuses every UPDATE
+-- on an audit record -- so on a current database this line raises
+--
+--     audit_logs is append-only: UPDATE is not permitted
+--
+-- and aborts the file. The rows it wanted to touch are historical ones
+-- with no yard, which is exactly what an untouched audit record should
+-- look like. Deliberately NOT bypassed with the purge flag: that flag
+-- exists for retention, not for rewriting history.
+do $audit_yard$
+begin
+  if to_regprocedure('public.audit_logs_append_only()') is null then
+    update public.audit_logs set yard = 'GL1' where yard is null;
+  else
+    raise notice 'skipping the audit_logs yard backfill - the table is '
+                 'append-only now';
+  end if;
+end $audit_yard$;
 
 -- 3. ── Default + helper to read the current user's yard ────────────────────
 alter table public.profiles alter column yard set default 'GL1';
@@ -4933,10 +5069,32 @@ alter table public.package_items
 -- ============================================================================
 
 -- 1. ── Allow the new role ───────────────────────────────────────────────────
-alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles
-  add constraint profiles_role_check
-  check (role in ('admin', 'officer', 'disposal', 'appeal', 'valuation', 'executive'));
+-- ⚠️ APPLIED ONLY IF THE DATA STILL FITS.
+--
+-- This file is a history: the role list grew as directorates were added,
+-- and each stage is restated here as it happened. On an EMPTY database
+-- every stage passes. On a POPULATED one the early stages describe a
+-- world that no longer exists -- an `ict` or `executive` profile violates
+-- this one -- and psql then ABORTS THE WHOLE FILE, so the ~6000 lines
+-- after it never run. That is how 17 function bodies were left calling
+-- the pre-rename `auth.uid()` on a database where this file reported an
+-- error near the top.
+--
+-- The final stage at the end of this file is the one that must hold. An
+-- intermediate stage that the data has outgrown is simply skipped.
+do $role_stage$
+begin
+  if exists (select 1 from public.profiles
+              where role is not null and role not in ('admin', 'officer', 'disposal', 'appeal', 'valuation', 'executive')) then
+    raise notice 'skipping an earlier role stage - the data already has '
+                 'roles it did not allow';
+  else
+    alter table public.profiles drop constraint if exists profiles_role_check;
+    alter table public.profiles
+      add constraint profiles_role_check
+      check (role in ('admin', 'officer', 'disposal', 'appeal', 'valuation', 'executive'));
+  end if;
+end $role_stage$;
 
 -- 2. ── Helper: is the caller an Executive Office user? ───────────────────────
 create or replace function public.auth_user_is_executive()
@@ -5878,9 +6036,23 @@ set lock_timeout = '5s';
 alter table public.forfeited_packages
   drop constraint if exists forfeited_packages_source_check;
 
-alter table public.forfeited_packages
-  add constraint forfeited_packages_source_check
-    check (source in ('forfeit', 'abandoned', 'other', 'detain'));
+-- ⚠️ APPLIED ONLY IF THE DATA STILL FITS -- same reason as the role
+-- stages above. `postgres/07_perishable_source.sql` later adds
+-- 'perishable', and it runs AFTER this file. On a database that already
+-- holds perishable rows, this earlier stage is violated, psql aborts, and
+-- every statement below never runs.
+do $src_stage$
+begin
+  if exists (select 1 from public.forfeited_packages
+              where source is not null and source not in ('forfeit', 'abandoned', 'other', 'detain')) then
+    raise notice 'skipping an earlier source stage - the data already has '
+                 'sources it did not allow';
+  else
+    alter table public.forfeited_packages
+      add constraint forfeited_packages_source_check
+        check (source in ('forfeit', 'abandoned', 'other', 'detain'));
+  end if;
+end $src_stage$;
 
 reset lock_timeout;
 
