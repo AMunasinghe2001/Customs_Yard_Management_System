@@ -2332,6 +2332,43 @@ and `yard_app` deliberately owns nothing, so the app's own account gets
 a missing low number there proves nothing about whether it ran. Diagnose
 from `pg_proc.proconfig` on the LIVE database, not from the file list.
 
+#### The ICT staff dialog sent one code and no more (2026-09-22)
+
+The "Create Yard Staff Account" dialog mailed its OTP once. Pressing Back
+and Send OTP again DID re-send -- nothing in `GmailOtpService.sendCode`,
+`IctService.requestUserOtp` or the dialog throttles it -- but **nothing on
+screen changed**: no countdown, no second confirmation. Gmail then threads
+the two identical subjects together, so the new code hid under the old one.
+A slow mail and a dead button looked exactly the same.
+
+⚠️ **The bug was the missing feedback, not a missing send.** Worth
+remembering before "fixing" a re-send that already works.
+
+[ict_dashboard_screen.dart](lib/screens/ict/ict_dashboard_screen.dart)
+`_showAddStaffDialog` now carries the same OTP furniture as
+[admin_signup_screen.dart](lib/screens/admin/admin_signup_screen.dart): a
+live countdown, a `Resend code (n left)` button, 2 resends then a 2-hour
+lock. Details that matter:
+
+- The window is `GmailOtpService.codeLifetime.inSeconds`, never a literal.
+  A copied `120` once made screens expire at two minutes while the e-mail
+  promised five.
+- A resend **skips form validation** -- the fields are disabled once the
+  code is out, so there is nothing to correct.
+- **Back cancels the countdown but KEEPS `resendCount`.** Resetting it
+  would make Back an unlimited mail button.
+- ⚠️ The state and both `Timer`s live in the enclosing method, not in
+  the `StatefulBuilder`, and are cancelled in `.whenComplete()` on the
+  dialog future. A periodic Timer calling `setDialogState` after the dialog
+  closes fires against a disposed element; the 2-hour lock timer would pin
+  the whole closure, controllers included, in memory.
+
+Pinned by
+[the_ict_staff_dialog_can_resend_its_otp_test.dart](test/the_ict_staff_dialog_can_resend_its_otp_test.dart).
+⚠️ Its strings are matched as short fragments on ONE source line --
+a message split across two adjacent literals breaks a source-text test the
+next time `dart format` re-wraps it, with no behaviour change.
+
 #### A taken e-mail was only refused AFTER the OTP (2026-09-22)
 
 The account is created in `verifySignupOtp`, not in `requestSignupOtp`, so

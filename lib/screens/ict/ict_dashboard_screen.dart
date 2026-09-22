@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../core/directorates.dart';
 import '../../models/models.dart';
+import '../../services/otp_service.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/account_cells.dart';
@@ -158,6 +161,26 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     String? dialogInfo;
     String? dialogError;
 
+    // ⚠️ OTP TIMER AND RESEND, the same shape the sign-up screens use.
+    //
+    // The code was sent exactly ONCE: pressing Back and Send OTP again did
+    // nothing visible, because the service refuses a second code while the
+    // first is still alive -- and with no countdown on screen there was no
+    // way to tell that from a mail that simply never arrived. An officer
+    // whose code went missing had no way forward at all.
+    //
+    // These live in the enclosing method, not in the StatefulBuilder, so
+    // they survive every rebuild of the dialog. The timers are cancelled
+    // when the dialog closes (see .whenComplete below) -- a Timer that
+    // outlives its dialog would call setDialogState on a dead element.
+    final otpWindow = GmailOtpService.codeLifetime.inSeconds;
+    const maxResends = 2;
+    Timer? countdownTimer;
+    Timer? lockTimer;
+    int secondsLeft = 0;
+    int resendCount = 0;
+    DateTime? resendLockUntil;
+
     showIctDialog(
       context: context,
       // Closes on an outside click, like every other portal's forms. It was
@@ -166,22 +189,62 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
       barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          Future<void> sendOtp() async {
+          bool resendLocked() =>
+              resendLockUntil != null &&
+              DateTime.now().isBefore(resendLockUntil!);
+
+          bool canResend() =>
+              otpSent &&
+              !dialogLoading &&
+              !resendLocked() &&
+              secondsLeft == 0 &&
+              resendCount < maxResends;
+
+          // Counts the code's life down on screen, so a missing mail is
+          // obvious rather than looking like a dead button.
+          void startCountdown() {
+            countdownTimer?.cancel();
+            setDialogState(() => secondsLeft = otpWindow);
+            countdownTimer =
+                Timer.periodic(const Duration(seconds: 1), (t) {
+              if (secondsLeft <= 1) {
+                t.cancel();
+                setDialogState(() => secondsLeft = 0);
+              } else {
+                setDialogState(() => secondsLeft--);
+              }
+            });
+          }
+
+          Future<void> sendOtp({bool isResend = false}) async {
+            if (resendLocked()) {
+              setDialogState(() => dialogError =
+                  'Too many OTP requests. Please try again after 2 hours.');
+              return;
+            }
+            // ⚠️ A resend must NOT re-validate the form: the fields are
+            // disabled once the code is out, so there is nothing to correct,
+            // and re-running the checks would only add noise.
+            if (isResend && !canResend()) return;
+
             final first = firstC.text.trim();
             final last = lastC.text.trim();
             final email = emailC.text.trim();
 
-            if (first.isEmpty || last.isEmpty || email.isEmpty) {
+            if (!isResend &&
+                (first.isEmpty || last.isEmpty || email.isEmpty)) {
               setDialogState(() => dialogError =
                   'First Name, Last Name and Email are required.');
               return;
             }
-            if (!email.contains('@') || !email.contains('.')) {
+            if (!isResend &&
+                (!email.contains('@') || !email.contains('.'))) {
               setDialogState(
                   () => dialogError = 'Enter a valid email address.');
               return;
             }
-            if (selectedDirectorate == null || selectedYard == null) {
+            if (!isResend &&
+                (selectedDirectorate == null || selectedYard == null)) {
               setDialogState(() => dialogError =
                   'Choose the directorate and the yard this account belongs to.');
               return;
@@ -202,11 +265,27 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     role: kPostRoles[selectedPost] ?? 'officer',
                     yard: selectedYard!,
                   );
+              if (isResend) {
+                resendCount++;
+                if (resendCount >= maxResends) {
+                  // ⚠️ A hard stop, not just a cooldown: two resends is
+                  // already three mails to one address.
+                  resendLockUntil =
+                      DateTime.now().add(const Duration(hours: 2));
+                  lockTimer?.cancel();
+                  lockTimer = Timer(const Duration(hours: 2), () {
+                    resendCount = 0;
+                    resendLockUntil = null;
+                  });
+                }
+              }
               setDialogState(() {
                 otpSent = true;
-                dialogInfo =
-                    'Verification OTP sent to $email. Enter the code to create the account.';
+                dialogInfo = isResend
+                    ? 'A new code was sent to $email. Use the latest one.'
+                    : 'Verification OTP sent to $email. Enter the code to create the account.';
               });
+              startCountdown();
             } catch (e) {
               setDialogState(() =>
                   dialogError = e.toString().replaceAll('Exception: ', ''));
@@ -448,6 +527,78 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                             'Check email for OTP. Enter code to complete creation.',
                       ),
                     ),
+                    const Gap(8),
+                    // The countdown on the left, the resend on the right --
+                    // the same arrangement as the sign-up screens.
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.timer_outlined,
+                              size: 16,
+                              color: secondsLeft > 0
+                                  ? context.colors.textMuted
+                                  : context.colors.dangerRed),
+                          const Gap(6),
+                          Text(
+                            secondsLeft > 0
+                                ? 'Code expires in '
+                                    '${(secondsLeft ~/ 60).toString().padLeft(2, '0')}'
+                                    ':'
+                                    '${(secondsLeft % 60).toString().padLeft(2, '0')}'
+                                : 'Code expired',
+                            style: TextStyle(
+                              color: secondsLeft > 0
+                                  ? context.colors.textSecondary
+                                  : context.colors.dangerRed,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ]),
+                        if (resendLocked())
+                          Text(
+                            'Resend after '
+                            '${resendLockUntil!.hour.toString().padLeft(2, '0')}'
+                            ':'
+                            '${resendLockUntil!.minute.toString().padLeft(2, '0')}',
+                            style: TextStyle(
+                                color: context.colors.dangerRed,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600),
+                          )
+                        else if (resendCount >= maxResends)
+                          Text('Resend limit reached',
+                              style: TextStyle(
+                                  color: context.colors.textMuted,
+                                  fontSize: 12))
+                        else
+                          TextButton(
+                            onPressed: canResend()
+                                ? () => sendOtp(isResend: true)
+                                : null,
+                            style: TextButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                minimumSize: const Size(0, 0),
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap),
+                            child: Text(
+                              secondsLeft > 0
+                                  ? 'Resend code'
+                                  : 'Resend code '
+                                      '(${maxResends - resendCount} left)',
+                              style: TextStyle(
+                                color: canResend()
+                                    ? AppTheme.ictCyan
+                                    : context.colors.textMuted,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ],
               ),
@@ -455,12 +606,22 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
             actions: [
               if (otpSent && !dialogLoading)
                 TextButton(
-                  onPressed: () => setDialogState(() {
-                    otpSent = false;
-                    otpC.clear();
-                    dialogInfo = null;
-                    dialogError = null;
-                  }),
+                  onPressed: () {
+                    // ⚠️ Stop the clock. Back re-opens the form, and a
+                    // countdown still ticking behind it would keep calling
+                    // setDialogState for a code the officer has left.
+                    //
+                    // The resend COUNT is deliberately kept: Back must not
+                    // become a way to mail an unlimited number of codes.
+                    countdownTimer?.cancel();
+                    setDialogState(() {
+                      otpSent = false;
+                      secondsLeft = 0;
+                      otpC.clear();
+                      dialogInfo = null;
+                      dialogError = null;
+                    });
+                  },
                   child: const Text('Back'),
                 ),
               TextButton(
@@ -479,7 +640,15 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      // ⚠️ The timers outlive the dialog unless they are cancelled here.
+      // A periodic Timer holding setDialogState would fire against a
+      // disposed element, and the 2-hour lock timer would keep the whole
+      // closure -- controllers included -- alive long after the officer
+      // closed the form.
+      countdownTimer?.cancel();
+      lockTimer?.cancel();
+    });
   }
 
   void _showSuccessCredentialsDialog(
