@@ -55,6 +55,31 @@ class AppEnv {
       }
     }
     _env = env;
+
+    // ⚠️ A `#` IN A VALUE NEEDS QUOTES, and the failure is silent.
+    //
+    // The dotenv parser treats `#` as the start of a comment, so
+    //
+    //     PG_PASSWORD__supabase=SrYard#2026Customs
+    //
+    // does not come back truncated -- the key DISAPPEARS. The app then sends
+    // no password at all and the server answers
+    // `28P01: password authentication failed`, which reads as a wrong
+    // password while psql with the very same string connects fine. Measured;
+    // it cost an evening. Quoting it fixes it:
+    //
+    //     PG_PASSWORD__supabase="SrYard#2026Customs"
+    //
+    // Warned about rather than auto-quoted: rewriting somebody's `.env`
+    // silently is worse than telling them which line is wrong.
+    for (final key in const ['PG_PASSWORD', 'GMAIL_APP_PASSWORD']) {
+      for (final k in env.map.keys.where((k) => k.startsWith(key))) {
+        if ((env[k] ?? '').isEmpty) {
+          debugPrint('CONFIG: $k is EMPTY. If its value contains "#", wrap '
+              'it in double quotes - dotenv reads # as a comment.');
+        }
+      }
+    }
   }
 
   static List<String> _candidatePaths() {

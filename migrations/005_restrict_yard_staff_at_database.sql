@@ -2,7 +2,7 @@
 -- Database-wide yard boundary for every operational table with a `yard`.
 --
 -- Older schema policies include permissive rules such as
--- `auth.role() = 'authenticated'`. PostgreSQL combines permissive policies
+-- `sr_auth.role() = 'authenticated'`. PostgreSQL combines permissive policies
 -- with OR, so that old rule could override `yard_all` and leak a GL1 row to a
 -- GL2 officer. This migration adds a RESTRICTIVE policy instead: restrictive
 -- policies are AND-ed with every permissive policy, so no old or future broad
@@ -24,7 +24,7 @@ as $$
   select exists (
     select 1
       from public.profiles p
-     where p.id = auth.uid()
+     where p.id = sr_auth.uid()
        and lower(coalesce(p.role, '')) in ('officer', 'admin')
   );
 $$;

@@ -312,14 +312,14 @@ begin
   -- The yard that holds the goods, or Central Disposal. The same rule the
   -- other two delivery writes use.
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 
   update public.warehouse_entries
      set re_export_delivered    = p_delivered,
          re_export_delivered_at = case when p_delivered then now() end,
-         re_export_delivered_by = case when p_delivered then auth.uid() end,
+         re_export_delivered_by = case when p_delivered then sr_auth.uid() end,
          updated_at             = now()
    where id = p_entry_id;
 end;

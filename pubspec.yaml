@@ -12,7 +12,7 @@ dependencies:
   flutter_svg: ^2.0.17
   # Direct PostgreSQL connection — the app talks to the office server's
   # Postgres instead of Supabase's cloud. See lib/core/db/.
-  postgres: ^3.5.12
+  postgres: ^3.5.15
   crypto: ^3.0.3
   mailer: ^6.1.0
   http: ^1.2.0

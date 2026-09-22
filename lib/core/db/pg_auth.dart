@@ -23,7 +23,7 @@ class AuthUser {
   final String id;
   final String? email;
 
-  /// Accounts are created already confirmed (see auth.sign_up), so this is
+  /// Accounts are created already confirmed (see sr_auth.sign_up), so this is
   /// non-null in practice. Kept because verifyUserSession() checks it.
   final DateTime? emailConfirmedAt;
 
@@ -46,7 +46,7 @@ class AuthUser {
 
 /// Stands in for Supabase's `Session`.
 ///
-/// There is no refresh token to carry: the session is a row in auth.users and
+/// There is no refresh token to carry: the session is a row in sr_auth.users and
 /// a session variable on the connection. `refreshToken` is the user id, so the
 /// existing `setSession(session.refreshToken!)` calls keep working.
 @immutable
@@ -108,7 +108,7 @@ enum OAuthProvider { google, azure, github }
 ///
 /// Every method here does two things: run the matching SQL function, and tell
 /// [PgDatabase] who is now acting. The second half is what makes RLS work —
-/// `auth.uid()` reads the session variable this sets, so the 73 policies that
+/// `sr_auth.uid()` reads the session variable this sets, so the 73 policies that
 /// were written for Supabase apply unchanged.
 class PgAuth {
   PgAuth._();
@@ -137,14 +137,14 @@ class PgAuth {
   /// persistence on later is a change in one place.
   Future<AuthUser?> restoreSession() async => null;
 
-  /// [email] may equally be a username — auth.sign_in resolves either.
+  /// [email] may equally be a username — sr_auth.sign_in resolves either.
   Future<AuthResponse> signInWithPassword({
     required String email,
     required String password,
   }) async {
     final rows = await PgDatabase.instance.query(
       'select id, email, raw_user_meta_data as meta, email_confirmed_at '
-          'from auth.sign_in(@id, @pw)',
+          'from sr_auth.sign_in(@id, @pw)',
       parameters: {'id': email.trim(), 'pw': password},
     );
     if (rows.isEmpty) {
@@ -164,7 +164,7 @@ class PgAuth {
   }) async {
     try {
       final rows = await PgDatabase.instance.query(
-        'select id, email, meta, email_confirmed_at from auth.sign_up(@e, @pw, @meta)',
+        'select id, email, meta, email_confirmed_at from sr_auth.sign_up(@e, @pw, @meta)',
         parameters: {
           'e': email.trim(),
           'pw': password,
@@ -177,7 +177,7 @@ class PgAuth {
       // flow wanted all along — its save/restore dance is now a no-op.
       return AuthResponse(user: user, session: AuthSession(user: user));
     } on ServerException catch (e) {
-      // 23505 is unique_violation; auth.sign_up raises it by name for a
+      // 23505 is unique_violation; sr_auth.sign_up raises it by name for a
       // duplicate email so this maps back to the SDK's own error code.
       if (e.code == '23505' || e.message.contains('user_already_exists')) {
         throw AuthException('User already registered',
@@ -196,7 +196,7 @@ class PgAuth {
 
     if (attrs.password != null) {
       await PgDatabase.instance.execute(
-        'select auth.change_password(@id, @pw)',
+        'select sr_auth.change_password(@id, @pw)',
         parameters: {'id': user.id, 'pw': attrs.password},
       );
       // ⚠️ Drop the pool so every connection re-asks whether this password is
@@ -215,7 +215,7 @@ class PgAuth {
     if (attrs.email != null || attrs.data != null) {
       try {
         final rows = await PgDatabase.instance.query(
-          'select id, email, meta from auth.update_user(@id, @e, @meta)',
+          'select id, email, meta from sr_auth.update_user(@id, @e, @meta)',
           parameters: {
             'id': user.id,
             'e': attrs.email,
@@ -245,7 +245,7 @@ class PgAuth {
   /// who is signed in. Kept so those call sites compile and stay correct.
   Future<AuthResponse> setSession(String refreshToken) async {
     final rows = await PgDatabase.instance.query(
-      'select id, email, meta, email_confirmed_at from auth.user_by_id(@id)',
+      'select id, email, meta, email_confirmed_at from sr_auth.user_by_id(@id)',
       parameters: {'id': refreshToken},
     );
     if (rows.isEmpty) {
@@ -275,7 +275,7 @@ class PgAuth {
   }
 
   /// Records who is signed in, and — the part that matters for security —
-  /// tells the database, so auth.uid() starts returning this id and the RLS
+  /// tells the database, so sr_auth.uid() starts returning this id and the RLS
   /// policies apply to the right person.
   Future<void> _adopt(AuthUser user) async {
     _currentUser = user;

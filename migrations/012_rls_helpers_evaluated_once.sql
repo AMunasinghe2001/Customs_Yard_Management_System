@@ -1,5 +1,5 @@
 -- ============================================================================
--- Every RLS policy here calls no-argument helpers — auth.uid(), auth.role(),
+-- Every RLS policy here calls no-argument helpers — sr_auth.uid(), sr_auth.role(),
 -- auth_user_yard(), auth_user_is_*() — and PostgreSQL was calling them ONCE
 -- PER ROW. Each of those helpers runs `select ... from profiles`, so reading
 -- 176 packages meant hundreds of profile lookups:
@@ -37,9 +37,9 @@ declare
   stmt text;
   -- Unwrap: pg_get_expr renders a wrapped call as "( SELECT f() AS f)".
   unwrap_re constant text :=
-    '\( SELECT (auth\.uid|auth\.role|auth_user_[a-z_]+)\(\) AS [a-z_]+\)';
+    '\( SELECT (sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\) AS [a-z_]+\)';
   -- Wrap: only zero-argument calls, so warehouse_yard(warehouse_id) is safe.
-  wrap_re constant text := '(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)';
+  wrap_re constant text := '(sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\)';
 begin
   for r in
     select c.relname                              as tbl,
@@ -99,9 +99,9 @@ begin
      and (
        -- a bare call is one NOT preceded by "SELECT "
        coalesce(pg_get_expr(p.polqual, p.polrelid), '')
-         ~ '(?<!SELECT )(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)'
+         ~ '(?<!SELECT )(sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\)'
        or coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')
-         ~ '(?<!SELECT )(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)'
+         ~ '(?<!SELECT )(sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\)'
      );
 
   if bad is not null then

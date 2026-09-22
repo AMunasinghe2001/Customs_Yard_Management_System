@@ -16,15 +16,15 @@ alter table public.profiles enable row level security;
 
 drop policy if exists yard_profiles_select on public.profiles;
 create policy yard_profiles_select on public.profiles
-  for select using (id = auth.uid() or yard = public.auth_user_yard());
+  for select using (id = sr_auth.uid() or yard = public.auth_user_yard());
 
 drop policy if exists yard_profiles_update on public.profiles;
 create policy yard_profiles_update on public.profiles
-  for update using (id = auth.uid());
+  for update using (id = sr_auth.uid());
 
 drop policy if exists yard_profiles_insert on public.profiles;
 create policy yard_profiles_insert on public.profiles
-  for insert with check (id = auth.uid());
+  for insert with check (id = sr_auth.uid());
 
 -- 2. ── Data tables: caller's yard only, for every role ─────────────────────
 do $$

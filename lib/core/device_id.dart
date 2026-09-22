@@ -18,7 +18,7 @@ import 'windows_credential_store.dart';
 ///
 /// Treating it as a secret would be a mistake in the other direction: anyone
 /// who can read the machine can read it, so the database must never accept it
-/// *instead of* authentication. `auth.sign_in` checks it **as well as**, never
+/// *instead of* authentication. `sr_auth.sign_in` checks it **as well as**, never
 /// in place of.
 ///
 /// ## How it is derived

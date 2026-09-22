@@ -97,7 +97,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         return;
       }
       // ⚠️ An expired password is a dead session at the DATABASE now
-      // (migration 018): auth.uid() is null and auth.role() is 'anon', so
+      // (migration 018): sr_auth.uid() is null and sr_auth.role() is 'anon', so
       // every page would come back empty. This portal had no password stage
       // at all, and three yard officers are already past 90 days — without
       // this they would sign in to an empty app with no way to fix it.

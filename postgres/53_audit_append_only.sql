@@ -38,7 +38,7 @@ drop policy if exists audit_no_update    on public.audit_logs;
 drop policy if exists audit_no_delete    on public.audit_logs;
 
 -- Anyone signed in may APPEND, and only in their own yard, and only as
--- themselves: `user_id = auth.uid()` stops one officer writing a log entry
+-- themselves: `user_id = sr_auth.uid()` stops one officer writing a log entry
 -- under another officer's name.
 --
 -- The null branches keep the server-side writers working: SECURITY DEFINER
@@ -47,7 +47,7 @@ create policy audit_insert on public.audit_logs
   for insert
   with check (
     (yard is null or yard = public.auth_user_yard())
-    and (user_id is null or user_id = auth.uid() or auth.uid() is null)
+    and (user_id is null or user_id = sr_auth.uid() or sr_auth.uid() is null)
   );
 
 -- Read is unchanged in spirit: your own yard.
@@ -206,11 +206,11 @@ begin
   -- the attack an audit trail must not permit.
   --
   -- Only when a session identifies itself: server-side writers (sign-in,
-  -- SECURITY DEFINER functions, the retention job) run with no auth.uid() and
+  -- SECURITY DEFINER functions, the retention job) run with no sr_auth.uid() and
   -- legitimately record other users' events.
-  if auth.uid() is not null
+  if sr_auth.uid() is not null
      and new.user_id is not null
-     and new.user_id <> auth.uid() then
+     and new.user_id <> sr_auth.uid() then
     raise exception
       'audit_logs: cannot write an entry attributed to another user'
       using errcode = '42501',
@@ -230,15 +230,15 @@ create trigger audit_logs_stamp
 -- ── 5. The events that never reached the log ────────────────────────────────
 
 -- 5a. FAILED LOGINS.
---     ⚠️ auth.record_failed_login incremented a counter and locked the account
+--     ⚠️ sr_auth.record_failed_login incremented a counter and locked the account
 --     but wrote NOTHING to audit_logs — the table held zero failed-login rows.
 --     A brute-force attempt against an officer's account left no trace at all
 --     beyond a counter that clears on the next success.
-create or replace function auth.record_failed_login(p_email text)
+create or replace function sr_auth.record_failed_login(p_email text)
 returns void
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public
 as $fn$
 declare
   v_user_id     uuid;
@@ -250,7 +250,7 @@ begin
     return;
   end if;
 
-  update auth.users u
+  update sr_auth.users u
      set failed_login_attempts = coalesce(u.failed_login_attempts, 0) + 1,
          locked_until = case
            when coalesce(u.failed_login_attempts, 0) + 1 >= 5
@@ -262,7 +262,7 @@ begin
    returning u.id, u.failed_login_attempts, u.locked_until
         into v_user_id, v_attempts, v_locked;
 
-  -- ⚠️ audit_logs.user_id is a foreign key to PROFILES, not to auth.users.
+  -- ⚠️ audit_logs.user_id is a foreign key to PROFILES, not to sr_auth.users.
   -- An auth user with no profile row (created but not yet provisioned) made
   -- this insert violate that key — and because the insert runs inside
   -- record_failed_login, the violation propagated out and made the whole
@@ -335,9 +335,9 @@ begin
   insert into public.audit_logs (user_id, yard, action, entity_type, entity_id,
                                  details)
   values (
-    -- WHO DID IT, not who it was done to. auth.uid() is null for a direct
+    -- WHO DID IT, not who it was done to. sr_auth.uid() is null for a direct
     -- database edit, which is itself worth seeing in the log.
-    auth.uid(),
+    sr_auth.uid(),
     coalesce(new.yard, old.yard),
     'Privilege change: ' || coalesce(new.full_name, new.id::text),
     'profiles',

@@ -55,7 +55,7 @@ begin
     raise exception 'ICT password rejected: %', v_violation;
   end if;
 
-  insert into auth.users (email, encrypted_password, email_confirmed_at)
+  insert into sr_auth.users (email, encrypted_password, email_confirmed_at)
   values (lower(trim(v_email)),
           crypt(v_password, gen_salt('bf', 10)),
           now())
@@ -94,7 +94,7 @@ end $$;
 -- ── 3. Verify ───────────────────────────────────────────────────────────────
 select p.full_name, p.role, p.job_role, p.is_active, u.email
   from public.profiles p
-  join auth.users u on u.id = p.id;
+  join sr_auth.users u on u.id = p.id;
 
 
 -- ── 4. Optional, but recommended before this port is exposed ────────────────

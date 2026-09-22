@@ -8,7 +8,7 @@
 --
 --  ⚠️ It flips the EXISTING `is_active` flag rather than adding a second kind
 --  of disabled. Every sign-in path already refuses an inactive profile
---  (auth.sign_in's callers, and four checks in services.dart), and ICT's
+--  (sr_auth.sign_in's callers, and four checks in services.dart), and ICT's
 --  Staff Register already has the button that turns it back on — so
 --  reactivation works on day one and there is one answer to "can this account
 --  sign in", not two that can disagree.
@@ -66,7 +66,7 @@ create or replace function public.disable_dormant_accounts()
 returns integer
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_count integer;
@@ -102,7 +102,7 @@ create or replace function public.reactivate_account(p_id uuid)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 begin
   if not public.auth_user_is_ict() then
@@ -174,7 +174,7 @@ end $$;
 
 -- ── 7. The sweep runs on sign-in ────────────────────────────────────────────
 --
--- ⚠️ Server-side, inside auth.sign_in, and NOT in the Dart client. A rule
+-- ⚠️ Server-side, inside sr_auth.sign_in, and NOT in the Dart client. A rule
 -- enforced by the app is a rule that holds only for people using the app:
 -- anyone with the database credentials would be exempt, which is backwards
 -- for a control whose whole purpose is accounts nobody is watching. It also
@@ -185,23 +185,28 @@ end $$;
 -- ⚠️ Runs BEFORE the password is checked, so a dormant account is already
 -- disabled by the time the caller reads the profile and finds is_active
 -- false. Running it after would let the first sign-in through.
-create or replace function auth.sign_in(
+create or replace function sr_auth.sign_in(
   p_identifier text,
   p_password   text
 )
+-- ⚠️ `raw_user_meta_data`, not `meta`: migrations 032 and 047 wrap this
+-- function later and name it that way, and PostgreSQL refuses to change a
+-- returned column NAME -- a fresh build then died with "cannot change
+-- return type of existing function". The app selects
+-- `raw_user_meta_data as meta` (pg_auth.dart), so this is the right name.
 returns table (
   id                 uuid,
   email              text,
-  meta               jsonb,
+  raw_user_meta_data jsonb,
   email_confirmed_at timestamptz
 )
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_email text;
-  v_user auth.users%rowtype;
+  v_user sr_auth.users%rowtype;
 begin
   if p_identifier is null or p_password is null then
     return;
@@ -217,7 +222,7 @@ begin
 
   select *
     into v_user
-    from auth.users u
+    from sr_auth.users u
    where lower(u.email) = lower(trim(v_email));
 
   if v_user.id is null then
@@ -234,7 +239,7 @@ begin
 
   if v_user.encrypted_password = crypt(p_password, v_user.encrypted_password) then
     return query
-    update auth.users u
+    update sr_auth.users u
        set last_sign_in_at = now(),
            failed_login_attempts = 0,
            locked_until = null,
@@ -244,7 +249,7 @@ begin
     return;
   end if;
 
-  update auth.users u
+  update sr_auth.users u
      set failed_login_attempts = coalesce(u.failed_login_attempts, 0) + 1,
          locked_until = case
            when coalesce(u.failed_login_attempts, 0) + 1 >= 5 then now() + interval '15 minutes'

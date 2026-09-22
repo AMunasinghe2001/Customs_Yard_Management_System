@@ -84,7 +84,7 @@ begin
   end if;
 
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 
@@ -92,7 +92,7 @@ begin
      set re_export_delivered    = p_delivered,
          re_export_delivered_at =
            case when p_delivered then coalesce(p_handed_at, now()) end,
-         re_export_delivered_by = case when p_delivered then auth.uid() end,
+         re_export_delivered_by = case when p_delivered then sr_auth.uid() end,
          handover_receipt_no    = case when p_delivered then p_receipt_no end,
          handover_charge        = case when p_delivered then p_charge end,
          updated_at             = now()
@@ -139,7 +139,7 @@ begin
   end if;
 
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 
@@ -147,7 +147,7 @@ begin
      set released_delivered    = p_delivered,
          released_delivered_at =
            case when p_delivered then coalesce(p_handed_at, now()) end,
-         released_delivered_by = case when p_delivered then auth.uid() end,
+         released_delivered_by = case when p_delivered then sr_auth.uid() end,
          handover_receipt_no   = case when p_delivered then p_receipt_no end,
          handover_charge       = case when p_delivered then p_charge end,
          updated_at            = now()

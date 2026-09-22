@@ -2,7 +2,7 @@
 --
 -- ⚠️ THIS FIXES A REGRESSION I INTRODUCED IN 035.
 --
--- 035 stopped `auth.sign_up` creating 'admin' (SDDC/DDC) or 'officer', because
+-- 035 stopped `sr_auth.sign_up` creating 'admin' (SDDC/DDC) or 'officer', because
 -- a public sign-up form must not be able to mint a yard administrator. That
 -- part was right. What it missed is that ICT's own "Create Yard Staff Account"
 -- screen goes through the SAME function — so the screen that is SUPPOSED to
@@ -21,7 +21,7 @@
 
 begin;
 
-create or replace function auth.sign_up(
+create or replace function sr_auth.sign_up(
   p_email    text,
   p_password text,
   p_meta     jsonb default '{}'::jsonb
@@ -29,7 +29,7 @@ create or replace function auth.sign_up(
 returns table(id uuid, email text, meta jsonb, email_confirmed_at timestamptz)
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_id     uuid;
@@ -47,7 +47,7 @@ begin
     raise exception '%', v_reason using errcode = '22023';
   end if;
 
-  if exists (select 1 from auth.users u
+  if exists (select 1 from sr_auth.users u
               where lower(u.email) = lower(trim(p_email))) then
     raise exception 'user_already_exists' using errcode = '23505';
   end if;
@@ -85,7 +85,7 @@ begin
       using errcode = '42501';
   end if;
 
-  insert into auth.users (email, encrypted_password, raw_user_meta_data,
+  insert into sr_auth.users (email, encrypted_password, raw_user_meta_data,
                           email_confirmed_at)
   values (trim(p_email),
           crypt(p_password, gen_salt('bf', 10)),
@@ -126,7 +126,7 @@ begin
 
   return query
   select u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at
-    from auth.users u
+    from sr_auth.users u
    where u.id = v_id;
 end;
 $fn$;
@@ -141,10 +141,10 @@ commit;
 do $v1$
 declare r text;
 begin
-  perform auth.begin_session('', 'anon');
+  perform sr_auth.begin_session('', 'anon');
   foreach r in array array['admin','officer'] loop
     begin
-      perform auth.sign_up('m036_' || r || '@example.invalid',
+      perform sr_auth.sign_up('m036_' || r || '@example.invalid',
                            'Qz7&mVt2!Ryx9#36',
                            jsonb_build_object('role', r, 'full_name','X',
                                               'yard','Grey Line 1'));
@@ -154,7 +154,7 @@ begin
     end;
   end loop;
 
-  if exists (select 1 from auth.users where email like 'm036_%') then
+  if exists (select 1 from sr_auth.users where email like 'm036_%') then
     raise exception 'FAIL: a refused sign-up left an orphan account';
   end if;
   raise notice 'PASS: a stranger cannot create a yard account';
@@ -166,18 +166,18 @@ declare v_ict uuid; v_new uuid;
 begin
   -- An ICT account to act as. Created through the directorate path, which
   -- needs no session.
-  perform auth.begin_session('', 'anon');
-  select s.id into v_ict from auth.sign_up(
+  perform sr_auth.begin_session('', 'anon');
+  select s.id into v_ict from sr_auth.sign_up(
     'm036_ict@example.invalid', 'Qz7&mVt2!Ryx9#36',
     jsonb_build_object('role','ict','full_name','M036 ICT')) s;
 
   -- Now act AS that ICT user.
-  perform auth.begin_session(v_ict::text, 'authenticated');
+  perform sr_auth.begin_session(v_ict::text, 'authenticated');
   if not public.auth_user_is_ict() then
     raise exception 'FAIL: the test did not actually become an ICT user';
   end if;
 
-  select s.id into v_new from auth.sign_up(
+  select s.id into v_new from sr_auth.sign_up(
     'm036_sddc@example.invalid', 'Qz7&mVt2!Ryx9#36',
     jsonb_build_object('role','admin','full_name','M036 SDDC',
                        'username','m036.sddc','yard','Grey Line 1',
@@ -198,10 +198,10 @@ begin
   -- `profiles_audit_privilege`, which writes an audit row, and the audit table
   -- is append-only — the delete then fails with "UPDATE is not permitted on an
   -- audit record". The test must not leave rows behind over its own bookkeeping.
-  perform auth.begin_session('', 'anon');
+  perform sr_auth.begin_session('', 'anon');
   set session_replication_role = replica;
   delete from public.profiles where id in (v_ict, v_new);
-  delete from auth.users    where id in (v_ict, v_new);
+  delete from sr_auth.users    where id in (v_ict, v_new);
   delete from public.audit_logs where entity_id in (v_ict::text, v_new::text);
   set session_replication_role = default;
   raise notice 'PASS: ICT can provision a yard account again';
@@ -211,24 +211,24 @@ end $v2$;
 do $v3$
 declare v_ict uuid;
 begin
-  perform auth.begin_session('', 'anon');
-  select s.id into v_ict from auth.sign_up(
+  perform sr_auth.begin_session('', 'anon');
+  select s.id into v_ict from sr_auth.sign_up(
     'm036_ict2@example.invalid', 'Qz7&mVt2!Ryx9#36',
     jsonb_build_object('role','ict','full_name','M036 ICT2')) s;
-  perform auth.begin_session(v_ict::text, 'authenticated');
+  perform sr_auth.begin_session(v_ict::text, 'authenticated');
 
   begin
-    perform auth.sign_up('m036_noyard@example.invalid', 'Qz7&mVt2!Ryx9#36',
+    perform sr_auth.sign_up('m036_noyard@example.invalid', 'Qz7&mVt2!Ryx9#36',
       jsonb_build_object('role','officer','full_name','No Yard'));
     raise exception 'FAIL: a yard account was created with no yard';
   exception when sqlstate '22023' then
     null;  -- expected
   end;
 
-  perform auth.begin_session('', 'anon');
+  perform sr_auth.begin_session('', 'anon');
   set session_replication_role = replica;
   delete from public.profiles where id = v_ict;
-  delete from auth.users    where id = v_ict;
+  delete from sr_auth.users    where id = v_ict;
   delete from public.audit_logs where entity_id = v_ict::text;
   set session_replication_role = default;
   raise notice 'PASS: a yard account must name its yard';

@@ -30,6 +30,30 @@ param(
   [ValidateSet('supabase', 'local', 'backup', 'custom')]
   [string]$Target = 'custom',
 
+  # The password for the `yard_app` login the app connects as.
+  #
+  # ⚠️ THE ROLE IS CREATED MID-RUN, not afterwards. Six files grant to
+  # `yard_app`, and migration 037 has a bare `grant ... to yard_app` that
+  # ABORTS the whole file when the role is missing -- taking its 1 table,
+  # 1 view and 4 policies with it. That is the entire 36/24/156 vs
+  # 37/25/160 gap; the counts do not lie, the ordering was simply wrong.
+  #
+  # Leave it out and the role step is skipped with a warning, which is fine
+  # for a schema-only rehearsal but leaves those objects missing.
+  [string]$YardAppPassword,
+
+  # The password for the FIRST ICT account, which provisions everyone else.
+  #
+  # ⚠️ `postgres\68` creates it and refuses a password the APP would
+  # reject (12-24 chars, upper, lower, digit, symbol) -- otherwise the
+  # officer is locked out at their first rotation. Leave it out and 68 is
+  # skipped with a warning; the database is then complete but nobody can
+  # sign in.
+  [string]$IctPassword,
+
+  # The e-mail for that first ICT account.
+  [string]$IctEmail = 'ict@customs.gov.lk',
+
   [string]$PgHost,
   [int]   $Port = 5432,
   [string]$Database,
@@ -102,7 +126,7 @@ function Get-Ordered([string]$dir) {
 }
 
 $core = @(
-  'postgres\01_auth_and_session.sql',  # auth.uid(), the grant-target roles
+  'postgres\01_auth_and_session.sql',  # sr_auth.uid(), the grant-target roles
   'postgres\02_schema.sql',            # every table, policy and trigger
   'postgres\03_realtime.sql',          # NOTIFY triggers
   'postgres\04_auth.sql'               # sign_in / sign_up / change_password
@@ -112,7 +136,18 @@ $rest = @(Get-Ordered 'postgres' | Where-Object {
             $core -notcontains "postgres\$($_.Name)" } |
           ForEach-Object { "postgres\$($_.Name)" })
 $migs = @(Get-Ordered 'migrations' | ForEach-Object { "migrations\$($_.Name)" })
-$files = $core + $rest + $migs
+
+# ⚠️ The role goes BETWEEN the two groups. `postgres\68` and migration 037
+# both grant to it, and 037 aborts outright without it. Creating it here --
+# after the tables exist, before anything grants on them -- is what makes a
+# one-pass build come out complete.
+$roleFile = if ($PgHost -like '*supabase*') {
+  'postgres\91_supabase_yard_app_role.sql'
+} else {
+  'postgres\66_yard_app_role.sql'
+}
+
+$files = $core + $rest + @('<ROLE>') + $migs
 
 Write-Host ''
 Write-Host "Server   : $PgHost`:$Port"  -ForegroundColor Cyan
@@ -155,8 +190,47 @@ $env:PGCONNECT_TIMEOUT = '30'
 $ok = 0; $bad = @(); $i = 0
 foreach ($f in $files) {
   $i++
-  $label = '{0,3}/{1}  {2}' -f $i, $files.Count, (Split-Path $f -Leaf)
-  Write-Host -NoNewline ($label.PadRight(72))
+
+  # ⚠️ postgres\68 carries its own placeholders (the first ICT account).
+  # Same treatment as the role file: substitute into a temp copy so the
+  # password never reaches the command line or the shell history.
+  if ($f -like '*68_finish_server_setup.sql') {
+    $label = '{0,3}/{1}  {2}' -f $i, $files.Count, (Split-Path $f -Leaf)
+    Write-Host -NoNewline ($label.PadRight(72))
+    if (-not $IctPassword) {
+      Write-Host 'skipped (no -IctPassword)' -ForegroundColor Yellow
+      Write-Host '      ⚠️ no account will exist, so nobody can sign in.' -ForegroundColor DarkYellow
+      continue
+    }
+    $tmp68 = [IO.Path]::GetTempFileName() + '.sql'
+    $sql68 = (Get-Content $f -Raw).
+      Replace("'PUT-A-REAL-PASSWORD-HERE'", "'$IctPassword'").
+      Replace("'ict@customs.gov.lk'", "'$IctEmail'")
+    [IO.File]::WriteAllText($tmp68, $sql68, [Text.UTF8Encoding]::new($false))
+    $f = $tmp68
+  }
+
+  # The role step: the same psql call, but the password is substituted into
+  # a temporary copy so it never reaches the command line or the history.
+  if ($f -eq '<ROLE>') {
+    $label = '{0,3}/{1}  {2}' -f $i, $files.Count, (Split-Path $roleFile -Leaf)
+    Write-Host -NoNewline ($label.PadRight(72))
+    if (-not $YardAppPassword) {
+      Write-Host 'skipped (no -YardAppPassword)' -ForegroundColor Yellow
+      Write-Host '      ⚠️ migration 037 will abort and its table, view and 4' -ForegroundColor DarkYellow
+      Write-Host '        policies will be MISSING. Re-run with the password.' -ForegroundColor DarkYellow
+      continue
+    }
+    $tmp = [IO.Path]::GetTempFileName() + '.sql'
+    $roleSql = (Get-Content $roleFile -Raw).Replace(
+      "'CHANGE_ME_BEFORE_RUNNING'", "'$YardAppPassword'")
+    # ⚠️ WriteAllText with an explicit no-BOM encoding, NOT Set-Content.
+    # PowerShell 5.1's `-Encoding utf8` writes a BOM, and psql reads those
+    # three bytes as part of the first token -- the file then fails in a way
+    # that looks nothing like a BOM problem.
+    [IO.File]::WriteAllText($tmp, $roleSql, [Text.UTF8Encoding]::new($false))
+    $f = $tmp
+  }
 
   $args = @('-h', $PgHost, '-p', $Port, '-U', $User, '-d', $Database,
             '-v', 'ON_ERROR_STOP=1', '-q', '-f', $f)
@@ -179,6 +253,12 @@ foreach ($f in $files) {
   $ErrorActionPreference = $prevEAP
   $stderr = if (Test-Path $errFile) { Get-Content $errFile -Raw } else { '' }
   Remove-Item $errFile -ErrorAction SilentlyContinue
+  # The role file carried a real password; do not leave it on disk.
+  if ($f -like '*.tmp.sql' -or ($tmp -and $f -eq $tmp) -or
+      ($tmp68 -and $f -eq $tmp68)) {
+    Remove-Item $f -ErrorAction SilentlyContinue
+    $tmp = $null; $tmp68 = $null
+  }
   $out = "$stdout`n$stderr"
 
   # ⚠️ Match psql's OWN error lines, not the word "ERROR" anywhere.

@@ -60,7 +60,7 @@ begin
   -- The Central Disposal Directorate OR the package's own yard may update it:
   -- the same rule the other two hand-overs use.
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 

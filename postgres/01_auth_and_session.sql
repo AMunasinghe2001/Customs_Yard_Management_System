@@ -8,9 +8,9 @@
 --  The name `auth` is kept because all 73 RLS policies are written against
 --  these three symbols:
 --
---      auth.uid()   -> the signed-in user's id
---      auth.role()  -> 'authenticated' / 'anon'
---      auth.users   -> the account table
+--      sr_auth.uid()   -> the signed-in user's id
+--      sr_auth.role()  -> 'authenticated' / 'anon'
+--      sr_auth.users   -> the account table
 --
 --  Keeping the names means **the policies do not have to be rewritten at
 --  all**. Rewriting 73 access-control rules by hand would have been 73
@@ -18,12 +18,12 @@
 --  — it does not fail, it just shows one yard another yard's goods.
 --
 --  How a session is established: the app sets a session variable right after
---  connecting (see PgDatabase._applySession, which calls auth.begin_session):
+--  connecting (see PgDatabase._applySession, which calls sr_auth.begin_session):
 --
 --      select set_config('app.current_user_id', '<uuid>', false);
 --      select set_config('app.current_role',    'authenticated', false);
 --
---  `auth.uid()` reads that variable. Signed out it is '', so `auth.uid()`
+--  `sr_auth.uid()` reads that variable. Signed out it is '', so `sr_auth.uid()`
 --  returns NULL and every user-scoped policy denies — the safe default.
 --
 --  Run this FIRST, before the schema.
@@ -33,15 +33,15 @@
 create extension if not exists "uuid-ossp";
 create extension if not exists pgcrypto;
 
-create schema if not exists auth;
+create schema if not exists sr_auth;
 
--- ── auth.users ──────────────────────────────────────────────────────────────
+-- ── sr_auth.users ──────────────────────────────────────────────────────────────
 --  The account table. Only the columns the app and the schema's foreign keys
 --  actually reference are kept.
 --
 --  `encrypted_password` holds a bcrypt hash from pgcrypto's crypt(); the app
 --  never sees a plaintext password after sign-up.
-create table if not exists auth.users (
+create table if not exists sr_auth.users (
   id                  uuid primary key default uuid_generate_v4(),
   email               text unique not null,
   encrypted_password  text,
@@ -54,19 +54,19 @@ create table if not exists auth.users (
   updated_at          timestamptz not null default now()
 );
 
-alter table auth.users
+alter table sr_auth.users
   add column if not exists failed_login_attempts integer not null default 0,
   add column if not exists locked_until timestamptz;
 
-create index if not exists auth_users_email_idx on auth.users(lower(email));
+create index if not exists auth_users_email_idx on sr_auth.users(lower(email));
 
--- ── auth.uid() ──────────────────────────────────────────────────────────────
+-- ── sr_auth.uid() ──────────────────────────────────────────────────────────────
 --  The signed-in user, or NULL when nobody is.
 --
 --  `current_setting(..., true)` — the `true` means "return NULL if unset"
 --  rather than raising, which matters because a fresh connection has no
 --  setting until the app declares one.
-create or replace function auth.uid()
+create or replace function sr_auth.uid()
 returns uuid
 language sql
 stable
@@ -74,10 +74,10 @@ as $$
   select nullif(current_setting('app.current_user_id', true), '')::uuid;
 $$;
 
--- ── auth.role() ─────────────────────────────────────────────────────────────
+-- ── sr_auth.role() ─────────────────────────────────────────────────────────────
 --  'authenticated' once a user is set, 'anon' otherwise. Nine policies test
 --  this to mean "any signed-in officer may read".
-create or replace function auth.role()
+create or replace function sr_auth.role()
 returns text
 language sql
 stable
@@ -92,15 +92,15 @@ as $$
   );
 $$;
 
--- ── auth.email() ────────────────────────────────────────────────────────────
+-- ── sr_auth.email() ────────────────────────────────────────────────────────────
 --  Not used by any policy today, but cheap to provide and the obvious thing
 --  for a future one to reach for.
-create or replace function auth.email()
+create or replace function sr_auth.email()
 returns text
 language sql
 stable
 as $$
-  select u.email from auth.users u where u.id = auth.uid();
+  select u.email from sr_auth.users u where u.id = sr_auth.uid();
 $$;
 
 -- ── supabase_realtime publication ───────────────────────────────────────────
@@ -150,10 +150,10 @@ end $$;
 grant usage on schema public to anon, authenticated, service_role;
 
 -- ── Readable by everyone; only the app's own role writes ────────────────────
-grant usage on schema auth to public;
-grant select on auth.users to public;
+grant usage on schema sr_auth to public;
+grant select on sr_auth.users to public;
 
 -- ── VERIFY ──────────────────────────────────────────────────────────────────
 --  With nothing set, uid() is NULL and role() is 'anon'.
-select auth.uid()                              as uid_when_signed_out,
-       auth.role()                             as role_when_signed_out;
+select sr_auth.uid()                              as uid_when_signed_out,
+       sr_auth.role()                             as role_when_signed_out;

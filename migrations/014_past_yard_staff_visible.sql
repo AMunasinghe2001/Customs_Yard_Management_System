@@ -49,7 +49,7 @@ grant execute on function public.profile_served_in_my_yard(uuid) to authenticate
 drop policy if exists yard_profiles_select on public.profiles;
 create policy yard_profiles_select on public.profiles
   for select using (
-    id = (select auth.uid())
+    id = (select sr_auth.uid())
     or yard = (select public.auth_user_yard())
     -- Someone who has since moved on, but whose service here is recorded.
     or (select public.profile_served_in_my_yard(id))

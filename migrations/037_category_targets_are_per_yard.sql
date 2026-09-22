@@ -16,7 +16,7 @@
 -- so the dialog closed as if it had saved. Reproduced:
 --
 --     set role yard_app;
---     select auth.begin_session('<sddc id>','authenticated');
+--     select sr_auth.begin_session('<sddc id>','authenticated');
 --     select public.auth_user_is_ict();   ->  f
 --     update package_categories set description = description;  ->  UPDATE 0
 --
@@ -43,7 +43,7 @@ create table if not exists public.package_category_targets (
   target_warehouse_id uuid references public.warehouses(id) on delete set null,
   target_zone         text,
   updated_at          timestamptz not null default now(),
-  updated_by          uuid references auth.users(id),
+  updated_by          uuid references sr_auth.users(id),
   primary key (category_id, yard)
 );
 
@@ -164,7 +164,7 @@ begin
   select id into v_cat from public.package_categories limit 1;
   select id into v_wh from public.warehouses where yard = v_yard limit 1;
 
-  perform auth.begin_session(v_sddc::text, 'authenticated');
+  perform sr_auth.begin_session(v_sddc::text, 'authenticated');
   set local role yard_app;
 
   insert into public.package_category_targets (category_id, yard, target_warehouse_id, target_zone)
@@ -195,7 +195,7 @@ begin
   end if;
   select id into v_cat from public.package_categories limit 1;
 
-  perform auth.begin_session(v_sddc::text, 'authenticated');
+  perform sr_auth.begin_session(v_sddc::text, 'authenticated');
   set local role yard_app;
   begin
     insert into public.package_category_targets (category_id, yard, target_zone)
@@ -223,7 +223,7 @@ begin
     raise notice 'SKIP: no yard admin to test as';
     return;
   end if;
-  perform auth.begin_session(v_sddc::text, 'authenticated');
+  perform sr_auth.begin_session(v_sddc::text, 'authenticated');
   set local role yard_app;
   update public.package_categories set name = name || '!';
   if not found then ok := true; end if;

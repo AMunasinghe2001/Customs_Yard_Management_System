@@ -148,7 +148,7 @@ void main() {
     });
 
     test('the strength rule matches what the database enforces', () {
-      // The field checks the SAME rule auth.change_password raises on, so it
+      // The field checks the SAME rule sr_auth.change_password raises on, so it
       // is reported on the field instead of as a save failure.
       //
       // ⚠️ That rule used to be "at least 6 characters", stated separately
@@ -163,7 +163,7 @@ void main() {
       expect(policy, contains('length(p_password) < 12'));
 
       final sql = _read('postgres/05_password_reset.sql');
-      expect(sql, contains('perform auth.change_password(v_id, p_password);'),
+      expect(sql, contains('perform sr_auth.change_password(v_id, p_password);'),
           reason: 'the reset must reuse the one setter, not re-hash itself');
     });
   });
@@ -179,7 +179,7 @@ void main() {
       expect(sql, contains('and  p.is_active'));
     });
 
-    test('both functions are SECURITY DEFINER, since auth.uid() is null', () {
+    test('both functions are SECURITY DEFINER, since sr_auth.uid() is null', () {
       expect('security definer'.allMatches(sql).length, greaterThanOrEqualTo(2));
     });
 

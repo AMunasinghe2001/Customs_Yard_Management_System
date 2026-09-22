@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io' show File, Platform, SecurityContext, SocketException;
+import 'dart:io'
+    show Directory, File, Platform, SecurityContext, SocketException;
 
 import 'package:flutter/foundation.dart';
 import 'package:postgres/postgres.dart';
@@ -204,13 +205,40 @@ class PgConfig {
     if (raw.isEmpty) return null;
     final f = File(raw);
     if (f.isAbsolute) return f.path;
+
+    // ⚠️ EVERY plausible location, in order, and the FIRST that exists
+    // wins. A relative name has to survive three different launch shapes:
+    //
+    //   installed    the .exe and the .crt sit together in Program Files
+    //   flutter run  the .exe is in build\windows\...\Debug, the working
+    //                directory is the project root
+    //   flutter test there is no app .exe at all -- resolvedExecutable is
+    //                the Dart VM, off in the SDK cache
+    //
+    // Checking only beside the .exe left the middle case resolving to a
+    // bare relative path, and whether that worked came down to the working
+    // directory -- so the same build connected from one launcher and failed
+    // from another, reporting only "Bad server certificate".
+    final sep = Platform.pathSeparator;
+    final candidates = <String>[];
     try {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
-      final beside = File('$exeDir${Platform.pathSeparator}$raw');
-      if (beside.existsSync()) return beside.path;
+      candidates.add('$exeDir$sep$raw');
     } catch (_) {
-      // Fall through to the path as given.
+      // resolvedExecutable can throw in odd embeddings; the rest still work.
     }
+    candidates
+      ..add(raw)                                        // working directory
+      ..add('${Directory.current.path}$sep$raw')
+      // The debug build output, for `flutter run` from the project root.
+      ..add('build${sep}windows${sep}x64${sep}runner${sep}Debug$sep$raw')
+      ..add('build${sep}windows${sep}x64${sep}runner${sep}Release$sep$raw');
+
+    for (final c in candidates) {
+      if (File(c).existsSync()) return c;
+    }
+    // Nothing found: hand back the path as given so sslRootCertProblem can
+    // name it, rather than silently falling back to the OS trust store.
     return f.path;
   }
 
@@ -479,16 +507,16 @@ class PgDatabase {
   /// Who the database should believe is running each statement.
   ///
   /// This is what makes RLS work without a rewrite. Supabase gave every policy
-  /// `auth.uid()`; here `auth.uid()` is a SQL function that reads the session
+  /// `sr_auth.uid()`; here `sr_auth.uid()` is a SQL function that reads the session
   /// variable `app.current_user_id`, so the 73 existing policies keep working
   /// exactly as written — see postgres/01_auth_and_session.sql.
   ///
-  /// Null while signed out, which makes `auth.uid()` null and every
+  /// Null while signed out, which makes `sr_auth.uid()` null and every
   /// user-scoped policy deny. That is the correct default: a bug that forgets
   /// to set it locks the user out rather than showing them everything.
   String? _currentUserId;
 
-  /// The role name `auth.role()` reports. Supabase used 'authenticated' for a
+  /// The role name `sr_auth.role()` reports. Supabase used 'authenticated' for a
   /// signed-in user and 'anon' otherwise; policies test for the former.
   String get _currentRole => _currentUserId == null ? 'anon' : 'authenticated';
 
@@ -522,20 +550,20 @@ class PgDatabase {
 
   /// Announces who this connection is acting as.
   ///
-  /// ⚠️ Calls `auth.begin_session` rather than writing the session variables
+  /// ⚠️ Calls `sr_auth.begin_session` rather than writing the session variables
   /// directly, so the CLIENT does not get to decide whether its own password
   /// is still valid. It supplies an identity; the database decides what that
   /// identity may do, and sets `app.password_expired` accordingly. An expired
-  /// password then reads as signed-out to `auth.uid()` and as `anon` to
-  /// `auth.role()`, which is every RLS policy in the schema — while
-  /// `auth.change_password` keeps working, because it takes the user id as an
+  /// password then reads as signed-out to `sr_auth.uid()` and as `anon` to
+  /// `sr_auth.role()`, which is every RLS policy in the schema — while
+  /// `sr_auth.change_password` keeps working, because it takes the user id as an
   /// argument instead of asking who is calling. See migration 018.
   ///
   /// `set_config(..., false)` inside it makes the variables last for the whole
   /// session rather than one transaction, so every later query sees them.
   Future<void> _applySession(Session conn) async {
     await conn.execute(
-      Sql.named('select auth.begin_session(@uid, @role)'),
+      Sql.named('select sr_auth.begin_session(@uid, @role)'),
       parameters: {
         // An empty string, not null: `current_setting` returns '' for an unset
         // variable anyway, and the SQL side treats '' as "nobody".
@@ -545,7 +573,7 @@ class PgDatabase {
     );
 
     // ⚠️ Which MACHINE this is, for the approved-device check in
-    // auth.sign_in (migration 032).
+    // sr_auth.sign_in (migration 032).
     //
     // Set on the connection rather than passed to sign_in, for two reasons:
     // a pooled connection is reused, so like the three variables above it

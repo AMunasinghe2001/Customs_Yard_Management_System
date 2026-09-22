@@ -36,7 +36,7 @@ begin
   for r in
     select p.full_name, p.role, u.last_sign_in_at::date as last_sign_in
       from public.profiles p
-      join auth.users u on u.id = p.id
+      join sr_auth.users u on u.id = p.id
      where p.is_active
        and coalesce(u.last_sign_in_at, p.created_at)
              < now() - make_interval(days => public.account_dormant_after_days())
@@ -59,28 +59,28 @@ declare
   v_was timestamptz;
 begin
   select p.id, u.last_sign_in_at into v_id, v_was
-    from public.profiles p join auth.users u on u.id = p.id limit 1;
+    from public.profiles p join sr_auth.users u on u.id = p.id limit 1;
   if v_id is null then
     raise notice 'no accounts to verify with - skipped';
     return;
   end if;
 
   -- 31 days idle must now be dormant; it was not under the 90-day rule.
-  update auth.users set last_sign_in_at = now() - interval '31 days'
+  update sr_auth.users set last_sign_in_at = now() - interval '31 days'
    where id = v_id;
   if not public.account_is_dormant(v_id) then
-    update auth.users set last_sign_in_at = v_was where id = v_id;
+    update sr_auth.users set last_sign_in_at = v_was where id = v_id;
     raise exception '31 days idle is not dormant - the rule is still 90 days';
   end if;
 
   -- 29 days must NOT be.
-  update auth.users set last_sign_in_at = now() - interval '29 days'
+  update sr_auth.users set last_sign_in_at = now() - interval '29 days'
    where id = v_id;
   if public.account_is_dormant(v_id) then
-    update auth.users set last_sign_in_at = v_was where id = v_id;
+    update sr_auth.users set last_sign_in_at = v_was where id = v_id;
     raise exception '29 days idle reads as dormant - the window is too short';
   end if;
 
-  update auth.users set last_sign_in_at = v_was where id = v_id;
+  update sr_auth.users set last_sign_in_at = v_was where id = v_id;
   raise notice 'verified: dormant after 30 days, not before';
 end $$;

@@ -124,7 +124,7 @@ class AuthService {
     if (trimmed.isEmpty) return;
 
     final rows = await supabase
-        .from('auth.users')
+        .from('sr_auth.users')
         .select()
         .eq('email', trimmed)
         .limit(1);
@@ -146,7 +146,7 @@ class AuthService {
     if (trimmed.isEmpty) return;
 
     try {
-      await supabase.rpc('auth.record_failed_login', params: {'p_email': trimmed});
+      await supabase.rpc('sr_auth.record_failed_login', params: {'p_email': trimmed});
     } catch (_) {
       // Best-effort only: the login still fails, and the DB is the source of truth.
     }
@@ -157,7 +157,7 @@ class AuthService {
     if (trimmed.isEmpty) return;
 
     try {
-      await supabase.rpc('auth.clear_failed_login', params: {'p_email': trimmed});
+      await supabase.rpc('sr_auth.clear_failed_login', params: {'p_email': trimmed});
     } catch (_) {
       // A failed reset should never block a valid login.
     }
@@ -3709,7 +3709,7 @@ class AdminService {
         //
         // ⚠️ Only when the account is being RE-CREATED AS ITSELF.
         //
-        // This branch exists for an account whose auth.users row was made but
+        // This branch exists for an account whose sr_auth.users row was made but
         // whose profile write then failed — signing in and re-writing the
         // profile repairs it. But it was reached for ANY existing e-mail, so
         // signing up on a second portal with an address that already had an
@@ -3751,13 +3751,13 @@ class AdminService {
       throw Exception('Sign-up failed. Please try again.');
     }
 
-    // ⚠️ The profile is written by `auth.sign_up` itself (migration 035), in
+    // ⚠️ The profile is written by `sr_auth.sign_up` itself (migration 035), in
     // the same transaction as the account. There is deliberately NO profile
     // write here any more.
     //
     // There used to be an upsert at this point carrying username, job_role and
     // directorate, and it was the reported bug: a person signing up is not
-    // signed in, so `auth.uid()` is null and the `yard_profiles_insert` policy
+    // signed in, so `sr_auth.uid()` is null and the `yard_profiles_insert` policy
     // refused it with 42501 — surfaced as "This account is not permitted to
     // create that profile". The account had already been committed by the
     // statement before, so it survived the error and the officer found it in
@@ -4260,7 +4260,7 @@ class IctService {
       rethrow;
     }
 
-    // ⚠️ No profile write here. `auth.sign_up` fills the profile in the same
+    // ⚠️ No profile write here. `sr_auth.sign_up` fills the profile in the same
     // transaction as the account (migrations 035/036), so an upsert at this
     // point would be writing fields that are already correct.
     //
@@ -4357,9 +4357,9 @@ class IctService {
     final fullName = (row['full_name'] as String?)?.trim() ?? 'Directorate';
     final role = (row['role'] as String?)?.trim() ?? '';
 
-    // The address is on auth.users, not profiles.
+    // The address is on sr_auth.users, not profiles.
     final userRow = await AuthService._withNetworkRetry(
-        () => supabase.from('auth.users').select('email').eq('id', profileId).single());
+        () => supabase.from('sr_auth.users').select('email').eq('id', profileId).single());
     final email = (userRow['email'] as String?)?.trim() ?? '';
     if (email.isEmpty) {
       throw Exception('That account has no email address to send to.');

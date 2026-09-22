@@ -1,7 +1,7 @@
 -- ============================================================================
 --  "Forgot password" could not set a password at all.
 --
---  ⚠️ A regression I introduced. Migration 018 wraps auth.change_password with
+--  ⚠️ A regression I introduced. Migration 018 wraps sr_auth.change_password with
 --  a guard that refuses any caller whose `app.current_user_id` is not the user
 --  being changed -- correct for a signed-in officer, and fatal here: a
 --  password RESET has no session by definition. The officer proved control of
@@ -17,7 +17,7 @@
 --  ⚠️ The inner function is named by 018 and only exists after it has run.
 --  Resolved at runtime rather than hardcoded, so this file works whether or
 --  not 018 has been applied yet -- on a fresh database where 018 has not run,
---  `auth.change_password` IS the unguarded body and calling it is correct.
+--  `sr_auth.change_password` IS the unguarded body and calling it is correct.
 --
 --  Safe to re-run.
 -- ============================================================================
@@ -29,11 +29,11 @@ begin
   -- Prefer the unwrapped body 018 renames aside; fall back to the plain name.
   if exists (select 1 from pg_proc p
                join pg_namespace n on n.oid = p.pronamespace
-              where n.nspname = 'auth'
+              where n.nspname = 'sr_auth'
                 and p.proname = 'change_password_unchecked') then
-    v_setter := 'auth.change_password_unchecked';
+    v_setter := 'sr_auth.change_password_unchecked';
   else
-    v_setter := 'auth.change_password';
+    v_setter := 'sr_auth.change_password';
   end if;
 
   execute format($f$
@@ -56,7 +56,7 @@ begin
       end if;
 
       select u.id into v_id
-      from   auth.users u
+      from   sr_auth.users u
       where  lower(u.email) = lower(v_email);
 
       if v_id is null then
@@ -73,7 +73,7 @@ begin
          set password_updated_at = now()
        where id = v_id;
 
-      update auth.users
+      update sr_auth.users
          set failed_login_attempts = 0,
              locked_until = null,
              updated_at = now()
@@ -94,14 +94,14 @@ declare
   v_email text;
 begin
   select p.id, u.email into v_id, v_email
-    from public.profiles p join auth.users u on u.id = p.id
+    from public.profiles p join sr_auth.users u on u.id = p.id
    where p.is_active limit 1;
   if v_id is null then
     raise notice 'no active account to test with - skipping';
     return;
   end if;
 
-  select encrypted_password into v_saved from auth.users where id = v_id;
+  select encrypted_password into v_saved from sr_auth.users where id = v_id;
 
   -- ⚠️ Explicitly NO session: this is the exact condition that broke.
   perform set_config('app.current_user_id', '', true);
@@ -109,7 +109,7 @@ begin
   begin
     perform public.reset_password_for_identifier(v_email, 'ResetProof#2026a');
   exception when others then
-    update auth.users set encrypted_password = v_saved where id = v_id;
+    update sr_auth.users set encrypted_password = v_saved where id = v_id;
     raise exception 'a session-less reset still fails: %', SQLERRM;
   end;
 
@@ -123,15 +123,15 @@ begin
       v_blocked := true;
     end;
     if not v_blocked then
-      update auth.users set encrypted_password = v_saved where id = v_id;
+      update sr_auth.users set encrypted_password = v_saved where id = v_id;
       raise exception
         'the reset path accepted a password it had just set - the reuse '
         'check was lost with the guard';
     end if;
   end;
 
-  update auth.users set encrypted_password = v_saved where id = v_id;
-  delete from auth.password_history where user_id = v_id;
+  update sr_auth.users set encrypted_password = v_saved where id = v_id;
+  delete from sr_auth.password_history where user_id = v_id;
   update public.profiles set password_updated_at = now() - interval '95 days'
    where id = v_id and full_name = 'Ajantha Deepal';
   raise notice 'session-less reset works and still blocks reuse - restored';

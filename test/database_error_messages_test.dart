@@ -58,7 +58,7 @@ void main() {
     test('_run strips it, not just rpc()', () {
       // ⚠️ It was applied in PgClient.rpc, which covers RPC calls only. A
       // password change goes through `PgDatabase.execute('select
-      // auth.change_password(...)')` — a different path — so the sign-in
+      // sr_auth.change_password(...)')` — a different path — so the sign-in
       // screen still showed `Severity.error 22023:` for the one message the
       // fix was written for. _run is what query() and execute() share.
       final conn =

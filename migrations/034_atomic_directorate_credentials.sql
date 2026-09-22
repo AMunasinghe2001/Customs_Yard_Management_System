@@ -32,7 +32,7 @@ begin
   select u.email, p.role
     into v_email, v_role
     from public.profiles p
-    join auth.users u on u.id = p.id
+    join sr_auth.users u on u.id = p.id
    where p.id = p_profile_id
    for update of p;
 

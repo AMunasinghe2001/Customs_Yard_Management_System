@@ -477,7 +477,7 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
           validator: (v) {
             final t = v ?? '';
             if (t.isEmpty) return 'New password required';
-            // The same rule auth.change_password enforces, checked here so it
+            // The same rule sr_auth.change_password enforces, checked here so it
             // is reported on the field rather than as a save failure.
             return PasswordPolicy.violation(t);
           },

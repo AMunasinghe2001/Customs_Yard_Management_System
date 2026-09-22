@@ -191,7 +191,7 @@ void main() {
       final fn = svc.substring(
           svc.indexOf('Future<String> resetDirectorateCredentials('));
       final body = fn.substring(0, fn.indexOf('\n  }'));
-      expect(body, contains("from('auth.users').select('email')"));
+      expect(body, contains("from('sr_auth.users').select('email')"));
       // ⚠️ Asserted on the recipient, not the full argument list: the call now
       // also says this is a REISSUE rather than a welcome, and the address on
       // record is the part this test exists to protect.

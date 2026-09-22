@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// ⚠️ Observed on the live server. An ICT account was created with one
 /// e-mail; a Central Disposal account was then created with the SAME e-mail
-/// and it "worked" — because `auth.sign_up` correctly refused the duplicate,
+/// and it "worked" — because `sr_auth.sign_up` correctly refused the duplicate,
 /// the app caught `user_already_exists`, signed in as the existing account,
 /// and upserted the new role over it. One e-mail, one id: the ICT account
 /// became a Disposal account and ICT ceased to exist entirely.
@@ -20,7 +20,7 @@ void main() {
 
   group('one e-mail holds one account', () {
     test('the repair branch only runs when the role is unchanged', () {
-      // ⚠️ The branch itself is legitimate: an account whose auth.users row
+      // ⚠️ The branch itself is legitimate: an account whose sr_auth.users row
       // was created but whose profile write then failed is repaired by
       // signing in and re-writing the profile. It is only valid when the
       // role being written is the role already there.

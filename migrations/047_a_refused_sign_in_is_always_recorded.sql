@@ -22,7 +22,7 @@
 --
 --  ── Why the write has to be autonomous at all ──────────────────────────────
 --
---  `auth.sign_in` RAISES to refuse the machine, and that rollback takes any
+--  `sr_auth.sign_in` RAISES to refuse the machine, and that rollback takes any
 --  ordinary INSERT with it. Measured in 032: the first version wrote the row,
 --  raised, and left zero rows behind.
 --
@@ -230,7 +230,7 @@ grant execute on function public.log_refused_device(text, text)
 
 -- ── 4. Drain the queue on the next successful sign-in ──────────────────────
 --
--- ⚠️ Wrapped, not rewritten -- the same shape 032 itself uses. `auth.sign_in`
+-- ⚠️ Wrapped, not rewritten -- the same shape 032 itself uses. `sr_auth.sign_in`
 -- is re-created by postgres/04_auth.sql and by 032; putting the flush inside
 -- either would lose it on the next rebuild.
 --
@@ -240,18 +240,18 @@ do $$
 begin
   if not exists (select 1 from pg_proc p
                    join pg_namespace n on n.oid = p.pronamespace
-                  where n.nspname = 'auth'
+                  where n.nspname = 'sr_auth'
                     and p.proname = 'sign_in_before_flush') then
-    alter function auth.sign_in(text, text) rename to sign_in_before_flush;
+    alter function sr_auth.sign_in(text, text) rename to sign_in_before_flush;
   end if;
 end $$;
 
-create or replace function auth.sign_in(p_identifier text, p_password text)
+create or replace function sr_auth.sign_in(p_identifier text, p_password text)
 returns table (id uuid, email text, raw_user_meta_data jsonb,
                email_confirmed_at timestamptz)
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public
 as $fn$
 begin
   -- ⚠️ BEFORE the inner call, not after. The inner function raises for a
@@ -259,12 +259,12 @@ begin
   -- queue has something in it.
   perform public.flush_refused_sign_ins();
 
-  return query select * from auth.sign_in_before_flush(p_identifier, p_password);
+  return query select * from sr_auth.sign_in_before_flush(p_identifier, p_password);
 end;
 $fn$;
 
-revoke all on function auth.sign_in(text, text) from public;
-grant execute on function auth.sign_in(text, text) to authenticated, anon;
+revoke all on function sr_auth.sign_in(text, text) from public;
+grant execute on function sr_auth.sign_in(text, text) to authenticated, anon;
 
 
 insert into public.schema_migrations (version, name)
@@ -284,7 +284,7 @@ begin
    where action = 'Sign-in refused - unapproved machine';
 
   -- ⚠️ Called directly rather than through a real refusal: driving
-  -- auth.sign_in would need a genuine unapproved device AND would raise,
+  -- sr_auth.sign_in would need a genuine unapproved device AND would raise,
   -- which would abort this block. The logger is the part under test.
   perform public.log_refused_device('047-verify-device', '047-verify');
 
@@ -314,9 +314,9 @@ do $verify2$
 begin
   if (select count(*) from pg_proc p join pg_namespace n
         on n.oid = p.pronamespace
-       where n.nspname = 'auth' and p.proname = 'sign_in_before_flush') <> 1
+       where n.nspname = 'sr_auth' and p.proname = 'sign_in_before_flush') <> 1
   then
-    raise exception 'auth.sign_in_before_flush is missing - the rename did '
+    raise exception 'sr_auth.sign_in_before_flush is missing - the rename did '
       'not happen and the device check has been bypassed';
   end if;
   raise notice 'PASS: the device check is still in the chain';

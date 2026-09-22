@@ -58,7 +58,7 @@ begin
   end if;
 
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 
@@ -68,7 +68,7 @@ begin
      set other_delivered    = p_delivered,
          other_delivered_at =
            case when p_delivered then coalesce(p_handed_at, now()) end,
-         other_delivered_by = case when p_delivered then auth.uid() end,
+         other_delivered_by = case when p_delivered then sr_auth.uid() end,
          handover_receipt_no = case when p_delivered then p_receipt_no
                                     else handover_receipt_no end,
          handover_charge     = case when p_delivered then p_charge

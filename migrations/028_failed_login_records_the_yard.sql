@@ -38,7 +38,7 @@ begin
 
   select u.id, u.failed_login_attempts, u.locked_until
     into v_user_id, v_attempts, v_locked
-    from auth.users u
+    from sr_auth.users u
    where lower(u.email) = lower(v_email);
 
   v_has_profile := v_user_id is not null
@@ -87,10 +87,10 @@ declare
   v_logged_yard   text;
 begin
   select u.email, p.id, p.yard into v_officer_email, v_officer_id, v_officer_yard
-    from public.profiles p join auth.users u on u.id = p.id
+    from public.profiles p join sr_auth.users u on u.id = p.id
    where p.role in ('officer','admin') and p.yard is not null limit 1;
   select u.email, p.id into v_dir_email, v_dir_id
-    from public.profiles p join auth.users u on u.id = p.id
+    from public.profiles p join sr_auth.users u on u.id = p.id
    where p.role in ('ict','valuation','appeal','disposal','executive') limit 1;
 
   if v_officer_email is null then

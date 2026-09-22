@@ -16,10 +16,10 @@
 --    030  the committee round takes no bids
 --    031  one committee round, only after the value is submitted
 --
---  ⚠️ Why 018 must come last. Migration 018 wraps auth.change_password so a
+--  ⚠️ Why 018 must come last. Migration 018 wraps sr_auth.change_password so a
 --  session may only change ITS OWN password: it renames the real body to
 --  change_password_unchecked and puts a caller check in front. 023 does a
---  plain `create or replace function auth.change_password`, which replaces
+--  plain `create or replace function sr_auth.change_password`, which replaces
 --  that wrapper and takes the check with it. Re-applying 018 re-wraps the new
 --  body. Verified on the development database: after 023 alone the caller
 --  guard was gone; after 018 both guards are present and layered.
@@ -33,7 +33,7 @@
 --  bug -- it reads profiles.last_seen_at, a PRESENCE heartbeat that signOut()
 --  deliberately NULLs, so any account that signed out tidily looks unused.
 --  022 runs next and re-enables every account 021 switched off whose real
---  clock (auth.users.last_sign_in_at) says it is not dormant. Accounts ICT
+--  clock (sr_auth.users.last_sign_in_at) says it is not dormant. Accounts ICT
 --  disabled BY HAND are left alone: their reason is 'manual'.
 --
 --  Run as an administrator (the `postgres` role), NOT as yard_app:
@@ -98,12 +98,12 @@ begin
   -- The caller guard must be on the OUTER function...
   select position('app.current_user_id' in prosrc) > 0 into v_wrapper
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'auth' and p.proname = 'change_password';
+   where n.nspname = 'sr_auth' and p.proname = 'change_password';
 
   -- ...and the reuse check on the inner one 018 renamed.
   select position('password_history' in prosrc) > 0 into v_inner
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'auth' and p.proname = 'change_password_unchecked';
+   where n.nspname = 'sr_auth' and p.proname = 'change_password_unchecked';
 
   -- Dormancy must read the sign-in clock, not the heartbeat.
   select position('last_sign_in_at' in prosrc) > 0 into v_clock
@@ -111,7 +111,7 @@ begin
    where n.nspname = 'public' and p.proname = 'disable_dormant_accounts';
 
   select exists (select 1 from pg_tables
-                  where schemaname = 'auth' and tablename = 'password_history')
+                  where schemaname = 'sr_auth' and tablename = 'password_history')
     into v_history;
 
   if not v_wrapper then
@@ -127,7 +127,7 @@ begin
       'dormancy still reads the heartbeat column -- 022 did not apply';
   end if;
   if not v_history then
-    raise exception 'auth.password_history is missing -- 023 did not apply';
+    raise exception 'sr_auth.password_history is missing -- 023 did not apply';
   end if;
 
   -- ⚠️ And the reset must NOT be wired to the guarded function: it has no
@@ -178,6 +178,6 @@ end $$;
 \echo '--- accounts currently inactive ------------------------------------'
 select p.full_name, p.deactivated_reason, u.last_sign_in_at::date as last_sign_in
   from public.profiles p
-  join auth.users u on u.id = p.id
+  join sr_auth.users u on u.id = p.id
  where not p.is_active
  order by p.full_name;

@@ -354,8 +354,8 @@ class PgQuery implements Future<dynamic> {
   /// not exist.
   static String _quoteIdent(String name) => '"${name.replaceAll('"', '""')}"';
 
-  /// Quotes a RELATION, splitting an optional schema: `auth.users` becomes
-  /// `"auth"."users"`, not `"auth.users"` -- Postgres reads the latter as a
+  /// Quotes a RELATION, splitting an optional schema: `sr_auth.users` becomes
+  /// `"auth"."users"`, not `"sr_auth.users"` -- Postgres reads the latter as a
   /// single table whose name contains a dot, and rejects it with 42P01.
   static String _quoteRel(String name) =>
       name.split('.').map(_quoteIdent).join('.');

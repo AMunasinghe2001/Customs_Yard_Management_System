@@ -6,7 +6,7 @@
 --  machine taken out of a yard. Passwords leak; the set of computers the
 --  Department owns does not, and it is short enough to list.
 --
---  ⚠️ Enforced inside auth.sign_in, NOT in the app.
+--  ⚠️ Enforced inside sr_auth.sign_in, NOT in the app.
 --
 --  A check in Dart is a check the attacker controls: they are not obliged to
 --  run our client. The device id reaches the database as a session variable
@@ -150,7 +150,7 @@ grant execute on function public.log_refused_device(text, text)
 
 -- ── 3. sign_in refuses an unapproved machine ────────────────────────────────
 --
--- ⚠️ Wrapped, not rewritten. auth.sign_in is long and is re-created by
+-- ⚠️ Wrapped, not rewritten. sr_auth.sign_in is long and is re-created by
 -- postgres/04_auth.sql; editing it there would put this rule in a file that a
 -- schema rebuild overwrites. The wrapper checks the machine and then calls the
 -- body, so a rebuild of 04 leaves the body intact and this file re-applies the
@@ -159,18 +159,18 @@ do $$
 begin
   if not exists (select 1 from pg_proc p
                    join pg_namespace n on n.oid = p.pronamespace
-                  where n.nspname = 'auth'
+                  where n.nspname = 'sr_auth'
                     and p.proname = 'sign_in_any_device') then
-    alter function auth.sign_in(text, text) rename to sign_in_any_device;
+    alter function sr_auth.sign_in(text, text) rename to sign_in_any_device;
   end if;
 end $$;
 
-create or replace function auth.sign_in(p_identifier text, p_password text)
+create or replace function sr_auth.sign_in(p_identifier text, p_password text)
 returns table (id uuid, email text, raw_user_meta_data jsonb,
                email_confirmed_at timestamptz)
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public
 as $fn$
 declare
   v_device text := nullif(current_setting('app.device_id', true), '');
@@ -191,12 +191,12 @@ begin
       using errcode = '42501';
   end if;
 
-  return query select * from auth.sign_in_any_device(p_identifier, p_password);
+  return query select * from sr_auth.sign_in_any_device(p_identifier, p_password);
 end;
 $fn$;
 
-revoke all on function auth.sign_in(text, text) from public;
-grant execute on function auth.sign_in(text, text) to authenticated, anon;
+revoke all on function sr_auth.sign_in(text, text) from public;
+grant execute on function sr_auth.sign_in(text, text) to authenticated, anon;
 
 
 -- ── 4. Record that an approved machine was used ─────────────────────────────

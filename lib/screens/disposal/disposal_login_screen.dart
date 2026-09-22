@@ -278,7 +278,7 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     }
   }
 
-  // Apply the new password, then continue into the dashboard. The auth.users
+  // Apply the new password, then continue into the dashboard. The sr_auth.users
   // trigger resets password_updated_at, so the next login starts a fresh
   // 90-day window.
   Future<void> _submitNewPassword() async {

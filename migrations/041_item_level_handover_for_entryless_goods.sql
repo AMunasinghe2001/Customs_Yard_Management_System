@@ -82,10 +82,10 @@ begin
       for all
       using (
         public.auth_user_is_disposal()
-        or yard = (select yard from public.profiles where id = auth.uid()))
+        or yard = (select yard from public.profiles where id = sr_auth.uid()))
       with check (
         public.auth_user_is_disposal()
-        or yard = (select yard from public.profiles where id = auth.uid()));
+        or yard = (select yard from public.profiles where id = sr_auth.uid()));
   end if;
 end $$;
 
@@ -134,7 +134,7 @@ begin
   end if;
 
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 
@@ -142,7 +142,7 @@ begin
     (package_item_id, yard, kind, done, done_at, done_by,
      receipt_no, charge, notes)
   values
-    (p_item_id, v_yard, p_kind, true, coalesce(p_handed_at, now()), auth.uid(),
+    (p_item_id, v_yard, p_kind, true, coalesce(p_handed_at, now()), sr_auth.uid(),
      p_receipt_no, p_charge, p_notes)
   on conflict (package_item_id) do update
      set done       = true,

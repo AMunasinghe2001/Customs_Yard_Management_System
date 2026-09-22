@@ -10,8 +10,8 @@
 --  schema would mean re-deriving 88 ALTERs, and one slip there is a column
 --  silently missing in production.
 --
---  Run AFTER 01_auth_and_session.sql — the migrations reference auth.uid(),
---  auth.users and the supabase_realtime publication, all of which that file
+--  Run AFTER 01_auth_and_session.sql — the migrations reference sr_auth.uid(),
+--  sr_auth.users and the supabase_realtime publication, all of which that file
 --  provides.
 --
 --  Safe to re-run: every statement is guarded (if not exists / or replace /
@@ -36,7 +36,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- PROFILES (Officers & Admins linked to Supabase Auth)
 -- ----------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY REFERENCES sr_auth.users(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL,
   badge_number TEXT UNIQUE,
   role TEXT NOT NULL DEFAULT 'officer' CHECK (role IN ('admin', 'officer')),
@@ -182,57 +182,57 @@ ALTER TABLE customs_rules ENABLE ROW LEVEL SECURITY;
 -- Allow all authenticated users to read their own profile
 DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 CREATE POLICY "Users can view own profile" ON profiles
-  FOR SELECT USING (auth.uid() = id);
+  FOR SELECT USING (sr_auth.uid() = id);
 
 DROP POLICY IF EXISTS "Admins can manage all profiles" ON profiles;
 CREATE POLICY "Admins can manage all profiles" ON profiles
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role = 'admin')
   );
 
 -- Packages - all officers can view and create
 DROP POLICY IF EXISTS "Officers can view all packages" ON packages;
 CREATE POLICY "Officers can view all packages" ON packages
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT USING (sr_auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Officers can create packages" ON packages;
 CREATE POLICY "Officers can create packages" ON packages
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+  FOR INSERT WITH CHECK (sr_auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Officers can update packages" ON packages;
 CREATE POLICY "Officers can update packages" ON packages
-  FOR UPDATE USING (auth.role() = 'authenticated');
+  FOR UPDATE USING (sr_auth.role() = 'authenticated');
 
 -- Package items - linked to packages
 DROP POLICY IF EXISTS "Officers can manage package items" ON package_items;
 CREATE POLICY "Officers can manage package items" ON package_items
-  FOR ALL USING (auth.role() = 'authenticated');
+  FOR ALL USING (sr_auth.role() = 'authenticated');
 
 -- Warehouses - read for all, write for admins
 DROP POLICY IF EXISTS "All can view warehouses" ON warehouses;
 CREATE POLICY "All can view warehouses" ON warehouses
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT USING (sr_auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Admins can manage warehouses" ON warehouses;
 CREATE POLICY "Admins can manage warehouses" ON warehouses
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role = 'admin')
   );
 
 -- Warehouse entries - all officers
 DROP POLICY IF EXISTS "Officers can manage warehouse entries" ON warehouse_entries;
 CREATE POLICY "Officers can manage warehouse entries" ON warehouse_entries
-  FOR ALL USING (auth.role() = 'authenticated');
+  FOR ALL USING (sr_auth.role() = 'authenticated');
 
 -- Customs rules - read for all, write for admins
 DROP POLICY IF EXISTS "All can view customs rules" ON customs_rules;
 CREATE POLICY "All can view customs rules" ON customs_rules
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT USING (sr_auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Admins can manage customs rules" ON customs_rules;
 CREATE POLICY "Admins can manage customs rules" ON customs_rules
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role = 'admin')
   );
 
 -- ----------------------------------------------------------------
@@ -274,9 +274,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS on_auth_user_created ON sr_auth.users;
 CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
+  AFTER INSERT ON sr_auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
 -- ----------------------------------------------------------------
@@ -428,7 +428,7 @@ alter table profiles
 DROP POLICY IF EXISTS "Admins can manage warehouses" ON warehouses;
 CREATE POLICY "Admins can manage warehouses" ON warehouses
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role = 'admin')
   );
 
 
@@ -503,32 +503,32 @@ ALTER TABLE tender_disposals ENABLE ROW LEVEL SECURITY;
 -- RLS Policies
 DROP POLICY IF EXISTS "All authenticated users can view forfeited packages" ON forfeited_packages;
 CREATE POLICY "All authenticated users can view forfeited packages" ON forfeited_packages
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT USING (sr_auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Admins can manage forfeited packages" ON forfeited_packages;
 CREATE POLICY "Admins can manage forfeited packages" ON forfeited_packages
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role = 'admin')
   );
 
 DROP POLICY IF EXISTS "All authenticated users can view tenders" ON tenders;
 CREATE POLICY "All authenticated users can view tenders" ON tenders
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT USING (sr_auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Admins can create and manage tenders" ON tenders;
 CREATE POLICY "Admins can create and manage tenders" ON tenders
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role = 'admin')
   );
 
 DROP POLICY IF EXISTS "All authenticated users can view tender disposals" ON tender_disposals;
 CREATE POLICY "All authenticated users can view tender disposals" ON tender_disposals
-  FOR SELECT USING (auth.role() = 'authenticated');
+  FOR SELECT USING (sr_auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Admins can manage tender disposals" ON tender_disposals;
 CREATE POLICY "Admins can manage tender disposals" ON tender_disposals
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role = 'admin')
   );
 
 -- ────────────────────────────────────────────────────────────────
@@ -610,7 +610,7 @@ alter table public.officer_signup_otps enable row level security;
 -- 3. ── Resolve a username OR email to the login email ───────────────────────
 --    The login screen accepts a single identifier. If it looks like an email
 --    we return it as-is; otherwise we look it up by username and return the
---    matching auth email. SECURITY DEFINER so it can read auth.users; granted
+--    matching auth email. SECURITY DEFINER so it can read sr_auth.users; granted
 --    to anon because login happens before the user is authenticated.
 create or replace function public.email_for_login(identifier text)
 returns text
@@ -634,7 +634,7 @@ begin
   select u.email
     into found_email
   from public.profiles p
-  join auth.users u on u.id = p.id
+  join sr_auth.users u on u.id = p.id
   where lower(p.username) = lower(trim(identifier))
   limit 1;
 
@@ -677,7 +677,7 @@ set search_path = public
 as $$
   select exists(
     select 1 from public.profiles
-    where id = auth.uid() and role = 'disposal'
+    where id = sr_auth.uid() and role = 'disposal'
   );
 $$;
 
@@ -723,11 +723,11 @@ create policy tender_sales_manage on public.tender_sales
   for all
   using (
     public.auth_user_is_disposal()
-    or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+    or exists (select 1 from public.profiles where id = sr_auth.uid() and role = 'admin')
   )
   with check (
     public.auth_user_is_disposal()
-    or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+    or exists (select 1 from public.profiles where id = sr_auth.uid() and role = 'admin')
   );
 
 -- 5. ── Limit to one DC and one SDDC account ─────────────────────────────────
@@ -815,7 +815,7 @@ create policy tender_sale_items_disposal on public.tender_sale_items
 drop policy if exists tender_sale_items_yard_read on public.tender_sale_items;
 create policy tender_sale_items_yard_read on public.tender_sale_items
   for select
-  using (yard = (select yard from public.profiles where id = auth.uid()));
+  using (yard = (select yard from public.profiles where id = sr_auth.uid()));
 
 -- 2. ── Mark a tender-sale package SOLD (cross-yard, security definer) ────────
 create or replace function public.disposal_mark_sale_item_sold(
@@ -885,7 +885,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -920,7 +920,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -964,7 +964,7 @@ begin
     raise exception 'tender sale item not found';
   end if;
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
   update public.tender_sale_items
@@ -1028,8 +1028,8 @@ alter table public.disposal_request_items  enable row level security;
 drop policy if exists disposal_requests_yard on public.disposal_requests;
 create policy disposal_requests_yard on public.disposal_requests
   for all
-  using (yard = (select yard from public.profiles where id = auth.uid()))
-  with check (yard = (select yard from public.profiles where id = auth.uid()));
+  using (yard = (select yard from public.profiles where id = sr_auth.uid()))
+  with check (yard = (select yard from public.profiles where id = sr_auth.uid()));
 
 -- Header: Central Disposal Directorate reads every yard's requests.
 drop policy if exists disposal_requests_read_all on public.disposal_requests;
@@ -1043,12 +1043,12 @@ create policy disposal_request_items_yard on public.disposal_request_items
   using (exists (
     select 1 from public.disposal_requests r
     where r.id = request_id
-      and r.yard = (select yard from public.profiles where id = auth.uid())
+      and r.yard = (select yard from public.profiles where id = sr_auth.uid())
   ))
   with check (exists (
     select 1 from public.disposal_requests r
     where r.id = request_id
-      and r.yard = (select yard from public.profiles where id = auth.uid())
+      and r.yard = (select yard from public.profiles where id = sr_auth.uid())
   ));
 
 -- Items: Central Disposal Directorate reads every yard's items.
@@ -1089,7 +1089,7 @@ create policy disposal_taxes_manage on public.disposal_taxes
 drop policy if exists disposal_taxes_read on public.disposal_taxes;
 create policy disposal_taxes_read on public.disposal_taxes
   for select
-  using (auth.role() = 'authenticated');
+  using (sr_auth.role() = 'authenticated');
 
 -- Done.
 
@@ -1197,7 +1197,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -1229,7 +1229,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -1397,7 +1397,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -1429,7 +1429,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -1535,7 +1535,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -1567,7 +1567,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -1604,7 +1604,7 @@ begin
   -- The Central Disposal Directorate OR the package's own yard may update
   -- delivery (yard admins confirm delivery from their Sold Packages table).
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
   update public.tender_sale_items
@@ -1652,11 +1652,11 @@ create policy destructions_manage on public.destructions
   for all
   using (
     public.auth_user_is_disposal()
-    or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+    or exists (select 1 from public.profiles where id = sr_auth.uid() and role = 'admin')
   )
   with check (
     public.auth_user_is_disposal()
-    or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+    or exists (select 1 from public.profiles where id = sr_auth.uid() and role = 'admin')
   );
 
 -- 2. ── destruction_items ───────────────────────────────────────────────────
@@ -1687,7 +1687,7 @@ create policy destruction_items_disposal on public.destruction_items
 drop policy if exists destruction_items_yard_read on public.destruction_items;
 create policy destruction_items_yard_read on public.destruction_items
   for select
-  using (yard = (select yard from public.profiles where id = auth.uid()));
+  using (yard = (select yard from public.profiles where id = sr_auth.uid()));
 
 -- 3. ── Mark a destruction item DESTROYED (cross-yard, security definer) ────
 create or replace function public.disposal_mark_destruction_item_destroyed(
@@ -1754,7 +1754,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'destroyed' where id = r.item_id;
 
@@ -1786,7 +1786,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -1902,7 +1902,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -1934,7 +1934,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 end;
@@ -2004,7 +2004,7 @@ set search_path = public
 as $$
   select exists(
     select 1 from public.profiles
-    where id = auth.uid() and role = 'appeal'
+    where id = sr_auth.uid() and role = 'appeal'
   );
 $$;
 
@@ -2086,7 +2086,7 @@ begin
      set appeal_hold      = p_hold,
          appeal_hold_note = case when p_hold then p_note else null end,
          appeal_held_at   = case when p_hold then now() else null end,
-         appeal_held_by   = case when p_hold then auth.uid() else null end
+         appeal_held_by   = case when p_hold then sr_auth.uid() else null end
    where id = p_forfeited_id;
 end;
 $$;
@@ -2169,7 +2169,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -2201,7 +2201,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -2288,7 +2288,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'destroyed' where id = r.item_id;
 
@@ -2320,7 +2320,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -2427,11 +2427,11 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- Trigger for auth.users
-drop trigger if exists on_auth_user_password_update on auth.users;
-DROP TRIGGER IF EXISTS on_auth_user_password_update ON auth.users;
+-- Trigger for sr_auth.users
+drop trigger if exists on_auth_user_password_update on sr_auth.users;
+DROP TRIGGER IF EXISTS on_auth_user_password_update ON sr_auth.users;
 CREATE TRIGGER on_auth_user_password_update
-  after update on auth.users
+  after update on sr_auth.users
   for each row execute procedure public.handle_password_update();
 
 
@@ -2491,7 +2491,7 @@ begin
          appeal_decision       = p_decision,
          appeal_decision_note  = p_note,
          appeal_decided_at     = now(),
-         appeal_decided_by     = auth.uid()
+         appeal_decided_by     = sr_auth.uid()
    where id = p_forfeited_id;
 end;
 $$;
@@ -2682,7 +2682,7 @@ set search_path = public
 as $$
   select exists(
     select 1 from public.profiles
-    where id = auth.uid() and role = 'valuation'
+    where id = sr_auth.uid() and role = 'valuation'
   );
 $$;
 
@@ -2841,7 +2841,7 @@ begin
     update public.disposal_requests
        set valuation_status = 'forwarded',
            valued_at = now(),
-           valued_by = auth.uid()
+           valued_by = sr_auth.uid()
      where id = p_request_id;
   end if;
 end;
@@ -2893,7 +2893,7 @@ begin
     raise exception 'destruction item not found';
   end if;
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
   update public.destruction_items
@@ -3001,7 +3001,7 @@ begin
            else null
          end,
          appeal_held_by = case
-           when array_length(v_new_ids, 1) > 0 then coalesce(appeal_held_by, auth.uid())
+           when array_length(v_new_ids, 1) > 0 then coalesce(appeal_held_by, sr_auth.uid())
            else null
          end
    where id = p_forfeited_id;
@@ -3056,7 +3056,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select yard from public.profiles where id = auth.uid();
+  select yard from public.profiles where id = sr_auth.uid();
 $$;
 
 -- 4. ── Enable RLS and add per-yard policies ────────────────────────────────
@@ -3067,13 +3067,13 @@ $$;
 alter table public.profiles enable row level security;
 drop policy if exists yard_profiles_select on public.profiles;
 create policy yard_profiles_select on public.profiles
-  for select using (id = auth.uid() or yard = public.auth_user_yard());
+  for select using (id = sr_auth.uid() or yard = public.auth_user_yard());
 drop policy if exists yard_profiles_update on public.profiles;
 create policy yard_profiles_update on public.profiles
-  for update using (id = auth.uid());
+  for update using (id = sr_auth.uid());
 drop policy if exists yard_profiles_insert on public.profiles;
 create policy yard_profiles_insert on public.profiles
-  for insert with check (id = auth.uid());
+  for insert with check (id = sr_auth.uid());
 
 -- Generic per-yard policy generator for the data tables
 do $$
@@ -3721,7 +3721,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'destroyed' where id = r.item_id;
 
@@ -3755,7 +3755,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -3928,7 +3928,7 @@ begin
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         coalesce(v_fp_entry_qty, r.qty), v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -3980,7 +3980,7 @@ begin
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note);
+        true, now(), sr_auth.uid(), v_note);
     end if;
   end if;
 
@@ -4020,7 +4020,7 @@ create policy tender_sales_yard_read on public.tender_sales
     exists (
       select 1
         from public.tender_sale_items tsi
-        join public.profiles p on p.id = auth.uid()
+        join public.profiles p on p.id = sr_auth.uid()
        where tsi.tender_sale_id = tender_sales.id
          and tsi.yard = p.yard
     )
@@ -4169,7 +4169,7 @@ begin
     values (
       v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
       coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
+      coalesce(v_rate, 0), true, now(), sr_auth.uid(), v_note);
 
     update public.package_items set status = 'destroyed' where id = v_target_item;
 
@@ -4428,7 +4428,7 @@ begin
     values (
       v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
       coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
+      coalesce(v_rate, 0), true, now(), sr_auth.uid(), v_note);
 
     update public.package_items set status = 'sold' where id = v_target_item;
 
@@ -4568,7 +4568,7 @@ begin
     values (
       v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
       coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
+      coalesce(v_rate, 0), true, now(), sr_auth.uid(), v_note);
 
     update public.package_items set status = 'destroyed' where id = v_target_item;
 
@@ -4682,7 +4682,7 @@ create policy destructions_yard_read on public.destructions
     exists (
       select 1
         from public.destruction_items di
-        join public.profiles p on p.id = auth.uid()
+        join public.profiles p on p.id = sr_auth.uid()
        where di.destruction_id = destructions.id
          and di.yard = p.yard
     )
@@ -4783,7 +4783,7 @@ begin
            else null
          end,
          appeal_held_by = case
-           when cardinality(v_new_ids) > 0 then coalesce(appeal_held_by, auth.uid())
+           when cardinality(v_new_ids) > 0 then coalesce(appeal_held_by, sr_auth.uid())
            else null
          end
    where id = p_forfeited_id;
@@ -4844,7 +4844,7 @@ begin
                     'decision',    p_decision,
                     'note',        p_note,
                     'decided_at',  now(),
-                    'decided_by',  auth.uid()
+                    'decided_by',  sr_auth.uid()
                   )),
            held_item_ids = v_new_ids,
            appeal_hold   = (cardinality(v_new_ids) > 0),
@@ -4866,7 +4866,7 @@ begin
            appeal_decision   = p_decision,
            appeal_decision_note = p_note,
            appeal_decided_at = now(),
-           appeal_decided_by = auth.uid()
+           appeal_decided_by = sr_auth.uid()
      where id = p_forfeited_id;
   end if;
 end;
@@ -4948,7 +4948,7 @@ set search_path = public
 as $$
   select exists(
     select 1 from public.profiles
-    where id = auth.uid() and role = 'executive'
+    where id = sr_auth.uid() and role = 'executive'
   );
 $$;
 
@@ -5103,7 +5103,7 @@ create table if not exists public.tender_bids (
                          references public.tender_sales(id) on delete cascade,
   amount               numeric not null,
   yard                 text,
-  created_by           uuid references auth.users(id),
+  created_by           uuid references sr_auth.users(id),
   created_at           timestamptz not null default now()
 );
 
@@ -5176,7 +5176,7 @@ create table if not exists public.tender_revaluations (
   valuation_cost       numeric not null,
   note                 text,
   yard                 text,
-  created_by           uuid references auth.users(id),
+  created_by           uuid references sr_auth.users(id),
   created_at           timestamptz not null default now()
 );
 
@@ -5323,7 +5323,7 @@ begin
   update public.disposal_requests
      set valuation_status = 'forwarded',
          valued_at = coalesce(valued_at, now()),
-         valued_by = coalesce(valued_by, auth.uid())
+         valued_by = coalesce(valued_by, sr_auth.uid())
    where id = v_request;
 end;
 $$;
@@ -5360,7 +5360,7 @@ begin
   update public.disposal_requests
      set valuation_status = 'forwarded',
          valued_at = coalesce(valued_at, now()),
-         valued_by = coalesce(valued_by, auth.uid())
+         valued_by = coalesce(valued_by, sr_auth.uid())
    where id = p_request_id;
 end;
 $$;
@@ -5394,7 +5394,7 @@ create table if not exists public.tender_committees (
   members              jsonb not null default '[]'::jsonb,
   note                 text,
   yard                 text,
-  created_by           uuid references auth.users(id),
+  created_by           uuid references sr_auth.users(id),
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
@@ -5424,7 +5424,7 @@ create policy tender_committees_appeal_read on public.tender_committees
 -- any authenticated yard officer to read committees for their own visibility.
 drop policy if exists tender_committees_auth_read on public.tender_committees;
 create policy tender_committees_auth_read on public.tender_committees
-  for select using (auth.role() = 'authenticated');
+  for select using (sr_auth.role() = 'authenticated');
 
 -- 4. ── Executive needs to READ the unsold-tender data + bids to list them ───
 --  (mirrors the valuation grants) so the DG page can compute the ≥4× packages.
@@ -5587,7 +5587,7 @@ alter table public.tender_committees
   add column if not exists committee_note     text,
   add column if not exists submitted_value    numeric,
   add column if not exists submitted_at       timestamptz,
-  add column if not exists submitted_by       uuid references auth.users(id);
+  add column if not exists submitted_by       uuid references sr_auth.users(id);
 
 -- The High Panel (DG appoints, ADG submits) already has full access via
 -- 20260718_tender_committees.sql. Central Disposal / Valuation keep read-only.
@@ -5630,7 +5630,7 @@ create table if not exists public.unsold_proposals (
                            ('destroy', 'remand', 'government_use', 'auction')),
   note                 text,
   yard                 text,
-  decided_by           uuid references auth.users(id),
+  decided_by           uuid references sr_auth.users(id),
   decided_at           timestamptz not null default now(),
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
@@ -5659,7 +5659,7 @@ create policy unsold_proposals_disposal_read on public.unsold_proposals
 drop policy if exists unsold_proposals_yard_read on public.unsold_proposals;
 create policy unsold_proposals_yard_read on public.unsold_proposals
   for select
-  using (yard = (select yard from public.profiles where id = auth.uid()));
+  using (yard = (select yard from public.profiles where id = sr_auth.uid()));
 
 -- 4. ── Valuation / Appeal: read-only context ─────────────────────────────────
 drop policy if exists unsold_proposals_valuation_read on public.unsold_proposals;
@@ -5962,7 +5962,7 @@ create table if not exists public.financial_expenses (
   yard        text,
   sr_number   text,
   incurred_on date        not null default current_date,
-  created_by  uuid        references auth.users(id),
+  created_by  uuid        references sr_auth.users(id),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
@@ -5995,7 +5995,7 @@ create policy financial_expenses_disposal_all on public.financial_expenses
 -- 3. ── Everyone else authenticated: read-only ───────────────────────────────
 drop policy if exists financial_expenses_read on public.financial_expenses;
 create policy financial_expenses_read on public.financial_expenses
-  for select using (auth.role() = 'authenticated');
+  for select using (sr_auth.role() = 'authenticated');
 
 -- 4. ── Realtime, so a posted expense updates every open Financials tab ──────
 do $$
@@ -6051,7 +6051,7 @@ drop policy if exists tender_bids_yard_read on public.tender_bids;
 create policy tender_bids_yard_read on public.tender_bids
   for select
   using (
-    yard = (select p.yard from public.profiles p where p.id = auth.uid())
+    yard = (select p.yard from public.profiles p where p.id = sr_auth.uid())
   );
 
 reset lock_timeout;
@@ -6100,13 +6100,13 @@ drop policy if exists tender_reval_yard_read on public.tender_revaluations;
 create policy tender_reval_yard_read on public.tender_revaluations
   for select
   using (
-    yard = (select p.yard from public.profiles p where p.id = auth.uid())
+    yard = (select p.yard from public.profiles p where p.id = sr_auth.uid())
     or exists (
       select 1
         from public.forfeited_packages fp
        where fp.id = tender_revaluations.forfeited_package_id
          and fp.yard = (select p.yard from public.profiles p
-                         where p.id = auth.uid())
+                         where p.id = sr_auth.uid())
     )
   );
 
@@ -6115,14 +6115,14 @@ create policy tender_reval_yard_read on public.tender_revaluations
 --    popup needs it. Kept separate from (1) so the yard rule stays explicit.
 drop policy if exists tender_reval_auth_read on public.tender_revaluations;
 create policy tender_reval_auth_read on public.tender_revaluations
-  for select using (auth.role() = 'authenticated');
+  for select using (sr_auth.role() = 'authenticated');
 
 -- 3. ── Committees: re-assert the blanket read ───────────────────────────────
 --    Already created by 20260718_tender_committees.sql; repeated here so a
 --    database that only ran the later migrations still lists the members.
 drop policy if exists tender_committees_auth_read on public.tender_committees;
 create policy tender_committees_auth_read on public.tender_committees
-  for select using (auth.role() = 'authenticated');
+  for select using (sr_auth.role() = 'authenticated');
 
 reset lock_timeout;
 
@@ -6331,15 +6331,15 @@ alter table public.warehouse_zones enable row level security;
 --    every capacity view needs them. Only an admin may change the layout.
 drop policy if exists warehouse_zones_read on public.warehouse_zones;
 create policy warehouse_zones_read on public.warehouse_zones
-  for select using (auth.role() = 'authenticated');
+  for select using (sr_auth.role() = 'authenticated');
 
 drop policy if exists warehouse_zones_admin_write on public.warehouse_zones;
 create policy warehouse_zones_admin_write on public.warehouse_zones
   for all
   using (exists (select 1 from public.profiles p
-                  where p.id = auth.uid() and p.role = 'admin'))
+                  where p.id = sr_auth.uid() and p.role = 'admin'))
   with check (exists (select 1 from public.profiles p
-                       where p.id = auth.uid() and p.role = 'admin'));
+                       where p.id = sr_auth.uid() and p.role = 'admin'));
 
 -- 3. ── Backfill from the zones already in use ───────────────────────────────
 --    Every distinct `warehouse_entries.zone` becomes a real zone. Its capacity
@@ -6903,7 +6903,7 @@ set search_path = public
 as $fn$
   select exists (
     select 1 from public.profiles p
-     where p.id = auth.uid()
+     where p.id = sr_auth.uid()
        and p.role = 'ict'
        and p.is_active
   );
@@ -7163,15 +7163,15 @@ alter table public.profiles enable row level security;
 
 drop policy if exists yard_profiles_select on public.profiles;
 create policy yard_profiles_select on public.profiles
-  for select using (id = auth.uid() or yard = public.auth_user_yard());
+  for select using (id = sr_auth.uid() or yard = public.auth_user_yard());
 
 drop policy if exists yard_profiles_update on public.profiles;
 create policy yard_profiles_update on public.profiles
-  for update using (id = auth.uid());
+  for update using (id = sr_auth.uid());
 
 drop policy if exists yard_profiles_insert on public.profiles;
 create policy yard_profiles_insert on public.profiles
-  for insert with check (id = auth.uid());
+  for insert with check (id = sr_auth.uid());
 
 -- 2. ── Data tables: caller's yard only, for every role ─────────────────────
 do $$
@@ -7379,7 +7379,7 @@ analyze public.warehouse_entries;
 -- Database-wide yard boundary for every operational table with a `yard`.
 --
 -- Older schema policies include permissive rules such as
--- `auth.role() = 'authenticated'`. PostgreSQL combines permissive policies
+-- `sr_auth.role() = 'authenticated'`. PostgreSQL combines permissive policies
 -- with OR, so that old rule could override `yard_all` and leak a GL1 row to a
 -- GL2 officer. This migration adds a RESTRICTIVE policy instead: restrictive
 -- policies are AND-ed with every permissive policy, so no old or future broad
@@ -7401,7 +7401,7 @@ as $$
   select exists (
     select 1
       from public.profiles p
-     where p.id = auth.uid()
+     where p.id = sr_auth.uid()
        and lower(coalesce(p.role, '')) in ('officer', 'admin')
   );
 $$;
@@ -7516,7 +7516,7 @@ end $$;
 -- 1. It recurses. It asks whether the caller is an admin by reading profiles
 --    INLINE:
 --
---      EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role='admin')
+--      EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role='admin')
 --
 --    That subquery is itself subject to the policies on profiles, so deciding
 --    whether profiles may be read requires reading profiles: PostgreSQL error
@@ -8016,7 +8016,7 @@ begin
   end if;
 
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 
@@ -8026,7 +8026,7 @@ begin
      set other_delivered    = p_delivered,
          other_delivered_at =
            case when p_delivered then coalesce(p_handed_at, now()) end,
-         other_delivered_by = case when p_delivered then auth.uid() end,
+         other_delivered_by = case when p_delivered then sr_auth.uid() end,
          handover_receipt_no = case when p_delivered then p_receipt_no
                                     else handover_receipt_no end,
          handover_charge     = case when p_delivered then p_charge
@@ -8109,7 +8109,7 @@ grant execute on function public.profile_served_in_my_yard(uuid) to authenticate
 drop policy if exists yard_profiles_select on public.profiles;
 create policy yard_profiles_select on public.profiles
   for select using (
-    id = (select auth.uid())
+    id = (select sr_auth.uid())
     or yard = (select public.auth_user_yard())
     -- Someone who has since moved on, but whose service here is recorded.
     or (select public.profile_served_in_my_yard(id))
@@ -8782,7 +8782,7 @@ end $$;
 --
 -- ⚠️ Rejecting the sign-in is NOT the fix, which is why this took a different
 -- shape. A password is changed from INSIDE a signed-in session
--- (auth.change_password runs after auth.sign_in), so an account whose sign-in
+-- (sr_auth.change_password runs after sr_auth.sign_in), so an account whose sign-in
 -- is refused can never reach the screen that would fix it: the rule would
 -- permanently lock out exactly the people it is meant to prompt. The account
 -- would need ICT to reset it, turning a routine 90-day prompt into a support
@@ -8793,19 +8793,19 @@ end $$;
 --
 -- ── How ─────────────────────────────────────────────────────────────────────
 --
--- `auth.uid()` is the root of the whole authorization model: all 132 RLS
+-- `sr_auth.uid()` is the root of the whole authorization model: all 132 RLS
 -- policies in `public` are written in terms of it. If it returns NULL the user
 -- is, to every policy, signed out -- no yard, no packages, no profile. That is
 -- precisely the state we want an expired password to be in.
 --
--- ⚠️ The age is NOT looked up inside auth.uid(). It is called once per policy
+-- ⚠️ The age is NOT looked up inside sr_auth.uid(). It is called once per policy
 -- per row, so a `select ... from profiles` in its body would add a lookup to
 -- every row of every query in the app. Instead the verdict is computed ONCE,
 -- when the connection announces who it is, and parked in a session variable
--- that auth.uid() reads for free.
+-- that sr_auth.uid() reads for free.
 --
--- ⚠️ auth.change_password keeps working because it is SECURITY DEFINER and
--- takes the user id as an ARGUMENT -- it never calls auth.uid(). That is what
+-- ⚠️ sr_auth.change_password keeps working because it is SECURITY DEFINER and
+-- takes the user id as an ARGUMENT -- it never calls sr_auth.uid(). That is what
 -- makes the one permitted action possible from inside the locked state. It is
 -- also why this migration tightens that function: taking an id as a parameter
 -- means it must verify the caller owns it, or a locked session could change
@@ -8818,12 +8818,12 @@ end $$;
 --
 -- SECURITY DEFINER: a session that is about to be locked out still has to be
 -- able to ask whether it is locked out.
-create or replace function auth.password_is_expired(p_user_id uuid)
+create or replace function sr_auth.password_is_expired(p_user_id uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public
 as $fn$
   select coalesce(
     (select (now() - coalesce(p.password_updated_at, p.created_at))
@@ -8833,19 +8833,19 @@ as $fn$
     false)  -- no profile row: not this rule's business to decide
 $fn$;
 
-revoke all on function auth.password_is_expired(uuid) from public;
-grant execute on function auth.password_is_expired(uuid) to public;
+revoke all on function sr_auth.password_is_expired(uuid) from public;
+grant execute on function sr_auth.password_is_expired(uuid) to public;
 
 -- ── 2. Announcing the session sets the flag ─────────────────────────────────
 --
 -- The client calls this instead of setting app.current_user_id by hand, so
 -- the CLIENT cannot choose its own answer: it supplies who it is, and the
 -- database decides whether that identity is still usable.
-create or replace function auth.begin_session(p_user_id text, p_role text)
+create or replace function sr_auth.begin_session(p_user_id text, p_role text)
 returns void
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public
 as $fn$
 declare
   v_id      uuid;
@@ -8853,7 +8853,7 @@ declare
 begin
   v_id := nullif(trim(coalesce(p_user_id, '')), '')::uuid;
   if v_id is not null then
-    v_expired := auth.password_is_expired(v_id);
+    v_expired := sr_auth.password_is_expired(v_id);
   end if;
 
   -- Always set all three, and never conditionally: a pooled connection is
@@ -8865,15 +8865,15 @@ begin
 end;
 $fn$;
 
-revoke all on function auth.begin_session(text, text) from public;
-grant execute on function auth.begin_session(text, text) to public;
+revoke all on function sr_auth.begin_session(text, text) from public;
+grant execute on function sr_auth.begin_session(text, text) to public;
 
--- ── 3. auth.uid() honours the flag ──────────────────────────────────────────
+-- ── 3. sr_auth.uid() honours the flag ──────────────────────────────────────────
 --
 -- ⚠️ Still a one-line, STABLE, no-table-access function. It reads two session
 -- variables instead of one; it does not become a query. Every policy that
 -- calls it keeps the same cost.
-create or replace function auth.uid()
+create or replace function sr_auth.uid()
 returns uuid
 language sql
 stable
@@ -8884,16 +8884,16 @@ as $fn$
          end;
 $fn$;
 
--- ── 3b. auth.role() honours it too ──────────────────────────────────────────
+-- ── 3b. sr_auth.role() honours it too ──────────────────────────────────────────
 --
--- ⚠️ auth.uid() is NOT the only root. 13 policies are written against
--- auth.role() instead -- "Officers can view all packages" is simply
--- `auth.role() = 'authenticated'` -- and that function reads
+-- ⚠️ sr_auth.uid() is NOT the only root. 13 policies are written against
+-- sr_auth.role() instead -- "Officers can view all packages" is simply
+-- `sr_auth.role() = 'authenticated'` -- and that function reads
 -- app.current_role, which the flag above does not touch. Verified the hard
--- way: with only auth.uid() gated, a locked session still read all 176
+-- way: with only sr_auth.uid() gated, a locked session still read all 176
 -- packages and all 320 forfeited packages. An expired password has to look
 -- like 'anon' to these policies for the lock to mean anything.
-create or replace function auth.role()
+create or replace function sr_auth.role()
 returns text
 language sql
 stable
@@ -8913,14 +8913,14 @@ $fn$;
 
 -- ── 4. The one action that must still work ──────────────────────────────────
 --
--- ⚠️ Also the one hole this opens. auth.change_password takes the user id as
+-- ⚠️ Also the one hole this opens. sr_auth.change_password takes the user id as
 -- an argument and is SECURITY DEFINER, so before this it would change ANY
 -- user's password for any caller who knew their id -- and a locked session is
 -- exactly a caller with a reason to try. The real identity is
--- app.current_user_id (the flag hides it from auth.uid(), but it is still
+-- app.current_user_id (the flag hides it from sr_auth.uid(), but it is still
 -- there), so the function can insist the target is the caller.
 -- ⚠️ Order matters: the original body is copied to
--- auth.change_password_unchecked FIRST, then change_password is replaced by a
+-- sr_auth.change_password_unchecked FIRST, then change_password is replaced by a
 -- wrapper that calls it. Doing it the other way round would copy the wrapper
 -- into the unchecked function and produce infinite recursion.
 do $$
@@ -8932,9 +8932,9 @@ begin
   -- not. That is the marker, so re-running changes nothing.
   select pg_get_functiondef(oid) into body
     from pg_proc
-   where proname = 'change_password' and pronamespace = 'auth'::regnamespace;
+   where proname = 'change_password' and pronamespace = 'sr_auth'::regnamespace;
 
-  -- ⚠️ Guarded, not asserted. auth.change_password is not defined in
+  -- ⚠️ Guarded, not asserted. sr_auth.change_password is not defined in
   -- 01_auth_and_session.sql or anywhere else in postgres/ -- it was added to
   -- the running database by hand, like the views postgres/23 and /32 build.
   -- So on the fresh database 02_schema.sql stands up it does not exist yet,
@@ -8943,7 +8943,7 @@ begin
   -- caller-owns-the-account check on a function that is not there yet is
   -- skipped.
   if body is null then
-    raise notice 'auth.change_password not present; skipping its guard';
+    raise notice 'sr_auth.change_password not present; skipping its guard';
     return;
   end if;
   if body like '%app.current_user_id%' then
@@ -8954,28 +8954,28 @@ begin
   -- function itself. The policy check, the "must differ" rule and the bcrypt
   -- cost travel with it verbatim — retyping them is how two copies drift.
   src := replace(body,
-                 'FUNCTION auth.change_password(',
-                 'FUNCTION auth.change_password_unchecked(');
+                 'FUNCTION sr_auth.change_password(',
+                 'FUNCTION sr_auth.change_password_unchecked(');
   if src = body then
     raise exception 'could not rename the body; definition shape changed';
   end if;
   execute src;
 
-  execute 'revoke all on function auth.change_password_unchecked(uuid, text) from public';
+  execute 'revoke all on function sr_auth.change_password_unchecked(uuid, text) from public';
 
   -- Now the guarded front door.
   execute $ddl$
-    create or replace function auth.change_password(p_user_id uuid, p_password text)
+    create or replace function sr_auth.change_password(p_user_id uuid, p_password text)
     returns void
     language plpgsql
     security definer
-    set search_path = auth, public
+    set search_path = sr_auth, public
     as $body$
     declare
       v_caller uuid;
     begin
       -- ⚠️ The caller's REAL id, read straight from the session variable
-      -- rather than through auth.uid() -- which is null precisely when this
+      -- rather than through sr_auth.uid() -- which is null precisely when this
       -- function is most needed, because the password has expired.
       v_caller := nullif(current_setting('app.current_user_id', true), '')::uuid;
 
@@ -8984,7 +8984,7 @@ begin
           using errcode = '42501';
       end if;
 
-      perform auth.change_password_unchecked(p_user_id, p_password);
+      perform sr_auth.change_password_unchecked(p_user_id, p_password);
     end;
     $body$;
   $ddl$;
@@ -8998,39 +8998,39 @@ begin
   -- A fresh session with no flag set must behave exactly as before.
   perform set_config('app.current_user_id', '', false);
   perform set_config('app.password_expired', '', false);
-  if auth.uid() is not null then
-    raise exception 'auth.uid() must be null when signed out';
+  if sr_auth.uid() is not null then
+    raise exception 'sr_auth.uid() must be null when signed out';
   end if;
 
   -- A normal session sees its id.
   perform set_config('app.current_user_id',
                      '11111111-1111-1111-1111-111111111111', false);
   perform set_config('app.password_expired', 'off', false);
-  if auth.uid() is null then
-    raise exception 'auth.uid() must return the id of a healthy session';
+  if sr_auth.uid() is null then
+    raise exception 'sr_auth.uid() must return the id of a healthy session';
   end if;
 
   -- An expired one is, to every policy, nobody.
   perform set_config('app.password_expired', 'on', false);
-  if auth.uid() is not null then
+  if sr_auth.uid() is not null then
     raise exception
-      'an expired password must make auth.uid() null, or the 132 RLS '
+      'an expired password must make sr_auth.uid() null, or the 132 RLS '
       'policies keep letting the session read';
   end if;
 
-  -- ⚠️ And the OTHER root. Gating auth.uid() alone left a locked session
+  -- ⚠️ And the OTHER root. Gating sr_auth.uid() alone left a locked session
   -- reading every package in the database, because those policies ask
-  -- auth.role() instead.
+  -- sr_auth.role() instead.
   perform set_config('app.current_role', 'authenticated', false);
   perform set_config('app.password_expired', 'on', false);
-  if auth.role() <> 'anon' then
+  if sr_auth.role() <> 'anon' then
     raise exception
-      'an expired password must read as anon, or the 13 auth.role() '
+      'an expired password must read as anon, or the 13 sr_auth.role() '
       'policies keep letting the session read';
   end if;
 
   perform set_config('app.password_expired', 'off', false);
-  if auth.role() <> 'authenticated' then
+  if sr_auth.role() <> 'authenticated' then
     raise exception 'a healthy session must keep its role';
   end if;
 
@@ -9049,7 +9049,7 @@ end $$;
 -- A locked session must still be able to read ITS OWN profile row.
 --
 -- ⚠️ Migration 018 locked an expired password out of everything by making
--- auth.uid() null and auth.role() 'anon'. That was too complete: the app
+-- sr_auth.uid() null and sr_auth.role() 'anon'. That was too complete: the app
 -- discovers that a password has expired by READING THE PROFILE
 -- (ProfileModel.isPasswordExpired is computed from password_updated_at), and
 -- the profile is exactly what 018 stopped it from reading.
@@ -9067,8 +9067,8 @@ end $$;
 -- ⚠️ The fix is ONE row, not a relaxation. This policy matches a single
 -- profile -- the caller's own -- and only while the session is flagged
 -- expired. It is written against `app.current_user_id` rather than
--- auth.uid(), because auth.uid() is precisely what is null here; that is the
--- same reasoning that lets auth.change_password keep working.
+-- sr_auth.uid(), because sr_auth.uid() is precisely what is null here; that is the
+-- same reasoning that lets sr_auth.change_password keep working.
 --
 -- Everything else stays shut: other people's profiles, packages, warehouses,
 -- tender sales. The session can see who it is and that its password has
@@ -9079,11 +9079,11 @@ end $$;
 
 -- The caller's REAL id, regardless of the expiry flag.
 --
--- ⚠️ Deliberately separate from auth.uid(). auth.uid() answers "who may act",
+-- ⚠️ Deliberately separate from sr_auth.uid(). sr_auth.uid() answers "who may act",
 -- which is nobody while a password is expired; this answers "whose session is
 -- this", which still has a truthful answer. Keeping them apart is what stops
 -- a future edit from accidentally re-opening the lock by widening one of them.
-create or replace function auth.session_user_id()
+create or replace function sr_auth.session_user_id()
 returns uuid
 language sql
 stable
@@ -9091,8 +9091,8 @@ as $fn$
   select nullif(current_setting('app.current_user_id', true), '')::uuid;
 $fn$;
 
-comment on function auth.session_user_id() is
-  'The signed-in user id, even when the password has expired and auth.uid() '
+comment on function sr_auth.session_user_id() is
+  'The signed-in user id, even when the password has expired and sr_auth.uid() '
   'is therefore null. For the narrow set of things a locked session must '
   'still do: read its own profile, and change its own password.';
 
@@ -9107,7 +9107,7 @@ create policy profiles_expired_self_read on public.profiles
   for select
   using (
     current_setting('app.password_expired', true) = 'on'
-    and id = auth.session_user_id()
+    and id = sr_auth.session_user_id()
   );
 
 -- ── Verification ────────────────────────────────────────────────────────────
@@ -9128,7 +9128,7 @@ begin
   perform set_config('app.password_expired', 'on', false);
 
   -- The lock must still be in force.
-  if auth.uid() is not null or auth.role() <> 'anon' then
+  if sr_auth.uid() is not null or sr_auth.role() <> 'anon' then
     raise exception 'migration 018 is not in effect; apply it first';
   end if;
 
@@ -9136,9 +9136,9 @@ begin
   -- prove the policy works -- only that the pieces it needs are right. The
   -- real check is the yard_app session in the migration header, which
   -- returned 1 own row and 0 of everything else.
-  if auth.session_user_id() <> v_id then
+  if sr_auth.session_user_id() <> v_id then
     raise exception
-      'auth.session_user_id() must survive the expiry flag, or a locked '
+      'sr_auth.session_user_id() must survive the expiry flag, or a locked '
       'session cannot find out why it is locked';
   end if;
 
@@ -9262,7 +9262,7 @@ end $$;
 -- ==========================================================================
 
 -- ============================================================================
--- Every RLS policy here calls no-argument helpers — auth.uid(), auth.role(),
+-- Every RLS policy here calls no-argument helpers — sr_auth.uid(), sr_auth.role(),
 -- auth_user_yard(), auth_user_is_*() — and PostgreSQL was calling them ONCE
 -- PER ROW. Each of those helpers runs `select ... from profiles`, so reading
 -- 176 packages meant hundreds of profile lookups:
@@ -9300,9 +9300,9 @@ declare
   stmt text;
   -- Unwrap: pg_get_expr renders a wrapped call as "( SELECT f() AS f)".
   unwrap_re constant text :=
-    '\( SELECT (auth\.uid|auth\.role|auth_user_[a-z_]+)\(\) AS [a-z_]+\)';
+    '\( SELECT (sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\) AS [a-z_]+\)';
   -- Wrap: only zero-argument calls, so warehouse_yard(warehouse_id) is safe.
-  wrap_re constant text := '(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)';
+  wrap_re constant text := '(sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\)';
 begin
   for r in
     select c.relname                              as tbl,
@@ -9362,9 +9362,9 @@ begin
      and (
        -- a bare call is one NOT preceded by "SELECT "
        coalesce(pg_get_expr(p.polqual, p.polrelid), '')
-         ~ '(?<!SELECT )(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)'
+         ~ '(?<!SELECT )(sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\)'
        or coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')
-         ~ '(?<!SELECT )(auth\.uid|auth\.role|auth_user_[a-z_]+)\(\)'
+         ~ '(?<!SELECT )(sr_auth\.uid|sr_auth\.role|auth_user_[a-z_]+)\(\)'
      );
 
   if bad is not null then

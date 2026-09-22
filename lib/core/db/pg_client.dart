@@ -74,7 +74,7 @@ class PgClient {
     // ⚠️ The driver's `Severity.error 22023: ` prefix is stripped in
     // PgDatabase._run, which both query() and execute() go through — not
     // here, where it only covered RPCs and left a direct
-    // `select auth.change_password(...)` still showing the raw string.
+    // `select sr_auth.change_password(...)` still showing the raw string.
     final rows = await PgDatabase.instance.query(sql, parameters: bound);
 
     if (rows.isEmpty) return null;
@@ -108,7 +108,7 @@ class PgClient {
   /// Both halves are validated, then quoted, so a name containing a dot is
   /// read as `"schema"."function"` and never as one identifier — and a stray
   /// quote is rejected outright rather than escaped into something that still
-  /// parses. `auth.record_failed_login` is a real call site, so the two-part
+  /// parses. `sr_auth.record_failed_login` is a real call site, so the two-part
   /// form has to keep working.
   static String _qualify(String fn) {
     final parts = fn.split('.');

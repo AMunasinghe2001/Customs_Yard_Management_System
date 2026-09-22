@@ -1,5 +1,5 @@
 -- ============================================================================
---  Dormancy must read auth.users.last_sign_in_at, not profiles.last_seen_at.
+--  Dormancy must read sr_auth.users.last_sign_in_at, not profiles.last_seen_at.
 --
 --  ⚠️ Migration 021 got this WRONG, and the error disabled live accounts that
 --  were in daily use.
@@ -18,7 +18,7 @@
 --  read as dormant, because it was created in March and its heartbeat was
 --  nulled on the way out.
 --
---  `auth.users.last_sign_in_at` is the right clock. auth.sign_in sets it on
+--  `sr_auth.users.last_sign_in_at` is the right clock. sr_auth.sign_in sets it on
 --  every successful sign-in and nothing clears it, so it means exactly what
 --  the rule needs: when did this account last actually get used.
 --
@@ -42,7 +42,7 @@ as $fn$
   select coalesce(u.last_sign_in_at, p.created_at)
            < now() - make_interval(days => public.account_dormant_after_days())
     from public.profiles p
-    join auth.users u on u.id = p.id
+    join sr_auth.users u on u.id = p.id
    where p.id = p_id;
 $fn$;
 
@@ -63,7 +63,7 @@ begin
            deactivated_reason = 'dormant',
            deactivated_at = now(),
            updated_at = now()
-      from auth.users u
+      from sr_auth.users u
      where u.id = p.id
        and p.is_active
        and coalesce(u.last_sign_in_at, p.created_at)
@@ -101,7 +101,7 @@ begin
          updated_at = now()
    where id = p_id;
 
-  update auth.users
+  update sr_auth.users
      set last_sign_in_at = now()
    where id = p_id;
 end;
@@ -122,7 +122,7 @@ declare
 begin
   for r in select p.id, p.full_name
              from public.profiles p
-             join auth.users u on u.id = p.id
+             join sr_auth.users u on u.id = p.id
             where not p.is_active
               and p.deactivated_reason = 'dormant'
               and coalesce(u.last_sign_in_at, p.created_at)
@@ -148,7 +148,7 @@ begin
   -- a clean sign-out, account older than the dormancy window.
   select p.id into v_id
     from public.profiles p
-    join auth.users u on u.id = p.id
+    join sr_auth.users u on u.id = p.id
    where p.created_at < now() - interval '91 days'
    limit 1;
 
@@ -157,7 +157,7 @@ begin
     return;
   end if;
 
-  update auth.users set last_sign_in_at = now() where id = v_id;
+  update sr_auth.users set last_sign_in_at = now() where id = v_id;
   update public.profiles set last_seen_at = null where id = v_id;
 
   if public.account_is_dormant(v_id) then
@@ -167,12 +167,12 @@ begin
   end if;
 
   -- And a genuinely unused one is still caught.
-  update auth.users set last_sign_in_at = now() - interval '91 days'
+  update sr_auth.users set last_sign_in_at = now() - interval '91 days'
    where id = v_id;
   if not public.account_is_dormant(v_id) then
     raise exception 'an account unused for 91 days is not caught';
   end if;
 
-  update auth.users set last_sign_in_at = now() where id = v_id;
+  update sr_auth.users set last_sign_in_at = now() where id = v_id;
   raise notice 'dormancy now reads last_sign_in_at - verified';
 end $$;

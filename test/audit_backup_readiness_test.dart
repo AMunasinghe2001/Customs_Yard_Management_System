@@ -102,13 +102,13 @@ void main() {
       // another user's id was accepted until this went into the trigger.
       expect(sql,
           contains('cannot write an entry attributed to another user'));
-      expect(sql, contains('new.user_id <> auth.uid()'));
+      expect(sql, contains('new.user_id <> sr_auth.uid()'));
     });
   });
 
   group('the events that were never logged', () {
     test('failed logins are recorded, including for unknown accounts', () {
-      final i = sql.indexOf('function auth.record_failed_login');
+      final i = sql.indexOf('function sr_auth.record_failed_login');
       expect(i, greaterThan(-1));
       final body = sql.substring(i, sql.indexOf(r'$fn$;', i));
       expect(body, contains('insert into public.audit_logs'));
@@ -123,7 +123,7 @@ void main() {
       // profile made the insert violate it, and because the insert runs
       // inside record_failed_login the violation propagated out and failed
       // the whole sign-in attempt.
-      final i = sql.indexOf('function auth.record_failed_login');
+      final i = sql.indexOf('function sr_auth.record_failed_login');
       final body = sql.substring(i, sql.indexOf(r'$fn$;', i));
       expect(body, contains('v_has_profile'));
       expect(body, contains('from public.profiles p where p.id = v_user_id'));
@@ -142,7 +142,7 @@ void main() {
     test('a privilege change records who did it, not who it was done to', () {
       final i = sql.indexOf('function public.profiles_audit_privilege_change');
       final body = sql.substring(i, sql.indexOf(r'$fn$;', i));
-      expect(body, contains('auth.uid()'));
+      expect(body, contains('sr_auth.uid()'));
       expect(body, contains('subject_id'));
     });
 

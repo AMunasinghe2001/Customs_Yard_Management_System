@@ -2130,6 +2130,183 @@ large ones (`disposal_dashboard_screen`, `disposition_category_screen`)
 the checkout discarded only the reformat. Worth knowing before assuming a
 revert loses work.
 
+#### One command builds the whole database (2026-09-22)
+
+```powershell
+.\postgres\install_all.ps1 -Target supabase `
+    -YardAppPassword '<app login>' -IctPassword '<first ICT account>'
+```
+
+⚠️ **Both passwords are needed or the build is incomplete**, and the
+script says which. Two files carry their own placeholders and are
+substituted into a temp copy (never the command line, never the history):
+`66`/`91` create the `yard_app` login, and `68` creates the FIRST ICT
+account. Without `-IctPassword` the schema is perfect and **nobody can sign
+in** — `sr_auth.users` is empty.
+
+⚠️ `68` refuses a password the APP would reject (12-24 chars, upper,
+lower, digit, symbol). That is deliberate: an account whose holder cannot
+re-enter their own password at the first rotation is worse than no account.
+
+**Verified end to end on a clean database:** 104 clean / 12 data-only
+verifies, 37 tables / 25 views / 160 policies, `yard_app` created
+(`super=false bypassrls=false`), ICT account created, and sign-in works
+(good password 1 row, bad password 0).
+
+**On the live Supabase project**, after this ran:
+```
+PASS 1 (as yard_app)  yard_app is subject to RLS
+PASS 2                uuid-ossp, pgcrypto, dblink
+WARN 3                dblink cannot self-connect  <- expected there
+PASS 3b               the 047 queue catches it, so refusals are not lost
+INFO 4                37 tables, 160 policies, 65 SECURITY DEFINER
+INFO 5                14 of 60 connections
+```
+⚠️ Check 1 FAILS when the readiness script is run **as `postgres`**, and
+that is correct — that account does bypass RLS. Run it as `yard_app`, which
+is what the app connects as.
+
+#### The login role must be created MID-RUN (2026-09-22)
+
+⚠️ **`role "yard_app" does not exist` was not cosmetic** — it was the whole
+`36/24/156` vs `37/25/160` gap. Migration 037 has a bare
+`grant ... to yard_app` partway through, so a missing role **aborts the file**
+and takes its 1 table, 1 view and 4 policies with it. The counts were telling
+the truth all along.
+
+`install_all.ps1` now creates the role **between** the `postgres/` files and
+the migrations (`-YardAppPassword <pw>`), because six files grant to it. Run
+without the password it skips the step and says loudly what will be missing.
+
+⚠️ **A placeholder that appears in its OWN guard gets substituted too.**
+`postgres/66` and `/91` had
+
+```
+if coalesce(v_pw,'') in ('', 'CHANGE_ME_BEFORE_RUNNING')
+```
+
+so the script's blanket `.Replace()` rewrote the sentinel as well, the guard
+became `in ('', '<the real password>')`, and the correct password was
+**rejected**. The sentinel is now assembled (`'CHANGE_ME' || '_BEFORE_RUNNING'`)
+so only the `set_config()` line is rewritten. Both paths tested: placeholder
+left in place refuses, substituted accepts.
+
+⚠️ Two more that cost a round trip each: `postgres/66` hardcoded
+`database "Customs_SR_DB"` (fails on the backup copy — now
+`current_database()`), and it used a bare `create role`, so it could not be
+re-run. And `Set-Content -Encoding utf8` on PowerShell 5.1 writes a **BOM**
+that psql reads as part of the first token — use
+`[IO.File]::WriteAllText(..., UTF8Encoding($false))`.
+
+**Verified end to end on a clean database:** 103 clean / 13 data-only
+verifies, 37 tables / 25 views / 160 policies, `yard_app` created with
+`super=false bypassrls=false`, logs in, and sign-in works (good password 1
+row, bad password 0).
+
+#### `sign_in` returned two different column names (2026-09-22)
+
+⚠️ **`cannot change return type of existing function`** on a FRESH build,
+in migrations 021, 032 and 047. Not caused by the rename — a long-standing
+inconsistency that only a from-scratch build reveals, because on an existing
+database the function is already there and `create or replace` never has to
+change anything.
+
+Three files define `sr_auth.sign_in`, and they disagreed:
+
+```
+postgres/04_auth.sql   meta                <- outlier
+migrations/021         meta                <- outlier
+migrations/032         raw_user_meta_data
+migrations/047         raw_user_meta_data
+```
+
+PostgreSQL will not change a returned column's **NAME** with
+`create or replace`, so whichever ran second failed.
+
+⚠️ **The app decides which is right**: `pg_auth.dart` selects
+`raw_user_meta_data as meta` from `sign_in`, so 032/047 were correct and
+04/021 were wrong. Fixed both. `sign_up` legitimately uses `meta` (035 and
+the app agree), so it was left alone — the two functions genuinely differ.
+
+⚠️ **A fresh build is the only thing that finds this class of bug.**
+The office and local databases have been carrying the mismatch for months
+without symptoms.
+
+#### pgcrypto lives in `extensions` on Supabase (2026-09-22)
+
+⚠️ **`function gen_salt(unknown, integer) does not exist`** on Supabase,
+in every password path (04_auth, 05_password_reset, 035, 036). Not a missing
+extension — pgcrypto IS installed, just into the **`extensions`** schema
+rather than `public`.
+
+The session `search_path` there is `"$user", public, extensions`, so ad-hoc
+SQL finds it. But our functions pin their own
+`set search_path = sr_auth, public`, which excludes it — and a function's
+own search_path wins.
+
+Fixed by appending `, extensions` to the 19 search_path clauses in the files
+that call pgcrypto. ⚠️ **Safe on every target**: a schema named in
+search_path that does not exist is simply ignored (verified against the
+local server, where pgcrypto is in `public`).
+
+⚠️ `01_auth_and_session.sql` and `68_finish_server_setup.sql` call
+pgcrypto at TOP LEVEL, not inside a function, so they use the session path
+and needed no change — worth knowing before "fixing" them too.
+
+### The `auth` schema became `sr_auth` (2026-09-22)
+
+⚠️ **Supabase OWNS `auth`, and that is not negotiable.** Measured on the live
+project: owner `supabase_admin`, `has_schema_privilege(CREATE)` = **false**.
+14 of our SQL files died with *"permission denied for schema auth"*.
+
+⚠️ **The subtler half is the real reason a rename was the only way out.**
+Supabase already has an `auth.uid()` — and it reads a **JWT claim**
+(`request.jwt.claim.sub`) while ours reads the session variable the desktop
+app sets (`app.current_user_id`). Same name, different source. Had the
+policies loaded there, all 189 would have called *theirs*, got NULL, and
+**denied every row silently**.
+
+**Scope:** 602 replacements across 53 source files, 50 more across 13 test
+files. Done with a reviewable script, not by hand.
+
+⚠️ **Three things that must NOT be renamed**, and the script proves each with
+a case:
+- audit `entity_type` values — `values (null, '...', 'auth', 'migration')` is
+  **data**. Renaming it rewrites history.
+- Dart's `auth.currentUser` / `auth.currentSession` — properties on a Dart
+  object, not SQL.
+- Supabase's own `auth.users`, now left strictly alone.
+
+⚠️ **THE BUG THE RENAME INTRODUCED, caught only by rebuilding:** migration
+012 hoists helpers by rewriting stored policy text with the regex
+`(auth\.uid|auth\.role|...)`. That literal sits inside a string, so the
+rename skipped it — and it then matched the `auth.uid()` **inside**
+`sr_auth.uid()`, producing `sr_(select auth.uid())` and
+`ERROR: syntax error at or near "select"`. Fixed in `postgres/02_schema.sql`
+and `migrations/012` (8 lines, 2 files). **A rename that only touches
+identifiers misses the regexes that match them.**
+
+⚠️ **A SCHEMA RENAME DOES NOT REACH INSIDE FUNCTION BODIES.** After
+`alter schema auth rename to sr_auth`, **48 function bodies** still said
+`auth.…` — `sr_auth.sign_in` was still calling `auth.sign_in_before_flush`,
+so the first login failed with *schema "auth" does not exist*. The
+definitions must be re-applied from the renamed files afterwards.
+[migrations/048](migrations/048_the_auth_schema_becomes_sr_auth.sql) now
+**refuses to pass** while any body still names the old schema, so a
+half-done migration cannot look finished.
+
+⚠️ **The FRESH build is clean; an in-place migration is not.** Verified:
+a fresh `install_all.ps1` gives 37 tables / 25 views / 160 policies with
+**0 stale bodies and 0 stale policies**. Re-running it over a renamed
+existing database still leaves ~18, because `02_schema.sql` aborts on
+pre-existing constraints and never re-creates its functions. **For the
+office/local databases, rebuild rather than migrate in place** — or expect
+to chase the stragglers.
+
+Auth proven working on `sr_auth`: correct password → 1 row, wrong password →
+0 rows, `uid()` NULL when signed out (so policies deny, which is the safe
+direction).
+
 ### Hosting: back to Supabase, on the free tier (2026-09-21)
 
 Evaluated Namecheap shared hosting, a VPS and Supabase. **Namecheap shared
@@ -2270,6 +2447,89 @@ honour it. Profiles: **supabase** (cloud), **local** (`Customs_SR_DB`),
 ⚠️ **Two tests read the live `.env` and broke on it** — `app_env_test`
 looked for a bare `PG_DATABASE=` and died on a null check. It is now
 profile-aware and `fail()`s with a message naming the missing key.
+
+#### `Pool` ignored securityContext — a package bug (2026-09-22)
+
+⚠️ **The same "Bad server certificate" had a THIRD cause, and it was not
+in our code.** With the CA resolving correctly and the context built, the app
+still failed — while a standalone Dart client connected with the identical
+path and settings. Side by side, same inputs:
+
+```
+POOL     FAIL        <- ignores securityContext
+DIRECT   CONNECTED   <- honours it
+```
+
+In `postgres 3.5.12`, `ResolvedConnectionSettings` falls back for every
+field except one:
+
+```dart
+securityContext = settings?.securityContext,   // no ?? fallback
+```
+
+`pool_impl.dart` passes the per-call settings as `settings` and the POOL's
+settings as `fallback`, so the pool's context was dropped. **Fixed upstream
+in 3.5.16** (`?? fallback?.securityContext`); we now require `^3.5.15`.
+
+⚠️ **The app uses a Pool, every probe I wrote used a direct Connection.**
+That is why psql and three Dart scripts all connected while the app did not
+— reproduce with the SAME construct the app uses, or the test proves
+nothing.
+
+#### A `#` in a .env value makes the key VANISH (2026-09-22)
+
+⚠️ **`28P01: password authentication failed` while psql connects with the
+same string.** `dotenv` treats `#` as the start of a comment, so
+
+```
+PG_PASSWORD__supabase=SrYard#2026Customs     <- key DISAPPEARS
+PG_PASSWORD__supabase="SrYard#2026Customs"   <- correct
+```
+
+It does not truncate — the key is simply absent, the app sends no password,
+and the server's answer reads like a wrong one. Proven with a three-line
+probe: bare `A` came back missing, quoted `B` came back intact.
+
+`AppEnv.load()` now warns when a `PG_PASSWORD*` or `GMAIL_APP_PASSWORD*` key
+parses EMPTY, naming the quoting rule. ⚠️ It warns rather than auto-quotes:
+silently rewriting somebody's `.env` is worse than telling them which line
+is wrong.
+
+#### The diagnostic that ended the guessing
+
+Start-up failure now prints the profile, **which .env was loaded**, the
+target, the resolved CA path and whether the trust anchor is the CA file or
+the OS store. The first run of it showed `profile: <empty>` and
+`target: localhost` — instantly revealing that the `.env` had not been found
+at all, which no amount of reasoning about TLS would have surfaced.
+
+#### ...and the CA file must be found however you LAUNCH (2026-09-22)
+
+⚠️ **Same "Bad server certificate", different cause.** The cert was in
+place, the `.env` was right, and `psql` and a standalone Dart client both
+connected — but `flutter run` still failed.
+
+`PG_SSL_ROOT_CERT` is a relative name and the resolver looked **only beside
+the .exe**. That is right for an INSTALLED copy, and wrong for the two other
+shapes:
+
+```
+installed     .exe and .crt together in Program Files        <- worked
+flutter run   .exe in build\windows\...\Debug, cwd = project root
+flutter test  no app .exe at all; resolvedExecutable is the Dart VM
+```
+
+The fallback was the bare relative path, so whether TLS worked came down to
+the **working directory** — the same build connected from one launcher and
+failed from another, reporting only a TLS error that names no file.
+
+Now it tries every plausible location and takes the first that EXISTS: beside
+the .exe, the raw path, `Directory.current`, and the Debug/Release build
+output. ⚠️ If none exist it returns the path as given so
+`sslRootCertProblem` can name it — the dangerous outcome is a silent
+fallback to the OS trust store, which then fails against a private CA.
+
+Guarded by `test/the_ca_file_is_found_however_you_launch_test.dart`.
 
 #### Supabase uses its OWN private CA (2026-09-21)
 

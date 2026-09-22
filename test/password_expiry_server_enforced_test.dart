@@ -16,37 +16,37 @@ void main() {
 
   group('an expired password locks the session at the database', () {
     test('BOTH roots of the authorization model are gated', () {
-      // ⚠️ auth.uid() alone was not enough. 13 policies ask auth.role()
+      // ⚠️ sr_auth.uid() alone was not enough. 13 policies ask sr_auth.role()
       // instead — "Officers can view all packages" is just
-      // `auth.role() = 'authenticated'` — and with only uid() gated a
+      // `sr_auth.role() = 'authenticated'` — and with only uid() gated a
       // locked session still read all 176 packages.
-      expect(migration, contains('create or replace function auth.uid()'));
-      expect(migration, contains('create or replace function auth.role()'));
+      expect(migration, contains('create or replace function sr_auth.uid()'));
+      expect(migration, contains('create or replace function sr_auth.role()'));
       expect(migration, contains("then 'anon'"));
     });
 
     test('the verdict is computed once, not per policy', () {
-      // auth.uid() runs once per policy per row; a profiles lookup in its
+      // sr_auth.uid() runs once per policy per row; a profiles lookup in its
       // body would put a query on every row of every screen.
       expect(migration, contains('app.password_expired'));
       final uidBody = migration.substring(
-          migration.indexOf('create or replace function auth.uid()'));
+          migration.indexOf('create or replace function sr_auth.uid()'));
       expect(uidBody.substring(0, 400).contains('from public.profiles'), isFalse,
-          reason: 'auth.uid() must stay a session-variable read');
+          reason: 'sr_auth.uid() must stay a session-variable read');
     });
 
     test('the client cannot decide its own verdict', () {
       // It supplies an identity; the database decides what that identity
       // may do.
-      expect(conn, contains('auth.begin_session'));
+      expect(conn, contains('sr_auth.begin_session'));
       expect(conn.contains("set_config('app.current_user_id'"), isFalse,
           reason: 'the client must not set the flag-bearing variables itself');
     });
 
     test('changing the password is still possible while locked', () {
       // The one permitted action. It works because it takes the user id as
-      // an argument and never calls auth.uid().
-      expect(migration, contains('auth.change_password_unchecked'));
+      // an argument and never calls sr_auth.uid().
+      expect(migration, contains('sr_auth.change_password_unchecked'));
       expect(migration, contains('current_setting(\'app.current_user_id\', true)'));
     });
 
@@ -65,7 +65,7 @@ void main() {
     });
 
     test('it survives a fresh database that lacks change_password', () {
-      // auth.change_password is not in 01_auth_and_session.sql or anywhere
+      // sr_auth.change_password is not in 01_auth_and_session.sql or anywhere
       // in postgres/ — it was added to the running database by hand, so
       // 02_schema.sql must not fail on its absence.
       expect(migration, contains('skipping its guard'));
@@ -163,14 +163,14 @@ void main() {
       // `.single()` got zero rows and threw — the officer saw "Sign in
       // failed", never reached the change dialog, and had spent an OTP.
       expect(m019, contains('profiles_expired_self_read'));
-      expect(m019, contains('auth.session_user_id()'));
+      expect(m019, contains('sr_auth.session_user_id()'));
     });
 
     test('and ONLY its own, and only while locked', () {
       // One row, not a relaxation. Scoped to the expiry flag so it adds
       // nothing for a healthy session.
       expect(m019, contains("current_setting('app.password_expired', true) = 'on'"));
-      expect(m019, contains('id = auth.session_user_id()'));
+      expect(m019, contains('id = sr_auth.session_user_id()'));
     });
 
     test('the 30-minute idle rule does not fire while locked', () {
@@ -182,11 +182,11 @@ void main() {
           reason: 'the session check must skip a password-locked session');
     });
 
-    test('session_user_id is kept separate from auth.uid', () {
+    test('session_user_id is kept separate from sr_auth.uid', () {
       // They answer different questions: "who may act" (nobody, while
       // locked) versus "whose session is this" (still truthful).
-      expect(m019, contains('create or replace function auth.session_user_id()'));
-      expect(m019.contains('create or replace function auth.uid()'), isFalse,
+      expect(m019, contains('create or replace function sr_auth.session_user_id()'));
+      expect(m019.contains('create or replace function sr_auth.uid()'), isFalse,
           reason: '019 must not widen the lock it depends on');
     });
   });

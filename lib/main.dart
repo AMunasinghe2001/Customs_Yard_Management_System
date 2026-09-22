@@ -4,6 +4,8 @@ import 'dart:io' show exit;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/app_env.dart';
+import 'core/db/pg_connection.dart';
 import 'core/db_client.dart';
 import 'core/session_reset.dart';
 import 'package:window_manager/window_manager.dart';
@@ -85,6 +87,21 @@ Future<void> _start() async {
   } catch (e) {
     startupError = e;
     debugPrint('Database unavailable at start-up: $e');
+    // ⚠️ Say WHERE the connection was pointed and WHAT it trusted.
+    //
+    // "Bad server certificate" names TLS and nothing else, and the cause is
+    // usually one of two things this prints: the .env was not found (so the
+    // profile is empty and the target is the compiled-in default), or the
+    // CA file did not resolve (so the trust anchor is the OS store, which
+    // has never heard of Supabase's private root). Both took a long time to
+    // find by reasoning; both are one line of output here.
+    debugPrint('  profile      : ${AppEnv.profile}');
+    debugPrint('  env file     : ${AppEnv.loadedFrom ?? "NOT FOUND"}');
+    debugPrint('  target       : ${PgConfig.describe}');
+    debugPrint('  CA (resolved): ${PgConfig.resolvedSslRootCertPath ?? "none"}');
+    debugPrint('  CA problem   : ${PgConfig.sslRootCertProblem ?? "none"}');
+    debugPrint('  trust anchor : '
+        '${PgConfig.securityContext == null ? "OS STORE (no CA loaded)" : "the CA file"}');
   }
 
   // Background auto-update check (Windows/macOS). Never throws.

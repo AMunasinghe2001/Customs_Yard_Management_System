@@ -36,7 +36,7 @@ create policy package_categories_admin_update on public.package_categories
     (select public.auth_user_is_ict())
     or (select exists (
           select 1 from public.profiles p
-           where p.id = (select auth.uid())
+           where p.id = (select sr_auth.uid())
              and p.role = 'admin'
              and p.is_active))
   )
@@ -44,7 +44,7 @@ create policy package_categories_admin_update on public.package_categories
     (select public.auth_user_is_ict())
     or (select exists (
           select 1 from public.profiles p
-           where p.id = (select auth.uid())
+           where p.id = (select sr_auth.uid())
              and p.role = 'admin'
              and p.is_active))
   );
@@ -57,7 +57,7 @@ create policy package_categories_admin_insert on public.package_categories
     (select public.auth_user_is_ict())
     or (select exists (
           select 1 from public.profiles p
-           where p.id = (select auth.uid())
+           where p.id = (select sr_auth.uid())
              and p.role = 'admin'
              and p.is_active))
   );
@@ -89,7 +89,7 @@ alter table public.package_categories
 -- who changed it.
 alter table public.package_categories
   add column if not exists updated_at timestamptz,
-  add column if not exists updated_by uuid references auth.users(id);
+  add column if not exists updated_by uuid references sr_auth.users(id);
 
 create or replace function public.package_category_stamp()
 returns trigger
@@ -127,7 +127,7 @@ begin
   end if;
   select id, name into v_cat, v_old from public.package_categories limit 1;
 
-  perform auth.begin_session(v_admin::text, 'authenticated');
+  perform sr_auth.begin_session(v_admin::text, 'authenticated');
   set local role yard_app;
   update public.package_categories set name = v_old || ' (m038)' where id = v_cat;
   reset role;
@@ -153,7 +153,7 @@ begin
   end if;
   select id, name into v_cat, v_old from public.package_categories limit 1;
 
-  perform auth.begin_session(v_admin::text, 'authenticated');
+  perform sr_auth.begin_session(v_admin::text, 'authenticated');
   set local role yard_app;
   update public.package_categories set description = 'm038 probe' where id = v_cat;
   reset role;
@@ -177,7 +177,7 @@ begin
   end if;
   select id into v_cat from public.package_categories limit 1;
 
-  perform auth.begin_session(v_admin::text, 'authenticated');
+  perform sr_auth.begin_session(v_admin::text, 'authenticated');
   set local role yard_app;
   delete from public.package_categories where id = v_cat;
   get diagnostics n = row_count;

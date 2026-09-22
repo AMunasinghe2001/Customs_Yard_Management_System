@@ -79,7 +79,7 @@ void main() {
   group('the account and its profile are written together', () {
     test('the client no longer writes the profile itself', () {
       // ⚠️ The upsert that used to sit after signUp is what RLS refused:
-      // `yard_profiles_insert` requires id = auth.uid(), and a person signing
+      // `yard_profiles_insert` requires id = sr_auth.uid(), and a person signing
       // up is not signed in. Re-adding a client-side profile write restores
       // the bug, so this asserts it is gone rather than merely changed.
       final signupBody = services.substring(

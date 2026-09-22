@@ -8,8 +8,8 @@ import 'db_client.dart';
 /// ⚠️ The password-expiry stage runs INSIDE a live session. `signInWithPassword`
 /// has already succeeded by the time the officer is asked to set a new
 /// password — that is what makes the change possible at all (see migration
-/// 018: an expired session may do nothing else, but `auth.change_password`
-/// takes the user id as an argument and never asks `auth.uid()`).
+/// 018: an expired session may do nothing else, but `sr_auth.change_password`
+/// takes the user id as an argument and never asks `sr_auth.uid()`).
 ///
 /// So walking away from that stage — the back arrow, or landing back on the
 /// portal chooser — left `supabase.auth.currentUser` set and

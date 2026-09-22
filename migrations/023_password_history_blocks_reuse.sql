@@ -1,7 +1,7 @@
 -- ============================================================================
 --  A password may not be reused.
 --
---  auth.change_password already refused the CURRENT password, which stopped
+--  sr_auth.change_password already refused the CURRENT password, which stopped
 --  the laziest way to satisfy a 90-day prompt. But nothing stopped an officer
 --  alternating between two passwords forever -- change to B, change back to A
 --  -- so the rotation still protected nothing. If A leaked, it comes back
@@ -10,7 +10,7 @@
 --  This keeps the last N hashes per account and refuses any of them.
 --
 --  ⚠️ Only HASHES are stored, never a password. They are the same bcrypt
---  hashes auth.users already holds, moved aside as they are replaced -- so
+--  hashes sr_auth.users already holds, moved aside as they are replaced -- so
 --  this table is no more sensitive than the one it comes from, and a reuse
 --  check is impossible without them (a hash cannot be reversed, only
 --  compared against).
@@ -28,37 +28,37 @@ returns integer language sql immutable as $fn$ select 5 $fn$;
 
 
 -- ── 2. The history ──────────────────────────────────────────────────────────
-create table if not exists auth.password_history (
+create table if not exists sr_auth.password_history (
   id           bigserial primary key,
-  user_id      uuid not null references auth.users(id) on delete cascade,
+  user_id      uuid not null references sr_auth.users(id) on delete cascade,
   password_hash text not null,
   changed_at   timestamptz not null default now()
 );
 
 create index if not exists password_history_user_idx
-  on auth.password_history (user_id, changed_at desc);
+  on sr_auth.password_history (user_id, changed_at desc);
 
-comment on table auth.password_history is
+comment on table sr_auth.password_history is
   'Previous bcrypt hashes, newest first, so a password cannot be reused. '
   'Holds no plaintext. Trimmed to password_history_depth() per user.';
 
 -- ⚠️ Nobody reads this table but the SECURITY DEFINER function below. The
 -- application role must not be able to select it: the hashes are no more
--- sensitive than auth.users, but there is no reason for them to leave the
+-- sensitive than sr_auth.users, but there is no reason for them to leave the
 -- database at all.
-revoke all on auth.password_history from public;
-revoke all on auth.password_history from authenticated, anon;
+revoke all on sr_auth.password_history from public;
+revoke all on sr_auth.password_history from authenticated, anon;
 
 
 -- ── 3. The check, folded into change_password ───────────────────────────────
-create or replace function auth.change_password(
+create or replace function sr_auth.change_password(
   p_user_id  uuid,
   p_password text
 )
 returns void
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_reason  text;
@@ -72,7 +72,7 @@ begin
   end if;
 
   select encrypted_password into v_current
-    from auth.users where id = p_user_id;
+    from sr_auth.users where id = p_user_id;
 
   if v_current is null then
     raise exception 'user not found' using errcode = 'P0002';
@@ -90,7 +90,7 @@ begin
   -- deliberate bcrypt round.
   for v_old in
     select password_hash, changed_at
-      from auth.password_history
+      from sr_auth.password_history
      where user_id = p_user_id
      order by changed_at desc
      limit v_depth
@@ -104,19 +104,19 @@ begin
   end loop;
 
   -- Keep the outgoing password so it cannot come back.
-  insert into auth.password_history (user_id, password_hash)
+  insert into sr_auth.password_history (user_id, password_hash)
   values (p_user_id, v_current);
 
-  update auth.users
+  update sr_auth.users
      set encrypted_password = crypt(p_password, gen_salt('bf', 10)),
          updated_at         = now()
    where id = p_user_id;
 
   -- Trim beyond the depth: older entries can never refuse anything again.
-  delete from auth.password_history
+  delete from sr_auth.password_history
    where user_id = p_user_id
      and id not in (
-       select id from auth.password_history
+       select id from sr_auth.password_history
         where user_id = p_user_id
         order by changed_at desc
         limit v_depth
@@ -132,22 +132,22 @@ declare
   v_saved text;
   v_ok boolean;
 begin
-  select id into v_id from auth.users limit 1;
+  select id into v_id from sr_auth.users limit 1;
   if v_id is null then
     raise notice 'no user to test with - skipping';
     return;
   end if;
 
   -- Preserve the real password: this runs against live accounts.
-  select encrypted_password into v_saved from auth.users where id = v_id;
+  select encrypted_password into v_saved from sr_auth.users where id = v_id;
 
-  perform auth.change_password(v_id, 'Rotation#Aaa111');
-  perform auth.change_password(v_id, 'Rotation#Bbb222');
+  perform sr_auth.change_password(v_id, 'Rotation#Aaa111');
+  perform sr_auth.change_password(v_id, 'Rotation#Bbb222');
 
   -- Going back to the first must now be refused.
   v_ok := false;
   begin
-    perform auth.change_password(v_id, 'Rotation#Aaa111');
+    perform sr_auth.change_password(v_id, 'Rotation#Aaa111');
   exception when others then
     v_ok := true;
   end;
@@ -156,7 +156,7 @@ begin
   end if;
 
   -- Restore, and clear the history this test created.
-  update auth.users set encrypted_password = v_saved where id = v_id;
-  delete from auth.password_history where user_id = v_id;
+  update sr_auth.users set encrypted_password = v_saved where id = v_id;
+  delete from sr_auth.password_history where user_id = v_id;
   raise notice 'password reuse is blocked - verified and restored';
 end $$;

@@ -309,12 +309,12 @@ void main() {
 
     // A schema-qualified TABLE must split; a dotted COLUMN must not. One
     // shared quoting helper cannot do both -- making it split fixed
-    // `auth.users` (42P01: relation does not exist) and simultaneously broke
+    // `sr_auth.users` (42P01: relation does not exist) and simultaneously broke
     // the column case above, which had no relation-side test to catch it.
     test('a schema-qualified table splits into "schema"."table"', () {
-      final sql = PgQuery('auth.users').select('*').debugSql();
-      expect(sql, contains('"auth"."users"'));
-      expect(sql, isNot(contains('"auth.users"')),
+      final sql = PgQuery('sr_auth.users').select('*').debugSql();
+      expect(sql, contains('"sr_auth"."users"'));
+      expect(sql, isNot(contains('"sr_auth.users"')),
           reason: 'Postgres reads that as ONE table with a dot in its name.');
     });
 

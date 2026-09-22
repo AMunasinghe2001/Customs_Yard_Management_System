@@ -5,7 +5,7 @@
 -- 1. It recurses. It asks whether the caller is an admin by reading profiles
 --    INLINE:
 --
---      EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role='admin')
+--      EXISTS (SELECT 1 FROM profiles WHERE id = sr_auth.uid() AND role='admin')
 --
 --    That subquery is itself subject to the policies on profiles, so deciding
 --    whether profiles may be read requires reading profiles: PostgreSQL error

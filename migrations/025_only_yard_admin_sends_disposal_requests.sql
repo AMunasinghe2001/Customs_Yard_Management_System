@@ -37,7 +37,7 @@ as $fn$
   select exists (
     select 1
       from public.profiles p
-     where p.id = auth.uid()
+     where p.id = sr_auth.uid()
        and lower(coalesce(p.role, '')) = 'officer'
   );
 $fn$;

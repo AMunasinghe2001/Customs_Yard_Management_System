@@ -38,7 +38,7 @@ class SessionSecurityPolicy {
 ///
 /// ⚠️ This copy exists so the person typing sees the rule immediately. It is
 /// NOT the control: the database refuses a weak password whatever the client
-/// believes, because `auth.sign_up` and `auth.change_password` are reachable
+/// believes, because `sr_auth.sign_up` and `sr_auth.change_password` are reachable
 /// without going through any screen. When the two disagree, the SQL wins —
 /// so if you change a rule here, change it there in the same commit.
 ///

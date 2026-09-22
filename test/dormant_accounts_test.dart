@@ -36,7 +36,7 @@ void main() {
       // was disabled as soon as the account was over 90 days old. An SDDC
       // account signed into minutes earlier read as dormant.
       //
-      // auth.users.last_sign_in_at is written by auth.sign_in and nothing
+      // sr_auth.users.last_sign_in_at is written by sr_auth.sign_in and nothing
       // clears it, which is exactly the question the rule asks.
       expect(fixed, contains('u.last_sign_in_at'),
           reason: 'dormancy is not reading the sign-in clock');
@@ -91,7 +91,7 @@ void main() {
 
     test('the sweep runs before the password is checked', () {
       // Running it after would let the first sign-in through.
-      final fn = sql.substring(sql.lastIndexOf('function auth.sign_in'));
+      final fn = sql.substring(sql.lastIndexOf('function sr_auth.sign_in'));
       final sweep = fn.indexOf('disable_dormant_accounts()');
       final check = fn.indexOf('crypt(p_password');
       expect(sweep, greaterThan(-1), reason: 'sign_in never sweeps');

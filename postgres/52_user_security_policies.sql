@@ -10,8 +10,8 @@
 --
 --  ⚠️ The app validated passwords in 14 separate screens and the server
 --  accepted anything 6 characters long. Client-side validation is a courtesy
---  to the person typing, not a control: `auth.sign_up` and
---  `auth.change_password` are reachable directly, so the weakest rule that
+--  to the person typing, not a control: `sr_auth.sign_up` and
+--  `sr_auth.change_password` are reachable directly, so the weakest rule that
 --  actually applied was the SERVER's, and it was weaker than every screen.
 --
 --  This is now the single definition. The Dart PasswordPolicy mirrors it so
@@ -61,7 +61,7 @@ grant execute on function public.password_policy_violation(text) to public;
 -- ── 2. Apply it where passwords are actually set ────────────────────────────
 
 -- 2a. Sign-up.
-create or replace function auth.sign_up(
+create or replace function sr_auth.sign_up(
   p_email    text,
   p_password text,
   p_meta     jsonb default '{}'::jsonb
@@ -74,7 +74,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_id     uuid;
@@ -89,12 +89,12 @@ begin
     raise exception '%', v_reason using errcode = '22023';
   end if;
 
-  if exists (select 1 from auth.users u
+  if exists (select 1 from sr_auth.users u
               where lower(u.email) = lower(trim(p_email))) then
     raise exception 'user_already_exists' using errcode = '23505';
   end if;
 
-  insert into auth.users (email, encrypted_password, raw_user_meta_data,
+  insert into sr_auth.users (email, encrypted_password, raw_user_meta_data,
                           email_confirmed_at)
   values (trim(p_email),
           crypt(p_password, gen_salt('bf', 10)),
@@ -104,7 +104,7 @@ begin
 
   return query
   select u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at
-    from auth.users u
+    from sr_auth.users u
    where u.id = v_id;
 end;
 $fn$;
@@ -114,14 +114,14 @@ $fn$;
 --  ⚠️ Also refuses re-using the CURRENT password. Without this, a 90-day
 --  expiry prompt is satisfied by typing the same password back in, which
 --  resets the clock and changes nothing — the rotation would be theatre.
-create or replace function auth.change_password(
+create or replace function sr_auth.change_password(
   p_user_id  uuid,
   p_password text
 )
 returns void
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_reason  text;
@@ -133,7 +133,7 @@ begin
   end if;
 
   select encrypted_password into v_current
-    from auth.users where id = p_user_id;
+    from sr_auth.users where id = p_user_id;
 
   if v_current is null then
     raise exception 'user not found' using errcode = 'P0002';
@@ -144,7 +144,7 @@ begin
       using errcode = '22023';
   end if;
 
-  update auth.users
+  update sr_auth.users
      set encrypted_password = crypt(p_password, gen_salt('bf', 10)),
          updated_at         = now()
    where id = p_user_id;
@@ -155,7 +155,7 @@ $fn$;
 -- ── 3. Password rotation ────────────────────────────────────────────────────
 --
 --  profiles.password_updated_at already exists and is maintained by a trigger
---  on auth.users. What was missing is a server-side ANSWER to "is this
+--  on sr_auth.users. What was missing is a server-side ANSWER to "is this
 --  password too old", so the client is not the only thing deciding.
 create or replace function public.password_age_status(p_user_id uuid default null)
 returns table (
@@ -168,7 +168,7 @@ returns table (
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
   select
     coalesce(p.password_updated_at, p.created_at)                     as password_updated_at,
@@ -186,10 +186,10 @@ as $fn$
   from public.profiles p
   -- Defaults to the CALLER. A user may ask about their own age; asking about
   -- someone else's requires being an admin, checked below.
-  where p.id = coalesce(p_user_id, auth.uid())
-    and (coalesce(p_user_id, auth.uid()) = auth.uid()
+  where p.id = coalesce(p_user_id, sr_auth.uid())
+    and (coalesce(p_user_id, sr_auth.uid()) = sr_auth.uid()
          or exists (select 1 from public.profiles me
-                     where me.id = auth.uid() and me.role in ('admin', 'ict')));
+                     where me.id = sr_auth.uid() and me.role in ('admin', 'ict')));
 $fn$;
 
 grant execute on function public.password_age_status(uuid) to public;
@@ -230,7 +230,7 @@ create or replace function public.disposal_toggle_outcome_delivery(
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $fn$
 declare
   v_yard text;
@@ -246,7 +246,7 @@ begin
   end if;
 
   if not (public.auth_user_is_disposal()
-          or v_yard = (select yard from public.profiles where id = auth.uid())) then
+          or v_yard = (select yard from public.profiles where id = sr_auth.uid())) then
     raise exception 'not authorized';
   end if;
 

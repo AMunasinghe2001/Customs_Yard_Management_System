@@ -108,7 +108,7 @@ class _PasswordExpiredStageState extends ConsumerState<PasswordExpiredStage> {
     try {
       // Works even though the session is otherwise locked: change_password is
       // SECURITY DEFINER and identifies the caller from the session variable,
-      // not from auth.uid(). It also drops the connection pool, so the next
+      // not from sr_auth.uid(). It also drops the connection pool, so the next
       // query re-asks the database and comes back unlocked.
       await ref.read(authServiceProvider).changePassword(next);
       // ⚠️ End the session and send them back to the sign-in form rather

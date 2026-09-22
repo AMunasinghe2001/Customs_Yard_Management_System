@@ -5,21 +5,21 @@
 -- the button again showed "No verification code was sent" — and the account was
 -- in the database anyway. Three faults in one sequence:
 --
---   1. `auth.sign_up` inserted into auth.users and RETURNED. That write is
+--   1. `sr_auth.sign_up` inserted into sr_auth.users and RETURNED. That write is
 --      committed, and the trigger `on_auth_user_created` created a MINIMAL
 --      profile with it — id, full_name and role only (see handle_new_user).
 --      The client then ran a SECOND statement, an `upsert` into profiles
 --      carrying username, job_role and directorate. RLS refused that one: the
---      policy `yard_profiles_insert` requires `id = auth.uid()`, and someone
---      signing up is not signed in, so auth.uid() is null. Reproduced:
+--      policy `yard_profiles_insert` requires `id = sr_auth.uid()`, and someone
+--      signing up is not signed in, so sr_auth.uid() is null. Reproduced:
 --          set role yard_app;
---          select auth.begin_session('', 'anon');
+--          select sr_auth.begin_session('', 'anon');
 --          insert into profiles (id, full_name, role) values (...);
 --          ERROR: new row violates row-level security policy for table "profiles"
 --      That 42501 is mapped to the "not permitted to create that profile"
 --      message, which is why the screen said exactly that.
 --
---   2. The auth.users row and the minimal profile SURVIVED, because they were
+--   2. The sr_auth.users row and the minimal profile SURVIVED, because they were
 --      committed by an earlier statement. Hence the account the officer found
 --      in the database after being told the sign-up had failed — real, but
 --      missing the username it is meant to be signed in with.
@@ -40,7 +40,7 @@
 
 begin;
 
-create or replace function auth.sign_up(
+create or replace function sr_auth.sign_up(
   p_email    text,
   p_password text,
   p_meta     jsonb default '{}'::jsonb
@@ -48,7 +48,7 @@ create or replace function auth.sign_up(
 returns table(id uuid, email text, meta jsonb, email_confirmed_at timestamptz)
 language plpgsql
 security definer
-set search_path = auth, public
+set search_path = sr_auth, public, extensions
 as $fn$
 declare
   v_id     uuid;
@@ -65,7 +65,7 @@ begin
     raise exception '%', v_reason using errcode = '22023';
   end if;
 
-  if exists (select 1 from auth.users u
+  if exists (select 1 from sr_auth.users u
               where lower(u.email) = lower(trim(p_email))) then
     raise exception 'user_already_exists' using errcode = '23505';
   end if;
@@ -96,7 +96,7 @@ begin
   -- than ignoring a field this role cannot have.
   v_yard := null;
 
-  insert into auth.users (email, encrypted_password, raw_user_meta_data,
+  insert into sr_auth.users (email, encrypted_password, raw_user_meta_data,
                           email_confirmed_at)
   values (trim(p_email),
           crypt(p_password, gen_salt('bf', 10)),
@@ -147,7 +147,7 @@ begin
 
   return query
   select u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at
-    from auth.users u
+    from sr_auth.users u
    where u.id = v_id;
 end;
 $fn$;
@@ -162,7 +162,7 @@ commit;
 do $v1$
 declare v_id uuid; v_email text := 'm035_ok@example.invalid';
 begin
-  select s.id into v_id from auth.sign_up(
+  select s.id into v_id from sr_auth.sign_up(
     v_email, 'Qz7&mVt2!Ryx9#35',
     jsonb_build_object('role','valuation','full_name','M035 Tester',
                        'username','m035user')) s;
@@ -186,7 +186,7 @@ begin
   end if;
 
   delete from public.profiles where id = v_id;
-  delete from auth.users    where id = v_id;
+  delete from sr_auth.users    where id = v_id;
   raise notice 'PASS: account and profile are created together';
 end $v1$;
 
@@ -195,20 +195,20 @@ do $v2$
 declare v_email text := 'm035_orphan@example.invalid';
 begin
   begin
-    perform auth.sign_up(v_email, 'Qz7&mVt2!Ryx9#35',
+    perform sr_auth.sign_up(v_email, 'Qz7&mVt2!Ryx9#35',
                          jsonb_build_object('role','admin','full_name','X'));
     raise exception 'FAIL: a yard role was accepted from the sign-up form';
   exception when sqlstate '42501' then
     null;  -- expected
   end;
 
-  if exists (select 1 from auth.users where lower(email) = v_email) then
-    raise exception 'FAIL: a refused sign-up left an orphan auth.users row';
+  if exists (select 1 from sr_auth.users where lower(email) = v_email) then
+    raise exception 'FAIL: a refused sign-up left an orphan sr_auth.users row';
   end if;
-  -- The trigger's profile must have gone with it. A profile whose auth.users
+  -- The trigger's profile must have gone with it. A profile whose sr_auth.users
   -- row is missing is the mirror image of the orphan this migration is about.
   if exists (select 1 from public.profiles p
-              left join auth.users u on u.id = p.id
+              left join sr_auth.users u on u.id = p.id
              where u.id is null) then
     raise exception 'FAIL: a profile was left with no account behind it';
   end if;
@@ -221,7 +221,7 @@ declare r text;
 begin
   foreach r in array array['admin','officer'] loop
     begin
-      perform auth.sign_up('m035_' || r || '@example.invalid',
+      perform sr_auth.sign_up('m035_' || r || '@example.invalid',
                            'Qz7&mVt2!Ryx9#35',
                            jsonb_build_object('role', r, 'full_name','X'));
       raise exception 'FAIL: role % was creatable from the sign-up form', r;

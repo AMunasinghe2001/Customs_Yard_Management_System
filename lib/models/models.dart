@@ -1046,7 +1046,7 @@ class ProfileModel {
 
   // ── Password expiry (90-day rotation policy) ───────────────────────────
   /// Passwords must be rotated every 90 days. The clock starts from
-  /// [passwordUpdatedAt] (set by the auth.users trigger), falling back to
+  /// [passwordUpdatedAt] (set by the sr_auth.users trigger), falling back to
   /// [createdAt] for accounts that pre-date the column.
   static const int passwordMaxAgeDays = 90;
 

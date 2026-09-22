@@ -66,18 +66,18 @@ void main() {
   });
 
   group('only an approved machine may sign in', () {
-    test('the check is inside auth.sign_in, not the client', () {
+    test('the check is inside sr_auth.sign_in, not the client', () {
       // ⚠️ A check in Dart is a check the attacker controls — they are not
       // obliged to run our client.
-      expect(deviceSql, contains('create or replace function auth.sign_in('));
+      expect(deviceSql, contains('create or replace function sr_auth.sign_in('));
       expect(deviceSql, contains('public.device_is_approved(v_device)'));
     });
 
     test('it wraps the original rather than editing it', () {
-      // postgres/04_auth.sql re-creates auth.sign_in, so the rule must not
+      // postgres/04_auth.sql re-creates sr_auth.sign_in, so the rule must not
       // live there or a schema rebuild silently drops it.
       expect(deviceSql, contains('rename to sign_in_any_device'));
-      expect(deviceSql, contains('auth.sign_in_any_device(p_identifier'));
+      expect(deviceSql, contains('sr_auth.sign_in_any_device(p_identifier'));
     });
 
     test('an empty register allows every machine', () {

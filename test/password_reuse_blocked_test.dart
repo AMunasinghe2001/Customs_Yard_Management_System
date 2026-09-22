@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Rotating a password is pointless if the old one can come straight back.
 ///
-/// auth.change_password already refused the CURRENT password, so the laziest
+/// sr_auth.change_password already refused the CURRENT password, so the laziest
 /// way to satisfy a 90-day prompt was blocked. But nothing stopped an officer
 /// alternating between two: change to B, change back to A. If A ever leaked,
 /// it returns every 90 days and the rotation protects nothing.
@@ -14,11 +14,11 @@ void main() {
 
   group('a password cannot be reused', () {
     test('previous hashes are kept', () {
-      expect(sql, contains('create table if not exists auth.password_history'));
+      expect(sql, contains('create table if not exists sr_auth.password_history'));
     });
 
     test('it stores hashes, never a password', () {
-      // The column is the bcrypt hash moved aside from auth.users as it is
+      // The column is the bcrypt hash moved aside from sr_auth.users as it is
       // replaced — no more sensitive than where it came from, and a reuse
       // check is impossible without it.
       expect(sql, contains('password_hash text not null'));
@@ -27,7 +27,7 @@ void main() {
 
     test('the history is not readable by the application role', () {
       // Only the SECURITY DEFINER function needs it.
-      expect(sql, contains('revoke all on auth.password_history'));
+      expect(sql, contains('revoke all on sr_auth.password_history'));
       expect(sql, contains('authenticated'));
     });
 
@@ -42,8 +42,8 @@ void main() {
     });
 
     test('the outgoing password is recorded before it is replaced', () {
-      final insert = sql.indexOf('insert into auth.password_history');
-      final update = sql.indexOf('update auth.users');
+      final insert = sql.indexOf('insert into sr_auth.password_history');
+      final update = sql.indexOf('update sr_auth.users');
       expect(insert, greaterThan(-1));
       expect(update, greaterThan(insert),
           reason: 'the old hash is overwritten before it is saved, so the '
@@ -51,7 +51,7 @@ void main() {
     });
 
     test('the history is trimmed so it cannot grow without bound', () {
-      expect(sql, contains('delete from auth.password_history'));
+      expect(sql, contains('delete from sr_auth.password_history'));
       expect(sql, contains('password_history_depth()'));
     });
 
@@ -84,7 +84,7 @@ void main() {
     });
 
     test('it resolves the setter at runtime, not by hardcoding', () {
-      // On a database where 018 has not run, auth.change_password IS the
+      // On a database where 018 has not run, sr_auth.change_password IS the
       // unguarded body — hardcoding the _unchecked name would break a fresh
       // install.
       expect(fix, contains("proname = 'change_password_unchecked'"));

@@ -195,7 +195,7 @@ void main() {
       // refuse. Both entry points must consult the policy.
       final sql =
           File('postgres/52_user_security_policies.sql').readAsStringSync();
-      for (final fn in ['auth.sign_up', 'auth.change_password']) {
+      for (final fn in ['sr_auth.sign_up', 'sr_auth.change_password']) {
         final i = sql.indexOf('create or replace function $fn');
         expect(i, greaterThan(-1), reason: '$fn not redefined');
         final body = sql.substring(i, sql.indexOf(r'$fn$;', i));

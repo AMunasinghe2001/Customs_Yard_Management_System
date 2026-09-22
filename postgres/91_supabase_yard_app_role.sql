@@ -52,7 +52,13 @@ do $$
 declare
   v_pw text := current_setting('app.new_yard_app_password', true);
 begin
-  if coalesce(v_pw, '') in ('', 'CHANGE_ME_BEFORE_RUNNING') then
+  -- ⚠️ The sentinel is assembled, never written whole.
+  --
+  -- install_all.ps1 substitutes EVERY occurrence of the quoted placeholder,
+  -- including the one in this condition -- so with the literal here the
+  -- guard became `in ('', '<the real password>')` and rejected the correct
+  -- password. Splitting it means only the set_config() line is rewritten.
+  if coalesce(v_pw, '') in ('', 'CHANGE_ME' || '_BEFORE_RUNNING') then
     raise exception
       'Set a real password in the set_config() line above before running.';
   end if;
@@ -101,22 +107,22 @@ grant usage, select on all sequences in schema public to yard_app;
 grant execute on all functions in schema public to yard_app;
 
 -- ⚠️ The `auth` schema is granted CONDITIONALLY. It always exists on
--- Supabase, but a bare `grant ... on schema auth` aborts the whole file on
+-- Supabase, but a bare `grant ... on schema sr_auth` aborts the whole file on
 -- a database that has not loaded it yet -- which is exactly what happened
 -- when this was rehearsed against a plain `postgres` database. The grants
 -- above are the ones that matter; these are skipped with a notice instead
 -- of taking the run down with them.
 do $auth$
 begin
-  if exists (select 1 from pg_namespace where nspname = 'auth') then
-    execute 'grant usage on schema auth to yard_app';
-    execute 'grant execute on all functions in schema auth to yard_app';
-    if to_regclass('auth.users') is not null then
-      execute 'grant select on auth.users to yard_app';
+  if exists (select 1 from pg_namespace where nspname = 'sr_auth') then
+    execute 'grant usage on schema sr_auth to yard_app';
+    execute 'grant execute on all functions in schema sr_auth to yard_app';
+    if to_regclass('sr_auth.users') is not null then
+      execute 'grant select on sr_auth.users to yard_app';
     end if;
-    raise notice 'granted on schema auth';
+    raise notice 'granted on schema sr_auth';
   else
-    raise notice 'WARN: schema auth does not exist - load the schema, then '
+    raise notice 'WARN: schema sr_auth does not exist - load the schema, then '
                  're-run this file';
   end if;
 end $auth$;

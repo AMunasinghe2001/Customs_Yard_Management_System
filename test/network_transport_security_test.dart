@@ -123,7 +123,7 @@ void main() {
       // on to open a socket — which a unit test must not depend on.
       for (final fn in [
         'email_for_login',
-        'auth.record_failed_login',
+        'sr_auth.record_failed_login',
         'reset_password_for_identifier',
         'purge_old_audit_logs',
         'disposal_position_available',

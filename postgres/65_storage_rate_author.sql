@@ -45,7 +45,7 @@ begin
       using errcode = 'check_violation';
   end if;
 
-  select role into v_role from public.profiles where id = auth.uid();
+  select role into v_role from public.profiles where id = sr_auth.uid();
 
   -- ICT owns this figure now. `admin` stays permitted so a yard mid-upgrade
   -- is not locked out of its own rate between deploys.
@@ -54,7 +54,7 @@ begin
   end if;
 
   insert into public.storage_rates (rate, effective_from, set_by)
-  values (p_rate, now(), auth.uid());
+  values (p_rate, now(), sr_auth.uid());
 end;
 $fn$;
 
@@ -91,7 +91,7 @@ begin
     raise exception 'set_storage_rate accepted a rate of zero';
   end if;
 
-  -- And the office check, for a caller with no profile at all (auth.uid() is
+  -- And the office check, for a caller with no profile at all (sr_auth.uid() is
   -- null in this session, so the role lookup finds nothing).
   begin
     perform public.set_storage_rate(50);
