@@ -2332,6 +2332,142 @@ and `yard_app` deliberately owns nothing, so the app's own account gets
 a missing low number there proves nothing about whether it ran. Diagnose
 from `pg_proc.proconfig` on the LIVE database, not from the file list.
 
+#### The update kept re-offering a version already installed (2026-09-22)
+
+The dialog said, after the officer had already updated:
+
+```
+cus_yard_management 1.3.0 is now available (you have 1.3.0+4).
+```
+
+⚠️ **`sparkle:version` must be the string Windows reads off the .exe,
+character for character.** Flutter stamps pubspec's WHOLE version --
+build number included -- into the binary's FileVersion, so WinSparkle's
+"you have" is `1.3.0+4`. The generator was writing only the build number,
+so the comparison was
+
+```
+    "4"   vs   "1.3.0+4"
+```
+
+never equal, and every restart offered the same version again. Measured
+with `(Get-Item ...).VersionInfo.FileVersion` rather than assumed.
+
+`sparkle:shortVersionString` stays the plain `1.3.0` -- that one is only
+for display.
+
+#### The release notes pane was black (2026-09-22)
+
+⚠️ **WinSparkle renders the `<description>` as HTML in an embedded
+browser.** A bare line of text inherits no styling from anything, so it
+came out white-on-black with the whole line selected -- barely readable.
+
+The description now carries a complete little document: explicit
+`background:#ffffff` and `color:#1a1a1a`, Segoe UI, and a `::selection`
+rule that keeps the text dark when the pane opens with the first line
+highlighted. Colours are stated outright because there is nothing to
+inherit inside that control.
+
+⚠️ The note is ESCAPED before it becomes HTML -- it is typed on the
+command line, and a stray `&` or `<` would break the rest of the pane. A
+line starting with `-`, `*` or a bullet becomes a `<li>`, so a multi-line
+note reads as a list. Both fixed in
+[generate_appcast.py](tools/generate_appcast.py) and pinned by
+[the_update_feeds_are_publishable_test.dart](test/the_update_feeds_are_publishable_test.dart).
+
+#### An office PC needs nothing pre-installed -- but it did (2026-09-22)
+
+⚠️ **The installer was missing the Visual C++ runtime.** Checked the
+binary's imports rather than assuming: `cus_yard_management.exe` links
+against `msvcp140.dll`, `vcruntime140.dll` and `vcruntime140_1.dll`. Those
+are NOT part of Windows -- they arrive with the VC++ Redistributable,
+which a development machine has and a freshly-imaged office PC may not.
+
+Missing, the app does not reach its own "Cannot reach the database"
+screen. Windows refuses to start the process at all:
+
+```
+The code execution cannot proceed because VCRUNTIME140.dll was not found.
+```
+
+No Dart code has run at that point, so nothing in the app can explain it.
+
+[setup.iss](installer/setup.iss) now ships the three redistributable
+copies from `installer/vcredist/` with **`onlyifdoesntexist`** -- beside
+the exe, never into System32, and never overwriting a newer system copy
+(that would break OTHER programs). Verified by installing to a temp folder
+and listing it.
+
+So the answer to "can an ordinary office PC just run this?" is now yes:
+64-bit Windows 10/11, admin rights once, a route to the database. No
+Flutter, no Visual Studio, no PostgreSQL client, no .NET. Written up in
+section 0 of [DEPLOYMENT.txt](installer/DEPLOYMENT.txt) and pinned by
+[an_office_pc_needs_nothing_else_test.dart](test/an_office_pc_needs_nothing_else_test.dart).
+
+#### Auto-update: two feeds, published to Supabase Storage (2026-09-22)
+
+⚠️ **THE APP HAS TWO INDEPENDENT UPDATE PATHS.** Neither replaced the
+other, and they read different formats:
+
+| | reads | shows |
+|---|---|---|
+| [update_check.dart](lib/core/update_check.dart) | JSON (GitHub Releases shape) | the in-app strip, [update_banner.dart](lib/widgets/update_banner.dart) |
+| [app_updater.dart](lib/core/app_updater.dart) | `appcast.xml` | WinSparkle's own download-and-install prompt |
+
+⚠️ **The GitHub path could never have worked in the field.** It
+defaults to `api.github.com/repos/AMunasinghe2001/Customs_Yard_Management_System/releases/latest`, and that repo is
+**private** -- measured, it answers **404**. Every officer's check failed
+silently, which the code treats as "no update" (the right way to fail,
+but it means the banner never fired).
+
+Both now publish to a public Supabase Storage bucket, so
+[generate_appcast.py](tools/generate_appcast.py) writes BOTH files:
+`appcast.xml` and a `latest.json` that copies the GitHub API's shape
+(`tag_name`, `assets[]`, `draft`, `prerelease`). Keeping that shape means
+neither the Dart nor `test/update_check_test.dart` had to change.
+
+⚠️ **Nothing is stored in PostgreSQL, and nothing can be.** The user
+expected the installer to "save into the database" and reach the other
+PCs. A database server has no HTTP endpoint -- an update needs somewhere
+that can SERVE a file. That is the whole reason for the bucket.
+
+**The pipeline**, all in `tool/` (there was already a `tool/release.ps1`
+and a `tool/build_release.ps1`; a new `scripts/` directory was a duplicate
+and was deleted):
+
+```
+toolelease.ps1 -Version 1.3.0     # bumps all THREE version strings
+tool\publish_release.ps1 -Notes "..."   # build -> installer -> feeds
+```
+
+⚠️ **Three version strings must agree** -- `pubspec.yaml`,
+`installer/setup.iss`, and `kAppVersion` in `update_check.dart`. Behind is
+worse than ahead: an app whose version trails the feed offers the same
+update **forever**. Both the script and the generator refuse to run on a
+mismatch, and
+[the_update_feeds_are_publishable_test.dart](test/the_update_feeds_are_publishable_test.dart)
+pins it.
+
+⚠️ **Upload the .exe BEFORE the feed.** The moment a feed names a new
+version every running copy starts offering it; if the installer is not
+there yet, each officer gets a failed download.
+
+The bucket is created by
+[supabase_updates_bucket.sql](postgres/supabase_updates_bucket.sql) --
+Supabase SQL Editor only, NOT part of install_all.ps1 (local and office
+servers have no `storage` schema). Public SELECT is deliberate: the check
+runs **before anybody signs in**, so there is no session to authenticate
+with. Public WRITE would be remote code execution -- whoever can replace
+that .exe decides what every PC runs as administrator -- hence the
+authenticated-only INSERT/UPDATE/DELETE policies, the compiled-in URL
+(never read from `.env`), and the existing https-or-private-host guard.
+
+⚠️ `checkForUpdatesNow()` now returns an `UpdateCheckOutcome` instead of
+void. WinSparkle shows its own window when the check RUNS, but shows
+nothing when there is no feed -- so without a return value the new
+"Check for Updates" button in [app_shell.dart](lib/widgets/app_shell.dart)
+would look dead on exactly the builds that need explaining.
+
 #### 02_schema.sql cannot be re-run on a database with real data (2026-09-22)
 
 ⚠️ **It carries `20260620_seed_data.sql`, which begins with**

@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
+import '../core/app_updater.dart';
 import '../core/theme.dart';
 import '../core/db_client.dart';
 import '../core/providers.dart';
 import '../models/models.dart';
 import '../services/services.dart';
+import 'update_banner.dart';
 
 class NavItem {
   final String label;
@@ -182,6 +184,56 @@ class _AppShellState extends ConsumerState<AppShell> {
   late final ScrollController _navScrollCtrl =
       ScrollController(initialScrollOffset: _navScrollOffset)
         ..addListener(_rememberNavScroll);
+
+  /// "Check for Updates", from the profile panel.
+  ///
+  /// ⚠️ WinSparkle owns the conversation once it starts: it puts up its
+  /// own window, whether or not there is anything newer. So this reports
+  /// only the cases WinSparkle will NEVER show a window for -- otherwise an
+  /// officer on a build with no feed clicks a button that does nothing at
+  /// all and reasonably concludes the app is broken.
+  Future<void> _checkForUpdates(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    // The strip already knows about a release the startup check found. Say
+    // so rather than making them wait for a second answer.
+    final pending = availableUpdate.value;
+    if (pending != null) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Version ${pending.version} is available.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
+    final outcome = await checkForUpdatesNow();
+    if (!context.mounted) return;
+
+    final String? message;
+    switch (outcome) {
+      case UpdateCheckOutcome.started:
+        // WinSparkle is showing its own window now; a snack bar on top of
+        // it would just be noise.
+        message = null;
+      case UpdateCheckOutcome.notConfigured:
+        message = 'This build does not check for updates. '
+            'Ask ICT for the latest installer.';
+      case UpdateCheckOutcome.feedRefused:
+        message = 'The update source is not trusted, so it was not used. '
+            'Tell ICT.';
+      case UpdateCheckOutcome.unsupportedPlatform:
+        message = 'Updates are checked on Windows only.';
+      case UpdateCheckOutcome.failed:
+        message = 'Could not reach the update server. '
+            'Check the connection and try again.';
+    }
+    if (message != null) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
 
   void _rememberNavScroll() {
     if (_navScrollCtrl.hasClients) {
@@ -393,6 +445,23 @@ class _AppShellState extends ConsumerState<AppShell> {
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () => context.go('/profile'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.system_update_alt_rounded,
+                              size: 16),
+                          label: const Text('Check for Updates',
+                              style: TextStyle(fontSize: 13)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: BorderSide(
+                                color: Colors.white.withOpacity(0.25)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onPressed: () => _checkForUpdates(context),
                         ),
                       ),
                       const SizedBox(height: 8),

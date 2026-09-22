@@ -2,6 +2,24 @@ SRI LANKA CUSTOMS — SR MANAGEMENT SYSTEM
 After installing: connect this machine to the database
 
 
+0. WHAT THIS PC NEEDS
+
+Nothing but Windows.
+
+  * 64-bit Windows 10 or 11
+  * administrator rights, once, to run the installer
+  * a network route to the database server
+
+There is NO separate download and NO other software to install first. No
+Flutter, no Visual Studio, no PostgreSQL client, no .NET, no runtime of any
+kind. Everything the app needs is inside the setup file, including the
+Visual C++ runtime libraries it links against (msvcp140.dll,
+vcruntime140.dll, vcruntime140_1.dll) -- those are placed beside the
+program, and only if the machine does not already have them.
+
+An ordinary office PC used for day-to-day work is enough.
+
+
 1. THE APP WILL NOT START WITHOUT THIS STEP
 
 The installer deliberately ships NO database settings. They name the server

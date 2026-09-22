@@ -15,7 +15,7 @@
 ; what makes Windows treat a new setup as an UPGRADE of the installed copy
 ; rather than a second product: the officer runs it over the old one and
 ; keeps their shortcuts, their install folder and their .env.
-#define AppVersion     "1.2.0"
+#define AppVersion     "1.3.0"
 #define AppPublisher   "Sri Lanka Customs Department"
 #define AppExeName     "cus_yard_management.exe"
 #define BuildDir       "..\build\windows\x64\runner\Release"
@@ -79,6 +79,31 @@ Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 ; credential in every copy of the setup file and point every branch at
 ; whichever server happened to be in the build. The Deployment note tells the
 ; officer to place it beside the exe after installing.
+; ⚠️ THE VISUAL C++ RUNTIME, beside the exe.
+;
+; cus_yard_management.exe imports msvcp140.dll, vcruntime140.dll and
+; vcruntime140_1.dll. They are NOT part of Windows -- they arrive with the
+; Visual C++ 2015-2022 Redistributable, which a development machine has and
+; a freshly-imaged office PC may not. Without them the app does not show an
+; error: Windows refuses to start the process at all, with
+;
+;     The code execution cannot proceed because VCRUNTIME140.dll was not
+;     found. Reinstalling the program may fix this problem.
+;
+; -- which is the one fault our own "Cannot reach the database" screen can
+; never explain, because no Dart code has run yet.
+;
+; ⚠️ Copied into the app folder rather than System32, and only if
+; absent. Windows looks beside the .exe first, so a local copy is enough;
+; writing to System32 would need to version-check against every other
+; program on the machine, and a wrong answer there breaks THEM.
+;
+; These are the redistributable copies from the VC toolset (not the ones in
+; System32), which Microsoft licenses for shipping alongside an application.
+Source: "vcredist\msvcp140.dll";     DestDir: "{app}"; Flags: onlyifdoesntexist
+Source: "vcredist\vcruntime140.dll"; DestDir: "{app}"; Flags: onlyifdoesntexist
+Source: "vcredist\vcruntime140_1.dll"; DestDir: "{app}"; Flags: onlyifdoesntexist
+
 Source: "DEPLOYMENT.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ⚠️ TEMPLATES, deliberately named .env.txt and put in a SUBFOLDER.

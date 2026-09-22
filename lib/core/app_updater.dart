@@ -92,17 +92,48 @@ Future<void> initAutoUpdater() async {
   }
 }
 
+/// What a user-triggered check was able to do.
+///
+/// ⚠️ The check itself CANNOT report "you are up to date" — WinSparkle owns
+/// that conversation and puts its own window on screen. What this does tell
+/// the caller is whether the check ran at all, which is the part an officer
+/// otherwise cannot see: a build with no feed, or one whose feed was
+/// refused, looks exactly like a button that does nothing.
+enum UpdateCheckOutcome {
+  /// WinSparkle was handed the feed and is now showing its own UI.
+  started,
+
+  /// This build was compiled without UPDATE_FEED_URL, so it never checks.
+  notConfigured,
+
+  /// The feed was rejected — see [isUpdateFeedAcceptable].
+  feedRefused,
+
+  /// Desktop-only; nothing to do on other platforms.
+  unsupportedPlatform,
+
+  /// The updater threw. Offline, usually.
+  failed,
+}
+
 /// User-triggered "Check for Updates" (e.g. from a menu/button). Shows the
 /// updater UI even when already up to date.
-Future<void> checkForUpdatesNow() async {
-  if (!(Platform.isWindows || Platform.isMacOS)) return;
+///
+/// Returns what happened so the caller can say something useful instead of
+/// leaving a button that appears dead.
+Future<UpdateCheckOutcome> checkForUpdatesNow() async {
+  if (!(Platform.isWindows || Platform.isMacOS)) {
+    return UpdateCheckOutcome.unsupportedPlatform;
+  }
   // No feed configured — nothing to check against.
-  if (updateFeedUrl.isEmpty) return;
-  if (!_feedAllowed()) return;
+  if (updateFeedUrl.isEmpty) return UpdateCheckOutcome.notConfigured;
+  if (!_feedAllowed()) return UpdateCheckOutcome.feedRefused;
   try {
     await autoUpdater.setFeedURL(updateFeedUrl);
     await autoUpdater.checkForUpdates();
+    return UpdateCheckOutcome.started;
   } catch (e) {
     AppLog.warn('manual update check failed', error: e, tag: 'update');
+    return UpdateCheckOutcome.failed;
   }
 }
