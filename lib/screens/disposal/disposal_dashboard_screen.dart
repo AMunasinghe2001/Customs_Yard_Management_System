@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../widgets/update_available_button.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -218,24 +217,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                   },
                 ),
                 const Gap(4),
-                // ⚠️ Shown ONLY when there is an update.
-                //
-                // This portal builds its own header and never uses
-                // AppShell, so it inherits nothing the shell offers.
-                // The widget is shared; the shape is this portal's own.
-                UpdateAvailableButton(
-                  trailing: const Gap(4),
-                  builder: (ctx, update, onPressed) => FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: updateButtonAccent(ctx),
-                      foregroundColor: ctx.colors.primaryNavy,
-                    ),
-                    icon: const Icon(Icons.download_rounded, size: 16),
-                    label: Text(updateButtonLabel(update),
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
-                    onPressed: onPressed,
-                  ),
-                ),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: context.colors.dangerRed,

@@ -47,8 +47,13 @@ import '../core/providers.dart';
 import '../services/services.dart';
 import 'app_log.dart';
 
+/// Global key to access root navigator context for dialogs, overlays and snackbars
+/// when invoked from outside the route tree (e.g. root banner overlays).
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     // ⚠️ Not always '/'. A session reset rebuilds this router, and a
     // password change wants to land back on the portal's own sign-in page
     // rather than the portal picker. takeLandingRoute() returns '/' unless

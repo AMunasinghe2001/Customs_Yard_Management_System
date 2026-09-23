@@ -9,7 +9,6 @@ import '../core/db_client.dart';
 import '../core/providers.dart';
 import '../models/models.dart';
 import '../services/services.dart';
-import 'update_available_button.dart';
 
 class NavItem {
   final String label;
@@ -394,43 +393,6 @@ class _AppShellState extends ConsumerState<AppShell> {
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () => context.go('/profile'),
-                        ),
-                      ),
-                      // ⚠️ Shown ONLY when there is an update.
-                      //
-                      // This was a permanent "Check for Updates"
-                      // button, which is a question almost nobody wants
-                      // to ask: nearly every press answered "nothing
-                      // new", so it was noise on every screen for the
-                      // sake of the rare day it had news. The app
-                      // already knows the answer from the start-up
-                      // check, so it offers the ACTION instead.
-                      UpdateAvailableButton(
-                        trailing: const SizedBox(height: 8),
-                        builder: (ctx, update, onPressed) => Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              icon: const Icon(Icons.download_rounded,
-                                  size: 16),
-                              label: Text(updateButtonLabel(update),
-                                  style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700)),
-                              style: FilledButton.styleFrom(
-                                // Gold on navy, matching the strip:
-                                // nothing is wrong, there is simply
-                                // something newer.
-                                backgroundColor:
-                                    updateButtonAccent(ctx),
-                                foregroundColor: ctx.colors.primaryNavy,
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 10),
-                              ),
-                              onPressed: onPressed,
-                            ),
-                          ),
                         ),
                       ),
                       const SizedBox(height: 8),

@@ -1,4 +1,4 @@
-; ============================================================================
+﻿; ============================================================================
 ;  Sri Lanka Customs — SR Management System
 ;  Windows installer (Inno Setup 6)
 ;
@@ -15,7 +15,7 @@
 ; what makes Windows treat a new setup as an UPGRADE of the installed copy
 ; rather than a second product: the officer runs it over the old one and
 ; keeps their shortcuts, their install folder and their .env.
-#define AppVersion     "1.5.3"
+#define AppVersion     "1.5.4"
 #define AppPublisher   "Sri Lanka Customs Department"
 #define AppExeName     "cus_yard_management.exe"
 #define BuildDir       "..\build\windows\x64\runner\Release"
@@ -363,12 +363,15 @@ begin
   Lines[0] := '# Written by the installer on first install.';
   Lines[1] := '# Edit this file to point this PC at another server, then';
   Lines[2] := '# restart the app. An upgrade keeps it, unless it still';
-  Lines[12] := '# points at localhost, which no officer PC can serve.';
-  Lines[3] := 'PG_HOST={#DbHost}';
-  Lines[4] := 'PG_PORT={#DbPort}';
-  Lines[5] := 'PG_DATABASE={#DbName}';
-  Lines[6] := 'PG_USER={#DbUser}';
-  Lines[7] := 'PG_PASSWORD="' + Pw + '"';
+  //  ⚠️ The third line of the SAME sentence, so it must be the next
+  //  index. It was 12, which put it after PG_CONNECT_TIMEOUT and split
+  //  the comment across the whole file.
+  Lines[3] := '# points at localhost, which no officer PC can serve.';
+  Lines[4] := 'PG_HOST={#DbHost}';
+  Lines[5] := 'PG_PORT={#DbPort}';
+  Lines[6] := 'PG_DATABASE={#DbName}';
+  Lines[7] := 'PG_USER={#DbUser}';
+  Lines[8] := 'PG_PASSWORD="' + Pw + '"';
   //  ⚠️ TLS, VERIFIED, against Supabase's own root.
   //
   //  This connection crosses the public internet carrying the
@@ -380,11 +383,11 @@ begin
   //  Windows does not trust: without the .crt (shipped beside the
   //  exe) a verified connection fails as "Bad server certificate".
   //  Never answer that by setting PG_SSL_VERIFY=false.
-  Lines[8]  := 'PG_SSL=true';
-  Lines[9]  := 'PG_SSL_VERIFY=true';
-  Lines[10] := 'PG_SSL_ROOT_CERT=supabase-root-2021.crt';
+  Lines[9]  := 'PG_SSL=true';
+  Lines[10] := 'PG_SSL_VERIFY=true';
+  Lines[11] := 'PG_SSL_ROOT_CERT=supabase-root-2021.crt';
   //  The cloud is further away than a LAN server.
-  Lines[11] := 'PG_CONNECT_TIMEOUT=30';
+  Lines[12] := 'PG_CONNECT_TIMEOUT=30';
 
   //  ⚠️ The Gmail keys go in the SAME file, because sign-in needs
   //  them. Quoted like the database password: a Google App Password is

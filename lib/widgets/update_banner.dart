@@ -4,6 +4,7 @@ import 'app_dialog.dart';
 import '../core/theme.dart';
 import '../core/app_updater.dart';
 import '../core/update_check.dart';
+import '../core/router.dart';
 import 'styled_form_dialog.dart';
 
 /// The update the app found at startup, or null while there is none.
@@ -133,7 +134,6 @@ class _Bar extends StatelessWidget {
                       TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
             ),
             IconButton(
-              tooltip: 'Not now',
               onPressed: () => updateDismissed.value = true,
               icon: Icon(Icons.close_rounded,
                   size: 18, color: colors.primaryNavy),
@@ -167,14 +167,16 @@ class _Bar extends StatelessWidget {
 /// run this?" already has an answer.
 Future<void> startUpdate(BuildContext context, AvailableUpdate update)
     async {
-  final messenger = ScaffoldMessenger.of(context);
+  final targetContext = rootNavigatorKey.currentContext ?? context;
+  final messenger = ScaffoldMessenger.maybeOf(targetContext) ??
+      ScaffoldMessenger.maybeOf(context);
   final outcome = await checkForUpdatesNow();
   if (outcome == UpdateCheckOutcome.started) return;
 
   // No feed compiled in, or the updater failed. Fall back to the
   // browser so the officer is never left with a dead button.
   final opened = await openUpdateDownload(update.downloadUrl);
-  if (!opened && context.mounted) {
+  if (!opened && messenger != null) {
     messenger.showSnackBar(SnackBar(
       content: Text('Could not start the update. Ask ICT for version '
           '${update.version}.'),
@@ -191,8 +193,9 @@ Future<void> startUpdate(BuildContext context, AvailableUpdate update)
 /// reason it will not explain.
 Future<void> showUpdateDialog(
     BuildContext context, AvailableUpdate update) async {
+  final targetContext = rootNavigatorKey.currentContext ?? context;
   await showAppDialog<void>(
-    context: context,
+    context: targetContext,
     builder: (ctx) => StyledFormDialog(
       label: 'SOFTWARE UPDATE',
       title: 'Version ${update.version}',
