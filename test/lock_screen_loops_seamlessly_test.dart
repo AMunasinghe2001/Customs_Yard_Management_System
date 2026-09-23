@@ -91,4 +91,67 @@ void main() {
       expect(f, contains('88 + 12 * breath'));
     });
   });
+
+  group('the lock screen is mounted once and stays mounted', () {
+    final main = File('lib/main.dart').readAsStringSync();
+    final overlay =
+        File('lib/widgets/idle_lock_overlay.dart').readAsStringSync();
+    final screen =
+        File('lib/screens/lock/idle_lock_screen.dart').readAsStringSync();
+
+    test('it lives ABOVE MaterialApp, outside the ProviderScope', () {
+      // ⚠️ Locking signs the session out, which bumps the session
+      // epoch and replaces the whole ProviderScope. routerProvider then
+      // yields a NEW GoRouter, so MaterialApp.router is rebuilt and
+      // every widget under its builder is destroyed -- which is where
+      // the lock screen used to be. It came up, then about two seconds
+      // later jumped back to its first frame.
+      final lockLayer = main.indexOf('_LockLayer(');
+      final scope = main.indexOf('ProviderScope(');
+      expect(lockLayer, greaterThan(-1),
+          reason: 'main.dart no longer mounts the lock above the app');
+      expect(lockLayer, lessThan(scope),
+          reason: 'the lock must wrap the ProviderScope, not sit in it');
+    });
+
+    test('the overlay no longer draws it', () {
+      // It keeps the job it can only do from inside the scope --
+      // watching for idleness and signing out -- and nothing else.
+      expect(overlay, isNot(contains('child: IdleLockScreen(')),
+          reason: 'drawing it here is what made it rebuild');
+      expect(overlay, contains('return widget.child;'));
+    });
+
+    test('the entrance is a plain one-shot again', () {
+      // ⚠️ The earlier attempt started the fade at value 1.0 on a
+      // rebuild. That hid the fade but NOT the reset: drift, breathe
+      // and orbit still began from zero, so the screen still jumped.
+      // Not being rebuilt at all is the only fix that covers them.
+      expect(screen, isNot(contains('idleLockEntranceShown')));
+      expect(screen, contains('duration: const Duration(milliseconds: 900),'));
+    });
+
+    test('the screen takes plain values, never providers', () {
+      // That is what lets it sit outside MaterialApp at all.
+      expect(screen, isNot(contains('ref.watch')));
+      expect(screen, isNot(contains('ref.read')));
+      expect(main, contains('valueListenable: lockAccent'));
+    });
+
+    test('the unlock callback is read at PRESS time', () {
+      // ⚠️ The overlay re-publishes it after every session reset, so
+      // one captured at mount would belong to a torn-down container.
+      expect(main, contains('onUnlock: () => lockUnlockRequest?.call()'));
+      expect(overlay, contains('lockUnlockRequest = _unlock;'));
+    });
+
+    test('Directionality and Material are supplied by hand', () {
+      // ⚠️ Outside MaterialApp none of the inherited widgets the
+      // screen expects are in scope; without these it throws on the
+      // first Text it lays out.
+      final layer = main.substring(main.indexOf('class _LockLayer'));
+      expect(layer, contains('Directionality('));
+      expect(layer, contains('Material('));
+    });
+  });
 }

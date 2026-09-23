@@ -30,6 +30,43 @@ const Duration kIdleLockTimeout = Duration(minutes: 5);
 /// and the provider below re-reads it in whatever container comes next.
 final ValueNotifier<bool> idleLockedFlag = ValueNotifier<bool>(false);
 
+/// The accent the lock screen should draw itself in.
+///
+/// ⚠️ OUTSIDE the ProviderScope, like everything else the lock needs.
+/// It is written while the officer is still signed in -- their role is
+/// what chooses the colour -- and read after the sign-out that replaced
+/// the container.
+final ValueNotifier<Color?> lockAccent = ValueNotifier<Color?>(null);
+
+/// What the lock screen calls when the officer asks to come back.
+///
+/// ⚠️ Set by the overlay, which is the part that still lives inside
+/// the ProviderScope and can reach the router and the controller. The
+/// screen itself has no providers at all, which is what lets it be
+/// mounted above MaterialApp -- see [lockScreenIsDetached].
+VoidCallback? lockUnlockRequest;
+
+/// Why the lock screen is mounted above MaterialApp rather than inside
+/// the app it covers.
+///
+/// ⚠️ LOCKING SIGNS THE SESSION OUT, AND THAT REBUILDS EVERYTHING.
+/// A sign-out bumps the session epoch, which replaces the whole
+/// ProviderScope; `routerProvider` then yields a NEW GoRouter, so
+/// MaterialApp.router is rebuilt with a different config and every
+/// widget under its builder is destroyed and recreated -- the lock
+/// overlay among them.
+///
+/// The officer saw the lock screen arrive, then about two seconds later
+/// jump back to its first frame: a fresh State restarted the entrance
+/// fade AND the drift, breathe and orbit animations.
+///
+/// Skipping the fade was not enough -- the other three still reset. The
+/// screen has no providers and no theme lookups, taking its accent and
+/// its callback as plain values, so it can sit ABOVE MaterialApp where
+/// the session reset does not reach it. It is then mounted once and
+/// stays mounted, which is the only way its animations run unbroken.
+const bool lockScreenIsDetached = true;
+
 /// The portal whose login page the lock should return to.
 ///
 /// ⚠️ Outside the ProviderScope for the same reason as [idleLockedFlag]: it

@@ -2426,6 +2426,172 @@ Fixed with `Excludes: ".env,frame_watch.log"` on that line, and the stale
 file deleted. ⚠️ A wildcard over a build directory ships whatever a
 previous run left there; list what must NOT go, not only what must.
 
+#### ICT could not add a sale levy (2026-09-23)
+
+```
+new row violates row-level security policy for table "disposal_taxes"
+```
+
+⚠️ **The screen and the policy disagreed about whose job it is.** The
+levy editor lives in the ICT console (`screens/ict/system_rates_tab.dart`)
+and NOWHERE else -- the Disposal portal has no screen for it -- but the
+only write policies on `disposal_taxes` required
+`auth_user_is_disposal()`. An ICT officer was shown a control the database
+was always going to refuse.
+
+⚠️ **`storage_rates`, edited on the SAME TAB, was already moved to ICT**
+(`storage_rates_ict_insert/_update/_delete`). Two settings side by side on
+one page, one writable. Migration 049 is the unfinished half of that
+earlier change, not a new permission.
+
+⚠️ **Disposal KEEPS its write access.** The levies decide what is charged
+on a sale Central Disposal conducts; revoking that mid-process would be a
+bigger change than the one asked for, made silently in a migration about
+something else. The verification block asserts Disposal is still allowed.
+
+Proven on the local database rather than assumed: as the real `ict`
+profile through `yard_app` (RLS enforced) INSERT and DELETE both succeed;
+as an `officer` the INSERT is still refused.
+
+⚠️ Testing RLS by hand needs `set role yard_app` AND
+`set app.current_user_id = '<uuid>'` AFTER it -- `postgres` bypasses RLS,
+and a `set_config(..., false)` issued before the role switch does not
+reach `sr_auth.uid()`.
+
+⚠️ Policies must be created by the table's OWNER; `yard_app` cannot, so
+049 runs in the Supabase SQL Editor.
+
+#### The lock screen appeared twice (2026-09-22)
+
+The idle lock arrived, then about two seconds later jumped back to its
+first frame.
+
+⚠️ **The cause is a chain, and I got it half right the first time.**
+Locking signs the session out; that bumps the session epoch, which
+replaces the ProviderScope; `routerProvider` then yields a NEW `GoRouter`,
+so `MaterialApp.router` is rebuilt with a different config and **every
+widget under its builder is destroyed and recreated** -- `IdleLockOverlay`
+among them.
+
+⚠️ **The first fix did not work, and the reason is worth keeping.** I
+made the 900ms entrance start at `value: 1.0` on a rebuild. That hid the
+fade but NOT the remount: `_drift`, `_breathe` and `_orbit` still began
+from zero, so the screen still visibly jumped. Suppressing one symptom of
+a remount does not survive contact with the others.
+
+The screen is now mounted **above** `MaterialApp`, in `_LockLayer`
+(main.dart), where the session reset does not reach. It is mounted once
+and stays mounted. That works only because `IdleLockScreen` has **no
+providers and no theme lookups** -- it takes its accent and its callback
+as plain values.
+
+`IdleLockOverlay` keeps what needs the scope (watching for idleness,
+signing out) and now returns `widget.child` unchanged. Three globals carry
+what the detached screen needs: `idleLockedFlag`, `lockAccent`,
+`lockUnlockRequest`.
+
+⚠️ The callback is read at PRESS time (`() => lockUnlockRequest?.call()`),
+not captured at mount -- the overlay re-publishes it after every session
+reset, so a captured one would belong to a torn-down container.
+
+⚠️ Outside `MaterialApp` there is no `Directionality` and no `Material`;
+`_LockLayer` supplies both, or the screen throws on its first `Text`.
+
+#### The ICT console missed the Check for Updates button (2026-09-22)
+
+⚠️ **The ICT console builds its own header and never uses
+`AppShell`.** So when the update button was added to the shell's profile
+panel, every portal got it except the one whose job is keeping the
+offices current.
+
+The handler moved out of `app_shell.dart` into `runUpdateCheck()` in
+[app_updater.dart](lib/core/app_updater.dart), and both headers call it.
+⚠️ A second copy in the console would have drifted the first time one
+of them was corrected.
+
+⚠️ Worth remembering generally: a change to `AppShell` reaches every
+portal EXCEPT ICT. Check `screens/ict/` separately.
+
+#### The ICT tables had no room at the right edge (2026-09-22)
+
+`kIctActionsColumnWidth` was exactly `two buttons + gap + 16`, so the
+enable toggle ended precisely where the card's own padding began. The
+control read as pinned to the border while every other column had air
+around it -- the table looked overflowed although nothing was clipped.
+
+Added `kIctTableEndInset = 12` to that column. ⚠️ To the COLUMN, not as
+row padding: the header and the rows share one width list, so padding
+the row would have moved the cells and left the heading behind.
+
+The directorate flex went `[2, 2, 7]` -> `[2, 2, 9]`. SR Prefix is a
+fixed-width chip and Code is three or four characters, so both sat in
+columns far wider than their content while NAME -- the only one that
+varies -- was the column running out of room.
+
+⚠️ Only the ICT tables are affected. Every other portal uses
+`DataTable2`, which carries its own `horizontalMargin` at both edges;
+these ICT tables are hand-built from `Row` + `Expanded`.
+
+#### Security audit, and the one real gap (2026-09-22)
+
+A 7-point audit was run read-only first. Most of it was already done,
+and three checklist items rested on assumptions this app does not meet:
+
+- ⚠️ **There is no Supabase SDK.** `supabase` is a VARIABLE NAME for a
+  direct `postgres` handle (see `lib/core/db_client.dart`), kept at ~198
+  call sites. So "never ship the service_role key" does not apply --
+  there is no anon key either.
+- ⚠️ **There are no JWTs.** `accessToken` / `refreshToken` are the
+  USER ID, kept for API compatibility. Authorisation is server-side RLS
+  via a session variable, so there is no bearer token to steal or
+  rotate.
+- ⚠️ **`flutter_secure_storage` is deliberately absent.** Passwords
+  already use Windows DPAPI (`CryptProtectData`) -- the same thing that
+  package wraps on Windows. It was tried and rejected: its Windows
+  plugin needs a Visual Studio ATL component (`atlstr.h`) missing from
+  the default C++ workload.
+
+Verified live against Supabase rather than assumed: **37/37 tables
+RLS-enabled, 160 policies**, and `yard_app` is `rolsuper=f`,
+`rolbypassrls=f` -- so RLS is actually enforced. Lockout is server-side
+in `sr_auth.sign_in` (5 failures -> 15 minutes), which a client throttle
+could not replace.
+
+⚠️ `refused_sign_in_pending` having 0 policies is **deliberate
+deny-all**, not a gap: only SECURITY DEFINER functions touch it.
+`audit_network_security.py` reports it as a FAIL; it is a false
+positive, as are that script's pg_hba failures, which are measured
+against the LOCAL dev database on loopback.
+
+#### The shipping build was not obfuscated (2026-09-22)
+
+⚠️ **The one real finding.** `tool\build_release.ps1` passed
+`--obfuscate`, but nothing shipped through it -- every release goes out
+via `tool\publish_release.ps1`, which did not. A script doing the right
+thing sat unused beside the one that was actually used.
+
+It matters more here than usual because the database and Gmail
+passwords are compiled in. `publish_release.ps1` now passes
+`--obfuscate --split-debug-info=build\symbols\<version>+<build>`,
+creates that folder first, and **fails the build if no symbol file was
+written** -- an obfuscated binary with no symbols is one nobody can ever
+debug.
+
+Measured after the change: `SecureCredentialStore`, `PgConfig`,
+`WindowsCredentialStore` and `AvailableUpdate` are all absent from the
+binary; the installer went 16.2 MB -> 15.4 MB; symbols are 5.7 MB; the
+obfuscated build installs and runs.
+
+⚠️ **Obfuscation is NOT a fix for a compiled-in secret** -- it renames
+symbols, not data. That caveat is written into the script itself so a
+later reader does not trust it for something it cannot do. Per-user
+database accounts remain the real answer and were deferred deliberately
+to a later phase, not overlooked.
+
+⚠️ Symbols only decode the build they came from. `/build/symbols/` is
+gitignored, so they must be kept somewhere deliberate before a crash
+report from that release arrives.
+
 #### "Update" now installs itself (2026-09-22)
 
 The gold strip's Update button called `openUpdateDownload`, which opens

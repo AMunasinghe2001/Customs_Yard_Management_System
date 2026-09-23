@@ -99,6 +99,49 @@ void main() {
     });
   });
 
+  group('the shipping build is obfuscated', () {
+    final pub = File('tool/publish_release.ps1').readAsStringSync();
+
+    test('publish_release.ps1 passes --obfuscate', () {
+      // ⚠️ This is the script that builds every release. An earlier
+      // tool/build_release.ps1 obfuscated, but nothing shipped through
+      // it -- so releases were going out unobfuscated while a script
+      // that did the right thing sat unused beside it.
+      expect(pub, contains("'--obfuscate'"));
+    });
+
+    test('and keeps the symbols, per version', () {
+      // ⚠️ --obfuscate WITHOUT --split-debug-info throws the symbol
+      // map away. A crash from that build can never be turned back
+      // into a readable stack trace.
+      expect(pub, contains('--split-debug-info='));
+      const bs = '\\';
+      expect(pub, contains('build' + bs + 'symbols' + bs + r'$version+$build'));
+    });
+
+    test('the folder is created before the build', () {
+      expect(pub, contains('New-Item -ItemType Directory -Force -Path \$symbolDir'));
+    });
+
+    test('a build that wrote no symbols is a failure', () {
+      // Better to fail now than to discover it months later, holding a
+      // crash report and no way to read it.
+      expect(pub, contains('wrote no debug symbols'));
+    });
+
+    test('symbols are not committed', () {
+      final ignore = File('.gitignore').readAsStringSync();
+      expect(ignore, contains('/build/symbols/'));
+    });
+
+    test('the comment does not overclaim what obfuscation does', () {
+      // ⚠️ It renames SYMBOLS. A compiled-in password is still
+      // recoverable with `strings`. Saying otherwise in a comment is
+      // how a reader ends up trusting it for something it cannot do.
+      expect(pub, contains('IT DOES NOT HIDE THOSE PASSWORDS'));
+    });
+  });
+
   group('bumping the version is a separate step', () {
     final rel = File('tool/release.ps1').readAsStringSync();
     final pub = File('tool/publish_release.ps1').readAsStringSync();
@@ -313,18 +356,101 @@ void main() {
     });
   });
 
-  group('the shell offers the check', () {
-    final src = File('lib/widgets/app_shell.dart').readAsStringSync();
+  group('the update button appears only when there IS an update', () {
+    final btn = File('lib/widgets/update_available_button.dart')
+        .readAsStringSync();
 
-    test('there is a Check for Updates action', () {
-      expect(src, contains('Check for Updates'));
-      expect(src, contains('_checkForUpdates(context)'));
+    test('it renders nothing when there is no update', () {
+      // ⚠️ This replaced a permanent "Check for Updates" button --
+      // a question almost nobody wants to ask, since nearly every
+      // press answered "nothing new". The app already knows from the
+      // start-up check, so it offers the ACTION instead.
+      expect(btn, contains('if (update == null) return const SizedBox.shrink();'));
     });
 
-    test('it says nothing when WinSparkle is about to show its own window',
-        () {
-      // A snack bar on top of the updater's window is just noise.
-      expect(src, contains('UpdateCheckOutcome.started'));
+    test('it reads the same value the gold strip does', () {
+      // One source of truth: fetchAvailableUpdate() publishes to
+      // availableUpdate at start-up and both read it.
+      expect(btn, contains('valueListenable: availableUpdate'));
+    });
+
+    test('pressing it UPDATES rather than checking', () {
+      // startUpdate hands the work to WinSparkle, which downloads and
+      // launches the installer. Nothing lands in Downloads.
+      expect(btn, contains('startUpdate(context, update)'));
+    });
+
+    test('the label names the version', () {
+      // ⚠️ "Update" alone says nothing about what is being installed.
+      expect(btn, contains("'Update to "));
     });
   });
+
+  group('every portal offers it', () {
+    // ⚠️ Four separate headers. AppShell covers the yard, executive
+    // and valuation portals; ICT, Appeal and Disposal each build their
+    // own and inherit nothing from it -- which is how the ICT console
+    // missed the button when it was added to the shell alone.
+    const headers = {
+      'the yard shell': 'lib/widgets/app_shell.dart',
+      'the ICT console': 'lib/screens/ict/ict_dashboard_screen.dart',
+      'Appeal': 'lib/screens/appeal/appeal_dashboard_screen.dart',
+      'Disposal': 'lib/screens/disposal/disposal_dashboard_screen.dart',
+    };
+
+    headers.forEach((name, path) {
+      test('$name shows the shared button', () {
+        final src = File(path).readAsStringSync();
+        expect(src, contains('UpdateAvailableButton('),
+            reason: '$path has its own header and needs the button');
+        expect(src, contains('updateButtonLabel(update)'));
+      });
+    });
+
+    test('none of them rolls its own copy', () {
+      // A second implementation would drift the first time one was
+      // corrected.
+      for (final path in headers.values) {
+        final src = File(path).readAsStringSync();
+        // ⚠️ The LABEL, not the bare words. Both files carry a
+        // comment explaining why the always-on button went, and
+        // matching the phrase would fail on the explanation itself.
+        expect(src, isNot(contains("Text('Check for Updates'")),
+            reason: '$path still has the old always-on button');
+      }
+    });
+  });
+
+  group('the ICT tables have room at the right edge', () {
+    final ui = File('lib/screens/ict/ict_ui.dart').readAsStringSync();
+    final tab =
+        File('lib/screens/ict/yard_directorate_tab.dart').readAsStringSync();
+
+    test('the Actions column carries a trailing inset', () {
+      // ⚠️ Without it the toggle ends exactly where the card's padding
+      // begins, so the control looks pinned to the border while every
+      // other column has air around it.
+      expect(ui, contains('kIctTableEndInset'));
+      expect(ui, contains('kIctIconButtonSize * 2 + 8 + 16 + kIctTableEndInset'));
+    });
+
+    test('the inset widens the COLUMN, not the row padding', () {
+      // ⚠️ The header and the rows share one width list. Row padding
+      // would move the cells and leave the heading behind.
+      expect(ui, contains('const double kIctTableEndInset'));
+    });
+
+    test('the directorate name gets the share that varies', () {
+      // SR Prefix is a fixed-width chip and Code is three or four
+      // characters; the NAME is the only column whose content varies.
+      expect(tab, contains('const widths = [2, 2, 9];'));
+    });
+
+    test('Status and Actions stay FIXED, never flex', () {
+      // Given a flex share they become the narrowest columns in a wide
+      // row -- which is how the toggle once spilled past the card.
+      expect(tab, contains('const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];'));
+    });
+  });
+
 }

@@ -10,6 +10,7 @@ import 'core/db_client.dart';
 import 'core/session_reset.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/app_log.dart';
+import 'screens/lock/idle_lock_screen.dart';
 import 'core/error_handling.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
@@ -137,16 +138,83 @@ Future<void> _start() async {
   FrameWatch.arm();
 
   runApp(
-    ValueListenableBuilder<int>(
-      valueListenable: sessionEpoch,
-      builder: (_, epoch, __) => ProviderScope(
-        key: ValueKey('session-$epoch'),
-        child: startupError == null
-            ? const CustomsApp()
-            : DatabaseUnavailableApp(error: startupError),
+    // ⚠️ THE LOCK SCREEN SITS ABOVE ALL OF THIS, not inside it.
+    //
+    // Locking signs the session out, which bumps the epoch below and
+    // replaces the whole ProviderScope. `routerProvider` then yields a
+    // NEW GoRouter, MaterialApp.router is rebuilt with a different
+    // config, and every widget under its builder is destroyed and
+    // recreated -- which is where the lock overlay used to live.
+    //
+    // The officer saw the lock screen arrive and then, about two
+    // seconds later, jump back to its first frame: a fresh State
+    // restarted the entrance fade and all three ambient animations.
+    // Skipping the fade did not fix it, because the drift, breathe and
+    // orbit controllers still began again from zero.
+    //
+    // IdleLockScreen has no providers and no theme lookups -- it takes
+    // its accent and its callback as plain values -- so it can be
+    // mounted here, once, and stay mounted. IdleLockOverlay keeps the
+    // part that needs the scope: watching for idleness and signing out.
+    _LockLayer(
+      child: ValueListenableBuilder<int>(
+        valueListenable: sessionEpoch,
+        builder: (_, epoch, __) => ProviderScope(
+          key: ValueKey('session-$epoch'),
+          child: startupError == null
+              ? const CustomsApp()
+              : DatabaseUnavailableApp(error: startupError),
+        ),
       ),
     ),
   );
+}
+
+/// Holds the idle lock screen above the app, where a session reset
+/// cannot reach it.
+///
+/// ⚠️ A Directionality and a Material are supplied by hand: this sits
+/// OUTSIDE MaterialApp, so none of the inherited widgets the lock screen
+/// would normally find are in scope. Without them it throws on the first
+/// Text it tries to lay out.
+class _LockLayer extends StatelessWidget {
+  const _LockLayer({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Stack(
+        children: [
+          child,
+          ValueListenableBuilder<bool>(
+            valueListenable: idleLockedFlag,
+            builder: (context, locked, _) {
+              if (!locked) return const SizedBox.shrink();
+              return ValueListenableBuilder<Color?>(
+                valueListenable: lockAccent,
+                builder: (context, accent, __) => Positioned.fill(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: IdleLockScreen(
+                      accent: accent,
+                      // ⚠️ Read at PRESS time, not captured here. The
+                      // overlay re-publishes it after every session
+                      // reset, so a callback captured once would be
+                      // the one belonging to a torn-down container.
+                      onUnlock: () => lockUnlockRequest?.call(),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Shown instead of the app when the database could not be reached at start-up.

@@ -90,6 +90,11 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
           'admin' => colors?.primaryGold,
           _ => colors?.accentLightBlue, // officer, and anything unmapped
         };
+    // ⚠️ Handed to the DETACHED screen, which is mounted above
+    // MaterialApp and so cannot read a provider or this Theme.
+    // Written here, while the officer is still signed in, because
+    // their role is what chooses the colour.
+    lockAccent.value = _accent;
 
     // ⚠️ Read the router BEFORE signing out, and navigate BEFORE it too.
     //
@@ -148,6 +153,15 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // ⚠️ The detached screen has no providers, so it cannot reach
+    // the router or the controller itself. This part still lives
+    // inside the ProviderScope and can, so it lends its callback.
+    lockUnlockRequest = _unlock;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final locked = ref.watch(idleLockedProvider);
 
@@ -188,14 +202,19 @@ class _IdleLockOverlayState extends ConsumerState<IdleLockOverlay> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onLocked());
     }
 
-    return Stack(
-      children: [
-        widget.child,
-        if (locked)
-          Positioned.fill(
-            child: IdleLockScreen(accent: _accent, onUnlock: _unlock),
-          ),
-      ],
-    );
+    // ⚠️ The screen itself is NOT drawn here any more.
+    //
+    // Locking signs the session out, which replaces the
+    // ProviderScope and the router -- rebuilding MaterialApp and
+    // every widget under it, this overlay included. A lock screen
+    // mounted here was therefore destroyed and recreated about two
+    // seconds after it appeared, restarting its entrance fade and
+    // all three ambient animations.
+    //
+    // It is mounted above MaterialApp instead (see main.dart), and
+    // this widget keeps the job it can only do from inside the
+    // scope: watching for idleness, and signing out when the time
+    // comes.
+    return widget.child;
   }
 }

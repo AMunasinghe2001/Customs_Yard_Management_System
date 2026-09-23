@@ -205,9 +205,14 @@ void main() {
       // scrollbar at every size, including full screen. The balance is a
       // minimum that fits the columns tightly — text ellipsises, which is
       // fine — rather than one that reserves room they do not need.
+      //
+      // ⚠️ 760, not 1040. The sidebar takes ~200px, so at the app's
+      // minimum window (~1024px) the table area is only ~800px — a 1040
+      // minimum put the Actions column BEYOND it, which is the fault this
+      // test exists to catch rather than a stricter version of the fix.
       final ict =
           File('lib/screens/ict/ict_dashboard_screen.dart').readAsStringSync();
-      expect(ict, contains('minWidth: 1040'));
+      expect(ict, contains('minWidth: 760'));
 
       final tab = File('lib/screens/ict/directorate_access_tab.dart')
           .readAsStringSync();

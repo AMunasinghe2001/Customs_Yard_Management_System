@@ -553,10 +553,10 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                     Expanded(
                       child: IctTableTheme(
                         child: DataTable2(
-                          columnSpacing: 16,
-                          horizontalMargin: 20,
+                          columnSpacing: 10,
+                          horizontalMargin: 14,
                           fixedTopRows: 1,
-                          minWidth: 1080,
+                          minWidth: 760,
                           headingRowHeight: kIctHeadingHeight,
                           // ⚠️ Taller than the other tables on purpose. The
                           // audit trail is the one ICT page whose card fills
@@ -576,17 +576,17 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                           ),
                           columns: [
                             ictCol('When',
-                                size: ColumnSize.S, fixedWidth: 150),
+                                size: ColumnSize.S, fixedWidth: 130),
                             ictCol('User', size: ColumnSize.M),
                             ictCol('Role',
                                 size: ColumnSize.S,
-                                fixedWidth: 120,
+                                fixedWidth: 90,
                                 center: true),
                             ictCol('Yard',
-                                size: ColumnSize.S, fixedWidth: 120),
+                                size: ColumnSize.S, fixedWidth: 90),
                             ictCol('Action', size: ColumnSize.L),
                             ictCol('Activity',
-                                size: ColumnSize.S, fixedWidth: 130),
+                                size: ColumnSize.S, fixedWidth: 100),
                             ictCol('Details', size: ColumnSize.L),
                           ],
                           rows: pageRows.asMap().entries.map((entry) {

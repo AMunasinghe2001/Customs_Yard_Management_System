@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+
+import '../../core/idle_lock.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../widgets/brand_panel.dart';
@@ -64,6 +66,14 @@ class _IdleLockScreenState extends State<IdleLockScreen>
   )..repeat();
 
   /// One-shot fade so the lock screen arrives gently instead of snapping in.
+  ///
+  /// ⚠️ Runs ONCE, because this screen is mounted once.
+  ///
+  /// It used to restart about two seconds in: the sign-out that follows
+  /// a lock rebuilds the ProviderScope and the router, which rebuilt
+  /// MaterialApp and destroyed this widget with it. The screen now sits
+  /// ABOVE MaterialApp, where that reset does not reach -- see
+  /// [lockScreenIsDetached].
   late final AnimationController _enter = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),

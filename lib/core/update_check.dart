@@ -16,7 +16,7 @@ import 'app_log.dart';
 /// Overridable at build time so a test build can pretend to be older:
 ///     --dart-define=APP_VERSION=1.0.0
 const String kAppVersion =
-    String.fromEnvironment('APP_VERSION', defaultValue: '1.5.2');
+    String.fromEnvironment('APP_VERSION', defaultValue: '1.5.3');
 
 /// Where the published release lives.
 ///

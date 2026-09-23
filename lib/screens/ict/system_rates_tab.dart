@@ -130,18 +130,17 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
                   onRetry: () => ref.refresh(storageRateHistoryProvider)),
               data: (list) => list.isEmpty
                   ? const EmptyTableState(message: 'No rate has been set yet')
-                  : DataTable2(
+                  : IctTableTheme(
+                    child: DataTable2(
                       columnSpacing: 12,
                       horizontalMargin: 16,
                       fixedTopRows: 1,
-                      headingRowColor: WidgetStateProperty.all(
-                          c.textPrimary.withOpacity(0.03)),
-                      columns: const [
-                        DataColumn2(
-                            label: Text('Date & Time'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Set By'), size: ColumnSize.M),
-                        DataColumn2(
-                            label: Text('Rate'),
+                      headingRowHeight: kIctHeadingHeight,
+                      dataRowHeight: kIctRowHeight,
+                      columns: [
+                        ictCol('Date & Time', size: ColumnSize.M),
+                        ictCol('Set By', size: ColumnSize.M),
+                        ictCol('Rate',
                             size: ColumnSize.S,
                             fixedWidth: 160),
                       ],
@@ -167,6 +166,7 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
                           ]),
                       ],
                     ),
+                  ),
             ),
           ).animate().slideY(begin: 0.04, duration: 350.ms).fadeIn(),
           const Gap(16),
@@ -200,26 +200,27 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
                   error: e, onRetry: () => ref.refresh(taxesProvider)),
               data: (list) => list.isEmpty
                   ? const EmptyTableState(message: 'No levies configured')
-                  : DataTable2(
+                  : IctTableTheme(
+                    child: DataTable2(
                       columnSpacing: 12,
                       horizontalMargin: 16,
                       fixedTopRows: 1,
-                      headingRowColor: WidgetStateProperty.all(
-                          c.textPrimary.withOpacity(0.03)),
-                      columns: const [
-                        DataColumn2(label: Text('Name'), size: ColumnSize.L),
-                        DataColumn2(
-                            label: Center(child: Text('Percentage')),
+                      headingRowHeight: kIctHeadingHeight,
+                      dataRowHeight: kIctRowHeight,
+                      columns: [
+                        ictCol('Name', size: ColumnSize.L),
+                        ictCol('Percentage',
                             size: ColumnSize.S,
-                            fixedWidth: 130),
-                        DataColumn2(
-                            label: Center(child: Text('Status')),
+                            fixedWidth: 130,
+                            center: true),
+                        ictCol('Status',
                             size: ColumnSize.S,
-                            fixedWidth: 120),
-                        DataColumn2(
-                            label: Center(child: Text('Actions')),
+                            fixedWidth: 120,
+                            center: true),
+                        ictCol('Actions',
                             size: ColumnSize.S,
-                            fixedWidth: 110),
+                            fixedWidth: 110,
+                            center: true),
                       ],
                       rows: [
                         for (final t in list)
@@ -249,6 +250,7 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
                           ]),
                       ],
                     ),
+                  ),
             ),
           ).animate().slideY(begin: 0.04, duration: 350.ms).fadeIn(delay: 80.ms),
         ],

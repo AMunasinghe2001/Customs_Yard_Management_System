@@ -18,6 +18,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/account_cells.dart';
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/update_available_button.dart';
 import 'ict_ui.dart';
 import 'activity_logs_tab.dart';
 import 'directorate_access_tab.dart';
@@ -1663,6 +1664,43 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     ),
                     const Gap(8),
 
+                    // ⚠️ Shown ONLY when there is an update.
+                    //
+                    // This was a permanent "Check for Updates" button,
+                    // which is a question almost nobody wants to ask:
+                    // nearly every press answered "nothing new". The
+                    // app already knows from the start-up check, so it
+                    // offers the ACTION instead of the question.
+                    //
+                    // ⚠️ The console builds its own header and never
+                    // uses AppShell, so it does not inherit the
+                    // equivalent button there -- the widget is shared
+                    // instead, drawn in each portal's own shape.
+                    UpdateAvailableButton(
+                      trailing: const Gap(8),
+                      builder: (ctx, update, onPressed) => SizedBox(
+                        height: 38,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: updateButtonAccent(ctx),
+                            foregroundColor: ctx.colors.primaryNavy,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                    kIctControlRadius)),
+                          ),
+                          icon: const Icon(Icons.download_rounded,
+                              size: 16),
+                          label: Text(updateButtonLabel(update),
+                              style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700)),
+                          onPressed: onPressed,
+                        ),
+                      ),
+                    ),
+
                     // Sign Out — still the labelled button every other directorate
                     // shows, and it still goes through AuthService: ICT once called
                     // supabase.auth.signOut() directly and skipped the sign-out
@@ -1930,8 +1968,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                             // ⚠️ No headingTextStyle or headingRowColor
                                             // here: IctTableTheme sets both, and a value
                                             // passed at the call site would win over it.
-                                            columnSpacing: 12,
-                                            horizontalMargin: 16,
+                                            columnSpacing: 10,
+                                            horizontalMargin: 14,
                                             fixedTopRows: 1,
                                             // ⚠️ Balanced, not generous. data_table_2
                                             // squeezes the flexible columns to fit and
@@ -1940,48 +1978,53 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                             // sight, and too HIGH forces a scrollbar even
                                             // on a maximised window. 1400 did the latter.
                                             //
-                                            // The fixed columns and gaps take 468 (Role
-                                            // 100 + Status 112 + Actions 140 + spacing 84
-                                            // + margins 32). At 1040 the five flexible
-                                            // columns get ~110px each (~132 for the name)
-                                            // — tight, and text ellipsises, which is the
-                                            // right trade: every column stays visible.
+                                            // 8 columns is a lot for a single card. The
+                                            // trick is sizing each column to its DATA, not
+                                            // giving them all the same weight:
                                             //
-                                            // The rail is 258px, so the table has ~858px
-                                            // at the 1180px minimum window (a short
-                                            // scroll) and ~1044px by 1366 (none at all).
-                                            minWidth: 1040,
+                                            //   • Officer Name  — L  (names are the widest)
+                                            //   • Assigned Yard — M  (yard names vary)
+                                            //   • Salary No     — S  (short codes, e.g. SN2345)
+                                            //   • Contact       — S  (phone numbers, fixed width)
+                                            //   • Password      — S  (compact "Resets in N days")
+                                            //   • Role / Status / Actions — fixed widths
+                                            //
+                                            // The sidebar is ~200px, so at the app's
+                                            // minimum window (~1024px) the table area is
+                                            // only ~800px. minWidth must stay UNDER that
+                                            // or the Actions column scrolls off-screen.
+                                            minWidth: 760,
                                             headingRowHeight: kIctHeadingHeight,
                                             dataRowHeight: kIctRowHeight,
                                             columns: [
                                               ictCol('Officer Name',
                                                   size: ColumnSize.L),
                                               ictCol('Salary No',
-                                                  size: ColumnSize.M),
+                                                  size: ColumnSize.S),
                                               ictCol('Role',
                                                   size: ColumnSize.S,
-                                                  fixedWidth: 100),
+                                                  fixedWidth: 90),
                                               ictCol('Assigned Yard',
                                                   size: ColumnSize.M),
                                               ictCol('Contact',
-                                                  size: ColumnSize.M),
+                                                  size: ColumnSize.S),
                                               // ⚠️ The same column Directorate Access
                                               // carries. Yard officers rotate on the same
                                               // 90 days, and ICT had no way to see who was
                                               // near the limit until they were locked out
                                               // and rang to say so.
                                               ictCol('Password',
-                                                  size: ColumnSize.M),
+                                                  size: ColumnSize.S),
                                               ictCol('Status',
                                                   size: ColumnSize.S,
                                                   fixedWidth:
-                                                      kIctPillWidth + 24),
+                                                      kIctPillWidth + 16),
                                               // NOT numeric: that right-aligns the HEADER,
                                               // leaving the word far from the buttons under
                                               // it. The cell aligns its own contents.
                                               ictCol('Actions',
                                                   size: ColumnSize.S,
-                                                  fixedWidth: 140),
+                                                  fixedWidth: 110),
                                             ],
                                             rows: _staffList
                                                 .asMap()

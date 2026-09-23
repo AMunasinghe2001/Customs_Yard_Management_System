@@ -116,7 +116,21 @@ const double kIctCellGap = 12;
 /// Wide enough for a kIctPillWidth pill, and for two icon buttons and the gap
 /// between them, plus the cell gap on each side.
 const double kIctStatusColumnWidth = kIctPillWidth + 16;
-const double kIctActionsColumnWidth = kIctIconButtonSize * 2 + 8 + 16;
+const double kIctActionsColumnWidth =
+    kIctIconButtonSize * 2 + 8 + 16 + kIctTableEndInset;
+
+/// Breathing room after the LAST column, before the card's edge.
+///
+/// ⚠️ Without it the toggle in Actions ends exactly where the card's
+/// 16px padding begins, so the control looks pinned to the border while
+/// every other column has air around it. The table reads as if it has
+/// overflowed even though nothing is clipped.
+///
+/// Added to the Actions column rather than as padding on the row: the
+/// header and the rows share one width list, so widening the column keeps
+/// the heading over its own cells. Row padding would move the cells and
+/// leave the heading behind.
+const double kIctTableEndInset = 12;
 
 /// The portal accent, carried down the tree.
 ///

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cus_yard_management/screens/lock/idle_lock_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/idle_lock.dart';
@@ -14,6 +15,8 @@ ProfileModel _profile() => ProfileModel(
       createdAt: DateTime.now(),
       passwordUpdatedAt: DateTime.now(),
     );
+
+void _noop() {}
 
 void main() {
   setUp(() => idleLockedFlag.value = false);
@@ -57,15 +60,40 @@ void main() {
     addTearDown(container.dispose);
     container.read(currentProfileProvider.notifier).state = _profile();
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp(
-        home: IdleActivityDetector(
-          child: IdleLockOverlay(
-            child: const Scaffold(body: Center(child: Text('dashboard'))),
+    // ⚠️ THE SCREEN IS MOUNTED ABOVE MaterialApp, as main.dart does it.
+    //
+    // Locking signs the session out, which replaces the ProviderScope
+    // and the router -- rebuilding MaterialApp and everything under it.
+    // Drawn inside IdleLockOverlay, the screen was destroyed and
+    // recreated about two seconds after it appeared and visibly jumped
+    // back to its first frame. The overlay now only WATCHES; this layer
+    // is what draws, and it sits where the reset cannot reach it.
+    await tester.pumpWidget(Directionality(
+      textDirection: TextDirection.ltr,
+      child: Stack(children: [
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: IdleActivityDetector(
+              child: IdleLockOverlay(
+                child:
+                    const Scaffold(body: Center(child: Text('dashboard'))),
+              ),
+            ),
           ),
         ),
-      ),
+        ValueListenableBuilder<bool>(
+          valueListenable: idleLockedFlag,
+          builder: (context, locked, _) => locked
+              ? const Positioned.fill(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: IdleLockScreen(onUnlock: _noop),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ]),
     ));
     await tester.pump();
     await tester.pump(const Duration(minutes: 5, seconds: 20));

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:auto_updater/auto_updater.dart';
 
@@ -144,5 +145,63 @@ Future<UpdateCheckOutcome> checkForUpdatesNow() async {
   } catch (e) {
     AppLog.warn('manual update check failed', error: e, tag: 'update');
     return UpdateCheckOutcome.failed;
+  }
+}
+
+/// "Check for Updates", from wherever a portal offers it.
+///
+/// ⚠️ ONE implementation, called from both shells. The Yard portal
+/// (widgets/app_shell.dart) and the ICT console (screens/ict/) have
+/// separate headers -- the console never uses AppShell -- so a second
+/// copy of this logic would be the obvious way to add the button there,
+/// and the two would drift the first time one was corrected.
+///
+/// ⚠️ WinSparkle owns the conversation once the check STARTS: it
+/// puts its own window on screen whether or not anything is newer. So
+/// this reports only the cases it will never show a window for --
+/// otherwise an officer on a build with no feed presses a button that
+/// does nothing at all and reasonably concludes the app is broken.
+Future<void> runUpdateCheck(
+  BuildContext context, {
+  String? pendingVersion,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+
+  // The start-up check already found a release. Say so rather than
+  // making them wait for a second answer to the same question.
+  if (pendingVersion != null) {
+    messenger.showSnackBar(SnackBar(
+      content: Text('Version $pendingVersion is available.'),
+      behavior: SnackBarBehavior.floating,
+    ));
+    return;
+  }
+
+  final outcome = await checkForUpdatesNow();
+  if (!context.mounted) return;
+
+  final String? message;
+  switch (outcome) {
+    case UpdateCheckOutcome.started:
+      // WinSparkle is showing its own window now; a snack bar on top
+      // of it would just be noise.
+      message = null;
+    case UpdateCheckOutcome.notConfigured:
+      message = 'This build does not check for updates. '
+          'Ask ICT for the latest installer.';
+    case UpdateCheckOutcome.feedRefused:
+      message = 'The update source is not trusted, so it was not used. '
+          'Tell ICT.';
+    case UpdateCheckOutcome.unsupportedPlatform:
+      message = 'Updates are checked on Windows only.';
+    case UpdateCheckOutcome.failed:
+      message = 'Could not reach the update server. '
+          'Check the connection and try again.';
+  }
+  if (message != null) {
+    messenger.showSnackBar(SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 }

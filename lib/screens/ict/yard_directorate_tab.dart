@@ -508,9 +508,14 @@ class _DirectorateTable extends StatelessWidget {
     // the narrowest columns in a wide row: the pill and the buttons ended
     // up touching, and the toggle spilled past the card's edge (the 6px
     // overflow stripe). Fixed widths cannot be squeezed by a long name.
-    // SR Prefix and Code are short and fixed in shape; the NAME is what
-    // varies, so it gets the room.
-    const widths = [2, 2, 7];
+    //
+    // The flex share follows what each column actually holds. SR Prefix
+    // is a fixed-width chip and Code is three or four characters, so at
+    // 2/2/7 both sat in a column far wider than their content while the
+    // NAME -- the only one that varies, and the longest -- was the column
+    // running out of room. 2/2/9 gives the name that space back without
+    // letting the short columns collapse.
+    const widths = [2, 2, 9];
     const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];
     return _TableShell(
       columns: const ['SR Prefix', 'Code', 'Name', 'Status', 'Actions'],

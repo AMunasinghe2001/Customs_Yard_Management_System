@@ -141,7 +141,29 @@ if ($SkipFlutter) {
   # ⚠️ Compiled IN, not read from .env at runtime. These URLs decide which
   # .exe the app downloads and RUNS as administrator, so they must not be
   # changeable by a file sitting next to the app.
-  $a = @('build', 'windows', '--release')
+  # ⚠️ OBFUSCATED, and the symbols kept.
+  #
+  # --obfuscate renames Dart classes, methods and fields in the compiled
+  # output, so the binary no longer hands a reader the app's structure.
+  # It matters more here than in most apps, because this build carries
+  # the database and Gmail passwords as compiled-in constants.
+  #
+  # ⚠️ IT DOES NOT HIDE THOSE PASSWORDS. Obfuscation renames SYMBOLS;
+  # a compiled-in string is still recoverable with `strings` on the .exe.
+  # It raises the effort, it does not remove the exposure. The real fix
+  # is per-user database accounts instead of one shared yard_app
+  # password in every binary -- deferred deliberately, not overlooked.
+  #
+  # ⚠️ --split-debug-info is what makes --obfuscate usable. Without
+  # it the symbol map is simply GONE, and a crash from a shipped build
+  # can never be turned back into a stack trace anyone can read. With
+  # it the map is written out of the binary and into the folder below,
+  # which must be KEPT: symbols only decode the build they came from.
+  $symbolDir = Join-Path $root "build\symbols\$version+$build"
+  New-Item -ItemType Directory -Force -Path $symbolDir | Out-Null
+
+  $a = @('build', 'windows', '--release',
+         '--obfuscate', "--split-debug-info=$symbolDir")
   if (-not $NoUpdateFeed) {
     $a += "--dart-define=UPDATE_FEED_URL=$FeedUrl"
     $a += "--dart-define=UPDATE_MANIFEST_URL=$ManifestUrl"
@@ -154,6 +176,15 @@ if ($SkipFlutter) {
   }
   & flutter @a
   if ($LASTEXITCODE -ne 0) { throw 'flutter build failed' }
+
+  # ⚠️ A build that produced no symbol file is an obfuscated
+  # binary nobody can ever debug. Better to fail here than to find
+  # out months later, holding a crash report and no way to read it.
+  $syms = Get-ChildItem $symbolDir -File -ErrorAction SilentlyContinue
+  if (-not $syms) {
+    throw "the build wrote no debug symbols to $symbolDir - a crash from this build could not be decoded"
+  }
+  Write-Host ("  symbols -> {0}  ({1} file(s))" -f $symbolDir, $syms.Count) -ForegroundColor DarkGray
 }
 
 if (-not (Test-Path 'build\windows\x64\runner\Release\cus_yard_management.exe')) {
@@ -230,6 +261,12 @@ Write-Host "  SLCustoms-SR-Setup-$version.exe   ($mb MB)"
 Write-Host '  appcast.xml'
 Write-Host '  latest.json'
 Write-Host ''
+if (-not $SkipFlutter) {
+  Write-Host ("  debug symbols: build\symbols\{0}+{1}\" -f $version, $build) -ForegroundColor DarkGray
+  Write-Host '  KEEP THESE. An obfuscated crash report cannot be read without' -ForegroundColor DarkGray
+  Write-Host '  the symbols from this exact build.' -ForegroundColor DarkGray
+  Write-Host ''
+}
 Write-Host '  all three in installer\output\' -ForegroundColor DarkGray
 Write-Host ''
 Write-Host '  UPLOAD to Supabase -> Storage -> updates' -ForegroundColor Cyan
