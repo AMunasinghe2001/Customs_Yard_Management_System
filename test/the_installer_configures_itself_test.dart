@@ -195,44 +195,40 @@ void main() {
   });
 
   group('an upgrade over a running app', () {
-    final cpp = File('windows/runner/main.cpp').readAsStringSync();
-
-    test('the app publishes a mutex the installer can see', () {
+    test('Setup closes the app itself and restarts it', () {
       // ⚠️ Windows locks a running process's DLLs. Without this the
       // install died partway through with
       //
       //     auto_updater_windows_plugin.dll
       //     DeleteFile failed; code 5. Access is denied.
-      //
-      // and offered "Skip this file (not recommended)", which leaves a
-      // half-updated install: a new .exe beside an old plugin.
-      expect(cpp, contains('CreateMutexW'));
-      expect(iss, contains('AppMutex='));
-    });
-
-    test('and the two names agree exactly', () {
-      // ⚠️ A typo here is silent: Setup simply never finds the mutex
-      // and the old failure comes back.
-      final m = RegExp(r'CreateMutexW\([^,]+,[^,]+,\s*L"([^"]+)"')
-          .firstMatch(cpp);
-      final n = RegExp(r'^AppMutex=(.+)$', multiLine: true)
-          .firstMatch(iss);
-      expect(m, isNotNull, reason: 'no CreateMutexW in main.cpp');
-      expect(n, isNotNull, reason: 'no AppMutex in setup.iss');
-      // C++ escapes the backslash; Inno takes the name raw.
-      final fromCpp = m!.group(1)!.replaceAll('\\\\', '\\');
-      expect(fromCpp, n!.group(1)!.trim());
-    });
-
-    test('it is a Global mutex, not session-local', () {
-      // An app left running under ANOTHER logged-in account locks the
-      // files just the same.
-      expect(cpp, contains('Global' + '\\\\'));
-    });
-
-    test('Setup closes the app itself and restarts it', () {
       expect(iss, contains('CloseApplications=force'));
       expect(iss, contains('RestartApplications=yes'));
+    });
+
+    test('there is NO AppMutex, deliberately', () {
+      // ⚠️ THE TEST THAT MATTERS, and it asserts an ABSENCE.
+      //
+      // AppMutex is checked BEFORE CloseApplications runs. An update
+      // started from inside the app -- the normal way now, via the gold
+      // Update strip -- means the app is still running at that moment
+      // and always will be: it is the process that launched Setup. So
+      // Setup showed "Please close all instances of it now", and OK
+      // re-checked the mutex, found it, and asked again. A loop the
+      // officer could not escape, because the only thing that could
+      // close the app was the app, and it was waiting for Setup.
+      //
+      // CloseApplications=force does the same job at the right moment.
+      final directive =
+          RegExp(r'^AppMutex=', multiLine: true).firstMatch(iss);
+      expect(directive, isNull,
+          reason: 'AppMutex makes an in-app update impossible');
+    });
+
+    test('the app still publishes the mutex, for other tooling', () {
+      // It costs nothing and something else may want it; it just no
+      // longer gates Setup.
+      final cpp = File('windows/runner/main.cpp').readAsStringSync();
+      expect(cpp, contains('CreateMutexW'));
     });
   });
 

@@ -107,25 +107,41 @@ UninstallDisplayName={#AppShortName}
 ; or "Cancel". None of those is safe -- skipping leaves a half-updated
 ; install where the .exe is new and a plugin is old.
 ;
-; AppMutex names a mutex the app creates at start-up (windows/runner/
-; main.cpp). Setup waits for it to disappear and asks the officer to close
-; the app, instead of discovering the lock mid-copy. The name must match
-; that file EXACTLY.
-AppMutex=Global\SLCustomsSRManagementSystem
-
-; Let Setup close the app itself where it can, and restart it afterwards.
+; ⚠️ NO AppMutex HERE, DELIBERATELY. It looks like the right tool and
+; it makes an in-app update impossible.
+;
+; AppMutex is checked BEFORE CloseApplications runs. When the update is
+; started from inside the app -- which is the normal way now, the gold
+; "Update" strip hands the installer to WinSparkle -- the app is still
+; running at that moment and always will be: it is the process that
+; launched Setup. So Setup showed
+;
+;     Setup has detected that ... is currently running.
+;     Please close all instances of it now, then click OK to continue.
+;
+; and OK re-checked the mutex, found it still there, and asked again --
+; a loop the officer could not get out of, because the only thing that
+; could close the app was the app, and it was waiting for Setup.
+;
+; CloseApplications=force does the same job at the RIGHT moment: it uses
+; the Restart Manager to shut the app down as part of the install,
+; rather than refusing to start until somebody else has.
+;
+; The mutex itself stays in windows/runner/main.cpp -- it costs nothing
+; and other tooling may want it -- it just no longer gates Setup.
 ;
 ; ⚠️ `force` also covers a window that is not responding to a polite
-; close. Without it, an app sitting on a modal dialog -- the update notice
-; itself, for instance -- blocks the install it was telling the officer to
-; run.
+; close, which the app is by definition here: it is sitting inside
+; WinSparkle's own modal progress window while Setup runs.
 CloseApplications=force
 RestartApplications=yes
 
-; ⚠️ And do NOT let the officer wave the failure through. The default
-; offers "Skip this file", which produces an install nobody can diagnose
-; later. With this, a locked file stops the install cleanly and it can be
-; run again once the app is closed.
+; Which files Restart Manager inspects for a lock before copying.
+;
+; ⚠️ The DEFAULT is *.exe,*.dll,*.chm,*.ocx and this narrows it to
+; the two that matter here -- the app and its plugins. It does NOT
+; control what happens when a file is locked; CloseApplications above
+; is what shuts the holder down.
 CloseApplicationsFilter=*.exe,*.dll
 
 OutputDir=output
