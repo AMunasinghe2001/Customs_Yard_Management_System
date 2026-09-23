@@ -16,7 +16,7 @@ import 'app_log.dart';
 /// Overridable at build time so a test build can pretend to be older:
 ///     --dart-define=APP_VERSION=1.0.0
 const String kAppVersion =
-    String.fromEnvironment('APP_VERSION', defaultValue: '1.5.4');
+    String.fromEnvironment('APP_VERSION', defaultValue: '1.0.2');
 
 /// Where the published release lives.
 ///
@@ -28,8 +28,7 @@ const String kAppVersion =
 /// newest tag and every file attached to it, so there is nothing to scrape.
 const String kUpdateManifestUrl = String.fromEnvironment(
   'UPDATE_MANIFEST_URL',
-  defaultValue: 'https://api.github.com/repos/AMunasinghe2001/'
-      'Customs_Yard_Management_System/releases/latest',
+  defaultValue: 'https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/latest.json',
 );
 
 /// A release newer than the one running.

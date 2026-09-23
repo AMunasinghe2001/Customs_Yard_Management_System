@@ -14,13 +14,13 @@
     <description>Updates for the SR Management System</description>
     <language>en</language>
     <item>
-      <title>Version 1.5.4</title>
-      <description><![CDATA[<html><head><meta charset="utf-8"><style>html,body{margin:0;padding:12px 14px;background:#ffffff;color:#1a1a1a;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.55;}h1,h2,h3{font-size:14px;margin:0 0 8px;color:#111111;}ul{margin:6px 0 0 18px;padding:0;}li{margin:3px 0;}p{margin:0 0 8px;}a{color:#0b5cad;}::selection{background:#cfe3f7;color:#1a1a1a;}</style></head><body><p>Update button appears only when an update exists; lock screen no longer reloads; ICT table spacing</p></body></html>]]></description>
-      <pubDate>Wed, 23 Sep 2026 05:19:36 +0000</pubDate>
-      <enclosure url="https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/SLCustoms-SR-Setup-1.5.4.exe"
-                 sparkle:version="1.5.4+10"
-                 sparkle:shortVersionString="1.5.4"
-                 length="16200273"
+      <title>Version 1.0.2</title>
+      <description><![CDATA[<html><head><meta charset="utf-8"><style>html,body{margin:0;padding:12px 14px;background:#ffffff;color:#1a1a1a;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.55;}h1,h2,h3{font-size:14px;margin:0 0 8px;color:#111111;}ul{margin:6px 0 0 18px;padding:0;}li{margin:3px 0;}p{margin:0 0 8px;}a{color:#0b5cad;}::selection{background:#cfe3f7;color:#1a1a1a;}</style></head><body><p>Update test: this is the version 1.0.1 should be offered</p></body></html>]]></description>
+      <pubDate>Wed, 23 Sep 2026 06:24:25 +0000</pubDate>
+      <enclosure url="https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/SLCustoms-SR-Setup-1.0.2.exe"
+                 sparkle:version="1.0.2+17"
+                 sparkle:shortVersionString="1.0.2"
+                 length="16195999"
                  type="application/octet-stream" />
     </item>
   </channel>

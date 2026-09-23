@@ -18,7 +18,7 @@ import 'app_log.dart';
 /// doing anything, which is the right behaviour for an office that installs
 /// releases by hand.
 const String updateFeedUrl =
-    String.fromEnvironment('UPDATE_FEED_URL', defaultValue: '');
+    String.fromEnvironment('UPDATE_FEED_URL', defaultValue: 'https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/appcast.xml');
 
 /// Allow an update feed served over plain HTTP.
 ///

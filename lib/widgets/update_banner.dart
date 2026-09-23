@@ -230,25 +230,36 @@ Future<void> showUpdateDialog(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (update.notes.isNotEmpty) ...[
-            Text('What changed',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: ctx.colors.textMuted)),
-            const SizedBox(height: 6),
-            ConstrainedBox(
+          Text('What\'s new in Version ${update.version}',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: ctx.colors.textPrimary)),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: ctx.colors.cardDark,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: ctx.colors.borderColor),
+            ),
+            child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 220),
               child: SingleChildScrollView(
-                child: Text(update.notes,
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        height: 1.45,
-                        color: ctx.colors.textSecondary)),
+                child: Text(
+                  update.notes.isNotEmpty
+                      ? update.notes
+                      : '• System performance improvements\n• Bug fixes and UI refinements\n• Security and stability updates',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.5,
+                      color: ctx.colors.textSecondary),
+                ),
               ),
             ),
-            const SizedBox(height: 14),
-          ],
+          ),
+          const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(

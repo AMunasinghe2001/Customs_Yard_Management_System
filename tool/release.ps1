@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Cut a release: bump the version everywhere, build, and package the installer.
 
@@ -159,41 +159,38 @@ if ($BumpOnly) {
   exit 0
 }
 
-# ── 4. Build ────────────────────────────────────────────────────────────────
+# -- 4. Build ----------------------------------------------------------------
 Write-Host "`nBuilding..." -ForegroundColor Cyan
-& flutter build windows --release
+$BucketBase = 'https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates'
+& flutter build windows --release --dart-define=UPDATE_MANIFEST_URL=$BucketBase/latest.json --dart-define=UPDATE_FEED_URL=$BucketBase/appcast.xml
 if ($LASTEXITCODE -ne 0) { throw 'flutter build failed' }
 
-# ── 5. Package ──────────────────────────────────────────────────────────────
+# -- 5. Package --------------------------------------------------------------
 $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
 if (-not (Test-Path $iscc)) {
-  Write-Warning "Inno Setup not found at $iscc — skipping the installer."
-  Write-Host ('Install it, then run:  & "{0}" installer\setup.iss' -f $iscc)
+  Write-Warning "Inno Setup not found at $iscc - skipping the installer."
+  Write-Host "Install it, then run: & `"$iscc`" installer\setup.iss"
   exit 0
 }
 & $iscc 'installer\setup.iss'
 if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
 
+# -- 6. Feeds ----------------------------------------------------------------
+$python = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $python) { $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
+if ($python) {
+  & $python tools\generate_appcast.py --notes "Improvements and bug fixes in Version $Version"
+}
+
 $exe = Join-Path $root "installer\output\SLCustoms-SR-Setup-$Version.exe"
 Write-Host "`nDone." -ForegroundColor Green
 if (Test-Path $exe) {
-  $mb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
-  Write-Host ("  {0}  ({1} MB)" -f $exe, $mb)
+  $fileLen = (Get-Item $exe).Length
+  $mb = [math]::Round($fileLen / 1048576, 1)
+  Write-Host "  $exe  ($mb MB)" -ForegroundColor Green
 }
 
-Write-Host @"
-
-NEXT — publish it, or no branch will ever be told:
-
-  1. git commit -am "release $Version"  &&  git push
-  2. git tag v$Version  &&  git push origin v$Version
-  3. On GitHub: Releases -> Draft a new release
-       Tag:    v$Version
-       Title:  $Version
-       Notes:  what changed, in plain words -- officers read this
-       Attach: the .exe above
-     Publish (NOT as a pre-release, and NOT as a draft: the app skips both).
-
-  Every running copy checks GitHub at startup and shows the strip within a
-  restart. Nothing needs to be pushed to the branches.
-"@ -ForegroundColor Yellow
+Write-Host "`nUpload to Supabase Storage updates bucket:" -ForegroundColor Yellow
+Write-Host "  1. SLCustoms-SR-Setup-$Version.exe" -ForegroundColor Yellow
+Write-Host "  2. latest.json" -ForegroundColor Yellow
+Write-Host "  3. appcast.xml" -ForegroundColor Yellow
