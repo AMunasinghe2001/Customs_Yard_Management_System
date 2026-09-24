@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// How long the app may sit untouched before it locks itself.
@@ -247,6 +248,7 @@ class IdleLockController {
 
   final Ref _ref;
   Timer? _timer;
+  DateTime? _lastActivityTime;
 
   /// Whether there is a session worth protecting.
   ///
@@ -258,23 +260,33 @@ class IdleLockController {
   bool _armed = false;
 
   /// Start protecting the session. Called once a profile exists.
-  ///
-  /// Idempotent: the overlay calls this from `build`, which runs on every
-  /// rebuild of the app, and re-poking there would keep pushing the deadline
-  /// out so a busy-but-untouched screen never locked.
   void arm() {
     if (_armed) return;
     _armed = true;
-    poke();
+    _lastActivityTime = DateTime.now();
+    _startTimer();
   }
 
-  /// Restart the countdown. Called on every real interaction.
+  /// Restart the countdown. Called on genuine user interaction.
   void poke() {
-    // Once locked, activity must not silently un-lock the app -- the user has
-    // to sign in again. The countdown resumes when the lock is lifted.
     if (!_armed || _ref.read(idleLockedProvider)) return;
+    _lastActivityTime = DateTime.now();
+  }
+
+  void _startTimer() {
     _timer?.cancel();
-    _timer = Timer(kIdleLockTimeout, _lock);
+    // Heartbeat check every 5 seconds to ensure the 5-minute timeout is strictly honored
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!_armed || _ref.read(idleLockedProvider)) {
+        _timer?.cancel();
+        _timer = null;
+        return;
+      }
+      if (_lastActivityTime != null &&
+          DateTime.now().difference(_lastActivityTime!) >= kIdleLockTimeout) {
+        _lock();
+      }
+    });
   }
 
   void _lock() {
@@ -296,7 +308,8 @@ class IdleLockController {
   /// Called after the user has signed back in.
   void unlock() {
     _ref.read(idleLockedProvider.notifier).set(false);
-    poke();
+    _lastActivityTime = DateTime.now();
+    _startTimer();
   }
 
   /// Stop counting entirely -- used while no one is signed in, so the lock
@@ -305,6 +318,7 @@ class IdleLockController {
     _armed = false;
     _timer?.cancel();
     _timer = null;
+    _lastActivityTime = null;
   }
 
   void dispose() => _timer?.cancel();
@@ -333,21 +347,31 @@ class IdleActivityDetector extends ConsumerStatefulWidget {
 }
 
 class _IdleActivityDetectorState extends ConsumerState<IdleActivityDetector> {
-  void _poke([_]) => ref.read(idleLockControllerProvider).poke();
+  void _poke() => ref.read(idleLockControllerProvider).poke();
 
   @override
   Widget build(BuildContext context) {
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: _poke,
-      onPointerMove: _poke,
-      onPointerHover: _poke,
-      onPointerSignal: _poke,
+      onPointerDown: (_) => _poke(),
+      onPointerMove: (e) {
+        // Only count actual physical mouse movement, not stationary jitter or sub-pixel noise
+        if (e.delta.distanceSquared > 0.5) _poke();
+      },
+      onPointerHover: (e) {
+        // Synthetic hover events dispatched by Flutter on widget rebuilds/timer repaints
+        // have delta == Offset.zero. Ignore them so background UI updates don't keep resetting
+        // the idle timer.
+        if (e.delta.distanceSquared > 0.5) _poke();
+      },
+      onPointerSignal: (_) => _poke(),
       child: Focus(
         // Keyboard-only work (typing into a long form, tabbing between fields)
         // moves no pointer at all, and must not be mistaken for an idle desk.
-        onKeyEvent: (_, __) {
-          _poke();
+        onKeyEvent: (_, event) {
+          if (event is KeyDownEvent || event is KeyRepeatEvent) {
+            _poke();
+          }
           return KeyEventResult.ignored;
         },
         canRequestFocus: false,
