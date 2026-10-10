@@ -1224,8 +1224,13 @@ final myYardOnlineProfilesProvider =
   final myYard = me?.yard;
   // Only the columns the online list needs (created_at/full_name/role are
   // required by fromJson). Projecting keeps each poll tiny at scale.
-  const cols =
-      'id, full_name, role, yard, last_seen_at, profile_image_url, created_at';
+  //
+  // ⚠️ job_role must be here too. Without it, every admin's postShortTitle
+  // falls back to the generic "SDDC / DDC" -- not because the officer has no
+  // post recorded, but because this projection never fetched the column that
+  // holds it. The row this query built was simply missing the field.
+  const cols = 'id, full_name, role, job_role, yard, last_seen_at, '
+      'profile_image_url, created_at';
   List<ProfileModel> last = const [];
   while (true) {
     try {

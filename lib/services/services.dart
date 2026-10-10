@@ -3492,17 +3492,30 @@ class WarehouseService {
     return WarehouseModel.fromJson(data);
   }
 
-  /// Delete a warehouse (only if it has no active entries)
+  /// Delete a warehouse (only if it has never held any goods)
+  ///
+  /// ⚠️ This used to check only ACTIVE entries (`is_returned = false`), but
+  /// `warehouse_entries.warehouse_id` carries no `ON DELETE CASCADE` or
+  /// `SET NULL` — historical entries for goods already returned still
+  /// reference the warehouse, and the database refuses the delete on that
+  /// foreign key regardless of what this check found. The guard passed, the
+  /// DELETE then failed with a 23503, and the screen had nothing better to
+  /// say than "Something went wrong" because the snackbar never shows the
+  /// driver's detail. Checking every entry means the guard's answer matches
+  /// what the database will actually do.
   Future<void> deleteWarehouse(String id) async {
-    // Check if warehouse has any entries
     final entries = await supabase
         .from('warehouse_entries')
         .select('id')
-        .eq('warehouse_id', id)
-        .eq('is_returned', false);
+        .eq('warehouse_id', id);
 
     if (entries.isNotEmpty) {
-      throw Exception('Cannot delete warehouse with active entries');
+      throw Exception(
+        'Cannot delete this warehouse — it has ${entries.length} warehouse '
+        'entry record(s) in its history (including returned/closed ones). '
+        'Removing it would break that history. Delete or reassign those '
+        'entries first, or keep the warehouse as a closed record instead.',
+      );
     }
 
     await supabase.from('warehouses').delete().eq('id', id);

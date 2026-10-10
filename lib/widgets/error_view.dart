@@ -45,7 +45,14 @@ enum _Kind {
 void showErrorSnack(BuildContext context, Object error, {String? action}) {
   final kind = ErrorView.classifyForTest(error);
   final (icon, tint, title, _) = ErrorView.wordingForTest(kind, context);
-  final lead = action == null ? title : '$action failed — ${title.toLowerCase()}';
+  // `unknown` is where a plain `Exception('...')` the app itself threw lands
+  // -- that message was written for the user to read, not driver noise, so
+  // show it instead of the generic "Something went wrong" that told them
+  // nothing. Every other kind keeps the short, worded title: those details
+  // ARE driver text, which is exactly what this snackbar exists to hide.
+  final lead = kind == ErrorView.unknownForTest
+      ? ErrorView.detailForTest(error)
+      : (action == null ? title : '$action failed — ${title.toLowerCase()}');
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
@@ -123,6 +130,14 @@ class ErrorView extends StatelessWidget {
   /// Test seam for [describeErrorForTest]; the classifier itself stays private.
   @visibleForTesting
   static _Kind classifyForTest(Object error) => _classify(error);
+
+  /// The `unknown` kind, exposed so callers outside this file (namely
+  /// [showErrorSnack]) can compare against it without reaching into the
+  /// private enum.
+  static const unknownForTest = _Kind.unknown;
+
+  /// Test/call seam for [_detail].
+  static String detailForTest(Object error) => _detail(error);
 
   /// The wording for a kind, so [showErrorSnack] says what the page says.
   static (IconData, Color, String, String) wordingForTest(

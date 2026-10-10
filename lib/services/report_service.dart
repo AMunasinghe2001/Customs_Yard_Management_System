@@ -1495,7 +1495,7 @@ class ReportService {
                 .map((p) => [
                       p.fullName,
                       p.badgeNumber ?? 'N/A',
-                      p.role.toUpperCase(),
+                      p.postShortTitle.toUpperCase(),
                       p.isActive ? 'Active' : 'Deactivated',
                       DateFormat('yyyy-MM-dd').format(p.createdAt),
                     ])
@@ -1541,7 +1541,7 @@ class ReportService {
       sheetObject.appendRow([
         TextCellValue(p.fullName),
         TextCellValue(p.badgeNumber ?? ''),
-        TextCellValue(p.role.toUpperCase()),
+        TextCellValue(p.postShortTitle.toUpperCase()),
         TextCellValue(p.isActive ? 'Active' : 'Inactive'),
         TextCellValue(DateFormat('yyyy-MM-dd').format(p.createdAt)),
       ]);

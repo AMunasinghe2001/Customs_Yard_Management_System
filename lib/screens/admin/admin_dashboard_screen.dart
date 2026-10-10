@@ -733,7 +733,10 @@ class _OnlineMemberTile extends StatelessWidget {
       ),
       title: Text(profile.fullName,
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-      subtitle: Text(profile.role.toUpperCase(),
+      // profile.role only has two yard-scoped values, so every admin read as
+      // "ADMIN" here regardless of post -- postShortTitle is the officer's
+      // actual post (SDDC, DDC, ...), same as the sidebar under their name.
+      subtitle: Text(profile.postShortTitle.toUpperCase(),
           style: TextStyle(
               color: context.colors.primaryGold,
               fontSize: 10,
