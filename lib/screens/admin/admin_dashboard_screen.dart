@@ -1,6 +1,7 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -69,6 +70,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     final profiles = ref.watch(myYardProfilesProvider);
     final online = ref.watch(myYardOnlineProfilesProvider);
     final myYard = ref.watch(currentProfileProvider)?.yard;
+    // ⚠️ The DIRECTORATE that runs this yard, read from the ICT-
+    // maintained link table -- never hardcoded, because ICT re-pairs yards
+    // and directorates from the portal at run time.
+    final myPrefix = ref.watch(myDirectoratePrefixProvider).value;
 
     return AppShell(
       currentRoute: widget.currentRoute,
@@ -79,7 +84,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // â”€â”€ Header: title + date Â· yard badge + staff stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Header: title + date · yard badge + staff stats ──────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -87,20 +92,59 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ⚠️ The YARD's name, not the role's.
+                      //
+                      // "Admin Dashboard" said who was looking; every page
+                      // under it is filtered to one yard, and which yard
+                      // that is was only visible in a badge on the far side
+                      // of the header. An officer signed into two yards on
+                      // two machines could not tell the screens apart.
+                      //
+                      // The role has not been dropped -- it is under the
+                      // officer's name in the rail, where it says what they
+                      // may do rather than what they are looking at.
+                      //
+                      // ⚠️ The DIRECTORATE leads, the yard's NAME follows:
+                      // "CED · Grey Line 1 Dashboard".
+                      //
+                      // "Admin Dashboard" said who was looking, while every
+                      // page under it is filtered to one yard. The yard code
+                      // alone was no better: GL1 is meaningless until you
+                      // know it belongs to CED, and ICT groups yards under
+                      // directorates precisely because that is the division
+                      // that matters. So the header names the directorate
+                      // and spells the yard out; the badge opposite carries
+                      // the directorate alone.
+                      //
+                      // The prefix arrives a frame late (it is a future), so
+                      // the title falls back to the yard name rather than
+                      // flashing an empty separator.
                       Text(
-                          ref.watch(currentProfileProvider)?.isAdmin == true
-                              ? 'Admin Dashboard'
-                              : 'Dashboard',
+                          myYard == null || myYard.isEmpty
+                              ? 'Dashboard'
+                              : (myPrefix == null || myPrefix.isEmpty
+                                  ? '${yardName(myYard)} Dashboard'
+                                  : '$myPrefix · ${yardName(myYard)} Dashboard'),
                           style: Theme.of(context).textTheme.headlineLarge),
-                      Text(
-                          DateFormat('EEEE, d MMMM yyyy')
-                              .format(DateTime.now()),
+                      // ⚠️ A LIVE clock, ticking. A dashboard that
+                      // auto-refreshes every 25 seconds but shows a time
+                      // frozen at whenever it was opened is worse than one
+                      // showing no time at all -- the reader trusts it.
+                      StreamBuilder<DateTime>(
+                        stream: Stream.periodic(
+                            const Duration(seconds: 1), (_) => DateTime.now()),
+                        initialData: DateTime.now(),
+                        builder: (context, snap) => Text(
+                          DateFormat('EEEE, d MMMM yyyy · HH:mm:ss')
+                              .format(snap.data ?? DateTime.now()),
                           style:
-                              TextStyle(color: context.colors.textSecondary)),
+                              TextStyle(color: context.colors.textSecondary),
+                        ),
+                      ),
                     ],
                   ),
                   Row(mainAxisSize: MainAxisSize.min, children: [
-                    _yardBadge(context, myYard),
+                    _yardBadge(context, myYard, myPrefix),
                     const Gap(12),
                     _buildHeaderStats(context, online, profiles),
                   ]),
@@ -118,54 +162,156 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                 ref.watch(recentPackagesProvider),
                 ref.watch(yardWarehouseCapacityProvider),
               ].any((a) => a.hasError)) ...[
-                _ConnectionBanner(onRetry: _refreshAll),
+                _ConnectionBanner(
+                  onRetry: _refreshAll,
+                  // The actual failure, so the banner can say whether this is
+                  // the network or a bug. It used to assert "check your
+                  // internet connection" for every cause, including plain SQL
+                  // errors.
+                  error: [
+                    pkgStats,
+                    ref.watch(forfeitLifecycleProvider),
+                    ref.watch(recentPackagesProvider),
+                    ref.watch(yardWarehouseCapacityProvider),
+                  ].firstWhere((a) => a.hasError).error,
+                ),
                 const Gap(16),
               ],
 
-              // â”€â”€ Operational stat cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-              pkgStats
-                  .when(
+              // ── What the yard HOLDS, and what it is WAITING on ────
+              //
+              // ⚠️ These two rows used to be five "today" cards --
+              // forfeited today, abandoned today, destroyed today, released
+              // today -- which read 0 on any day nothing happened, which is
+              // most days. Meanwhile the yard held 226 items across four
+              // Held Goods pages and the dashboard said nothing about them.
+              //
+              // ⚠️ Grouped and titled, like the lifecycle section below,
+              // and drawn with the SAME tile. A dashboard where the top
+              // strip and the panel under it use different shapes for the
+              // same kind of figure makes the reader work out twice what
+              // they are looking at.
+              //
+              // Every figure opens the page that holds it.
+              ref.watch(yardHoldingCountsProvider).when(
                     loading: () => const _StatsLoadingRow(),
-                    // Quiet on error — the single top banner owns the retry.
+                    // Quiet on error -- the single top banner owns the retry.
                     error: (e, _) => const _StatsLoadingRow(),
-                    // Plain row: every card now has the SAME 2-line content
-                    // (the W/H Rate card was flattened to match _StatCard), so
-                    // they line up at equal height without any stretch/
-                    // IntrinsicHeight wrapper (which broke layout because the
-                    // cards contain Expanded children).
-                    data: (data) => Row(
+                    data: (h) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                            child: _StatCard(
-                                label: 'Forfeited Today',
-                                value: "${data['forfeit'] ?? 0}",
-                                icon: Icons.gavel_rounded,
-                                color: context.colors.dangerRed)),
-                        const Gap(16),
-                        Expanded(
-                            child: _StatCard(
-                                label: 'Abandoned Today',
-                                value: "${data['abandon'] ?? 0}",
+                        _GroupHeading(
+                            title: 'Held in Yard',
+                            icon: Icons.warehouse_rounded),
+                        const Gap(8),
+                        Row(children: [
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Detained',
+                                value: '${h['detained'] ?? 0}',
+                                color: context.colors.accentLightBlue,
+                                icon: Icons.shield_rounded,
+                                route: '/detained-packages'),
+                          ),
+                          const Gap(12),
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Abandoned',
+                                value: '${h['abandoned'] ?? 0}',
+                                color: context.colors.heldOrange,
                                 icon: Icons.inventory_2_rounded,
-                                color: context.colors.heldOrange)),
+                                route: '/abandoned-packages'),
+                          ),
+                          const Gap(12),
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Other',
+                                value: '${h['other'] ?? 0}',
+                                color: context.colors.textSecondary,
+                                icon: Icons.category_rounded,
+                                route: '/other-packages'),
+                          ),
+                          const Gap(12),
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Forfeited',
+                                value: '${h['forfeited'] ?? 0}',
+                                color: context.colors.dangerRed,
+                                icon: Icons.gavel_rounded,
+                                route: '/forfeited-packages'),
+                          ),
+                          const Gap(12),
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Perishable — awaiting DG',
+                                value: '${h['perishableAwaiting'] ?? 0}',
+                                color: context.colors.successGreen,
+                                icon: Icons.eco_rounded,
+                                route: '/perishable-goods'),
+                          ),
+                          const Gap(12),
+                          // ⚠️ The rate belongs with what the yard HOLDS:
+                          // it is the price those goods are accruing at, and
+                          // the accrued total sits opposite it in the row
+                          // below. Six tiles a row either way, so the two rows
+                          // line up column for column.
+                          Expanded(child: _StorageRateTile(ref: ref)),
+                        ]),
                         const Gap(16),
-                        Expanded(
-                            child: _StatCard(
-                                label: 'Destroyed Today',
-                                value: "${data['destroy'] ?? 0}",
-                                icon: Icons.local_fire_department_rounded,
-                                color: context.colors.warningAmber)),
-                        const Gap(16),
-                        Expanded(
-                            child: _StatCard(
-                                label: 'Released Today',
-                                value: "${data['release'] ?? 0}",
-                                icon: Icons.check_circle_rounded,
-                                color: context.colors.successGreen)),
-                        const Gap(16),
-                        // Current per-day storage rate (headline) with the live
-                        // total accruing across all held goods as the subtitle.
-                        Expanded(child: _WarehouseChargeCard(ref: ref)),
+                        _GroupHeading(
+                            title: 'Waiting on Another Directorate',
+                            icon: Icons.hourglass_top_rounded),
+                        const Gap(8),
+                        Row(children: [
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Awaiting Valuation',
+                                value: '${h['awaitingValuation'] ?? 0}',
+                                color: context.colors.primaryGold,
+                                icon: Icons.calculate_rounded),
+                          ),
+                          const Gap(12),
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Re-tenderable',
+                                value: '${h['reTenderable'] ?? 0}',
+                                color: context.colors.warningAmber,
+                                icon: Icons.replay_rounded),
+                          ),
+                          const Gap(12),
+                          Expanded(
+                            child: _LifecycleTile(
+                                stretch: true,
+                                label: 'Unsold — exhausted',
+                                value: '${h['exhausted'] ?? 0}',
+                                color: context.colors.dangerRed,
+                                icon: Icons.block_rounded,
+                                route: '/unsold-packages'),
+                          ),
+                          const Gap(12),
+                          // Today's activity, kept as ONE tile rather than
+                          // the four cards of zero it used to be.
+                          Expanded(
+                            child: pkgStats.maybeWhen(
+                              data: (d) => _LifecycleTile(
+                                  stretch: true,
+                                  label: 'Recorded today',
+                                  value: '${(d['forfeit'] ?? 0) + (d['abandon'] ?? 0) + (d['destroy'] ?? 0) + (d['release'] ?? 0)}',
+                                  color: context.colors.accentLightBlue,
+                                  icon: Icons.today_rounded),
+                              orElse: () => const SizedBox(height: 76),
+                            ),
+                          ),
+                          const Gap(12),
+                          Expanded(child: _AccruedStorageTile(ref: ref)),
+                        ]),
                       ],
                     ),
                   )
@@ -175,7 +321,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
               const Gap(20),
 
-              // â”€â”€ Body: two columns that fill the height (minimal scrolling) â”€
+              // ── Body: two columns that fill the height (minimal scrolling) ─
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -222,8 +368,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
   // Yard chip shown in the header so the admin knows the scope of everything
   // on this dashboard.
-  Widget _yardBadge(BuildContext context, String? yard) {
+  Widget _yardBadge(BuildContext context, String? yard, String? prefix) {
     final gold = context.colors.primaryGold;
+    final code = (yard == null || yard.isEmpty) ? '' : yard;
+    final label = code.isEmpty
+        ? yardName(yard)
+        : (prefix == null || prefix.isEmpty ? code : '$prefix/$code');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -234,7 +384,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.warehouse_rounded, color: gold, size: 16),
         const Gap(8),
-        Text(yardName(yard),
+        // ⚠️ The FULL code -- "CED/GL1". The title beside it spells the
+        // yard out in words; this is the same yard written the way it
+        // appears on an SR number and in every filter, which is the form an
+        // officer types. Either half alone is the one they cannot use.
+        Text(label,
             style: TextStyle(
                 color: gold, fontWeight: FontWeight.w700, fontSize: 13)),
       ]),
@@ -369,7 +523,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
 }
 
-// â”€â”€ Reusable bits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Reusable bits ─────────────────────────────────────────────────────────
 
 /// A quiet in-panel placeholder shown when a single panel fails to load. It
 /// carries NO retry button — the one top banner owns the retry, so the user
@@ -394,33 +548,82 @@ class _QuietPanelError extends StatelessWidget {
   }
 }
 
-/// The single connection-error banner for the whole dashboard. Shown once at
-/// the top when any panel fails to load; its one Retry reloads everything.
+/// The single error banner for the whole dashboard. Shown once at the top when
+/// any panel fails to load; its one Retry reloads everything.
+///
+/// ⚠️ It reports WHICH kind of failure happened. It used to say "check your
+/// internet connection" unconditionally, so a SQL bug in one panel's query
+/// sent the user to look at their network.
 class _ConnectionBanner extends StatelessWidget {
   final VoidCallback onRetry;
-  const _ConnectionBanner({required this.onRetry});
+  final Object? error;
+  const _ConnectionBanner({required this.onRetry, this.error});
+
+  /// True only for a genuine unreachable-server error. A Postgres message can
+  /// contain the word "connection" without the network being at fault.
+  bool get _isNetwork {
+    final e = error;
+    if (e == null) return true;
+    final s = e.toString().toLowerCase();
+    if (s.contains('severity.error') ||
+        s.contains('does not exist') ||
+        s.contains('syntax error') ||
+        s.contains('is not a subtype')) {
+      return false;
+    }
+    return e is SocketException ||
+        s.contains('socketexception') ||
+        s.contains('failed host lookup') ||
+        s.contains('timed out') ||
+        s.contains('network is unreachable');
+  }
 
   @override
   Widget build(BuildContext context) {
+    final network = _isNetwork;
+    final tint =
+        network ? context.colors.warningAmber : context.colors.dangerRed;
+    final message = network
+        ? "Couldn't load some data — the server did not answer. Check that "
+            'it is running and that this PC is on the network.'
+        : "Couldn't load some data — the database rejected a request. This is "
+            'a fault in the app; send the details to ICT.';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: context.colors.warningAmber.withOpacity(0.1),
+        color: tint.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: context.colors.warningAmber.withOpacity(0.4)),
+        border: Border.all(color: tint.withOpacity(0.4)),
       ),
       child: Row(children: [
-        Icon(Icons.wifi_off_rounded,
-            size: 18, color: context.colors.warningAmber),
+        Icon(network ? Icons.wifi_off_rounded : Icons.error_outline_rounded,
+            size: 18, color: tint),
         const Gap(12),
         Expanded(
-          child: Text(
-            "Couldn't load some data — check your internet connection.",
-            style: TextStyle(
-                color: context.colors.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message,
+                style: TextStyle(
+                    color: context.colors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500),
+              ),
+              if (!network && error != null) ...[
+                const Gap(4),
+                SelectableText(
+                  error.toString().replaceFirst(
+                      RegExp(r'^Severity\.\w+\s*'), ''),
+                  maxLines: 2,
+                  style: TextStyle(
+                      color: context.colors.textMuted,
+                      fontFamily: 'monospace',
+                      fontSize: 11),
+                ),
+              ],
+            ],
           ),
         ),
         const Gap(12),
@@ -429,9 +632,8 @@ class _ConnectionBanner extends StatelessWidget {
           icon: const Icon(Icons.refresh_rounded, size: 16),
           label: const Text('Retry'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: context.colors.warningAmber,
-            side: BorderSide(
-                color: context.colors.warningAmber.withOpacity(0.5)),
+            foregroundColor: tint,
+            side: BorderSide(color: tint.withOpacity(0.5)),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
@@ -477,72 +679,16 @@ class _SectionHeader extends StatelessWidget {
 
 /// An operational stat card: gold-on-tinted icon box + big value + label, with
 /// a faint accent gradient. Used for the four headline metrics.
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.borderColor),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            color.withOpacity(0.08),
-            context.colors.cardDark,
-          ],
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 22),
-          ),
-          const Gap(14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        height: 1.1)),
-                const Gap(2),
-                Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: context.colors.textSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// ⚠️ `_StatCard` lived here and is gone.
+//
+// The dashboard drew its top strip with one shape and the lifecycle panel
+// under it with another, for the same kind of figure -- a count, a label,
+// a colour. Two shapes made the reader work out twice what they were
+// looking at, and the strip's cards were the larger of the two.
+//
+// `_LifecycleTile` now serves both: it gained a `stretch` flag for the
+// rows (which are Expanded, where a fixed width fights the layout) and a
+// `route`, so a figure opens the page that holds it.
 
 class _OnlineMemberTile extends StatelessWidget {
   final ProfileModel profile;
@@ -557,7 +703,6 @@ class _OnlineMemberTile extends StatelessWidget {
       dense: true,
       visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
       minVerticalPadding: 0,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14),
       horizontalTitleGap: 12,
       leading: Container(
         height: 32,
@@ -588,7 +733,10 @@ class _OnlineMemberTile extends StatelessWidget {
       ),
       title: Text(profile.fullName,
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-      subtitle: Text(profile.role.toUpperCase(),
+      // profile.role only has two yard-scoped values, so every admin read as
+      // "ADMIN" here regardless of post -- postShortTitle is the officer's
+      // actual post (SDDC, DDC, ...), same as the sidebar under their name.
+      subtitle: Text(profile.postShortTitle.toUpperCase(),
           style: TextStyle(
               color: context.colors.primaryGold,
               fontSize: 10,
@@ -649,7 +797,17 @@ class _ForfeitLifecycleSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionHeader(title: 'Forfeit & Disposal Lifecycle'),
+        // ⚠️ Every figure below counts GOODS, and counts them once.
+        //
+        // Getting there took several passes. Appeals were counted from
+        // forfeits alone, missing the detained, abandoned and other goods
+        // that raise them too. Tender rows are ATTEMPTS, so a package that
+        // failed four times was counted four times. "Sent for destruction"
+        // was structurally always 0 -- destruction never arrives through a
+        // disposal request -- and has been removed. And "Forwarded" counted
+        // 135 goods of which 113 appeared again under At Tender, so the same
+        // lot was on the panel twice.
+        const _SectionHeader(title: 'Disposal Operations & Lifecycle'),
         const Gap(12),
         Expanded(
           child: async.when(
@@ -665,16 +823,22 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _LifecycleGroup(
-                      title: 'Appeal Directorate',
+                      title: 'Appeal Directorate · goods',
                       icon: Icons.gavel_rounded,
                       tiles: [
+                        // ⚠️ Only goods STILL IN A WAREHOUSE. A ruling on
+                        // goods that have since left the yard is history --
+                        // the directorate ruled, the yard acted, the goods
+                        // are gone. 26 held and 77 decided over all time; 15
+                        // and 31 are goods the yard is still holding, and
+                        // only those are anybody's outstanding work.
                         _LifecycleTile(
-                            label: 'On Appeal Hold',
+                            label: 'On appeal hold',
                             value: '${d['appealHold'] ?? 0}',
                             color: context.colors.heldOrange,
                             icon: Icons.pan_tool_rounded),
                         _LifecycleTile(
-                            label: 'Decision Received',
+                            label: 'Ruling received',
                             value: '${d['appealDecided'] ?? 0}',
                             color: context.colors.accentLightBlue,
                             icon: Icons.how_to_reg_rounded),
@@ -682,41 +846,202 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'Disposal Requests (Central Disposal)',
+                      title: 'Sent to Central Disposal · goods',
                       icon: Icons.local_shipping_rounded,
                       tiles: [
                         _LifecycleTile(
-                            label: 'Sent for Sale',
+                            label: 'Sent, awaiting valuation',
                             value: '${d['requestedSale'] ?? 0}',
                             color: context.colors.primaryGold,
                             icon: Icons.sell_rounded),
+                        // ⚠️ Forwarded and NOT YET PLACED. "Forwarded"
+                        // counted all 135 the yard had ever sent on, of which
+                        // 113 were already at tender and counted again in the
+                        // group below -- the same goods twice, which is why
+                        // the panel could not be read. These 22 are the ones
+                        // genuinely in flight: Central Disposal has them and
+                        // has not put them anywhere.
                         _LifecycleTile(
-                            label: 'Sent for Destruction',
-                            value: '${d['requestedDestruction'] ?? 0}',
-                            color: context.colors.dangerRed,
-                            icon: Icons.delete_forever_rounded),
+                            label: 'Forwarded, not yet placed',
+                            value: '${d['forwardedNotPlaced'] ?? 0}',
+                            color: context.colors.textMuted,
+                            icon: Icons.outbox_rounded),
                       ],
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'Final Outcomes',
-                      icon: Icons.flag_rounded,
+                      title: 'At Tender · goods',
+                      icon: Icons.storefront_rounded,
                       tiles: [
+                        // ⚠️ What the TENDER did: sold, unsold, or held
+                        // with nobody having written down which. Three
+                        // answers to one question, which is why they sit
+                        // together -- and why what happened to the goods
+                        // AFTERWARDS is a separate group below rather than
+                        // more tiles here.
+                        //
+                        // Each is per PACKAGE on its LATEST round.
+                        // tender_sale_items rows are attempts: a package
+                        // that fails four times has four of them, so
+                        // counting rows said 109 unsold when 27 lots were.
+                        // A package that failed twice and then sold is
+                        // SOLD; its failures are history, not an outcome.
                         _LifecycleTile(
-                            label: 'Tender Sold',
+                            label: 'Sold at tender',
                             value: '${d['tenderSold'] ?? 0}',
                             color: context.colors.successGreen,
-                            icon: Icons.check_circle_rounded),
+                            icon: Icons.gavel_rounded),
                         _LifecycleTile(
-                            label: 'Unsold',
+                            label: 'Unsold, needs re-tender',
                             value: '${d['tenderUnsold'] ?? 0}',
                             color: context.colors.textMuted,
                             icon: Icons.remove_shopping_cart_rounded),
+                        // ⚠️ The sale has been HELD and nobody has
+                        // recorded what happened. Not a result -- a job for
+                        // an officer, which is why it has its own tile
+                        // instead of being folded into unsold.
                         _LifecycleTile(
+                            label: 'Sale held, outcome not recorded',
+                            value: '${d['tenderUndecided'] ?? 0}',
+                            color: context.colors.dangerRed,
+                            icon: Icons.hourglass_empty_rounded),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Sold · goods',
+                      icon: Icons.sell_rounded,
+                      tiles: [
+                        // ⚠️ Sold stands ALONE, not among the other
+                        // outcomes. It is the outcome the yard is measured
+                        // by and the only one with money behind it, and it
+                        // is far the largest -- 76 against 39 and 19. Sat
+                        // in a row of three it read as one option among
+                        // equals.
+                        //
+                        // Straight off `disposition_rows`, the same view the
+                        // Sold Goods page pages through, so a figure here
+                        // and a row count there cannot disagree.
+                        _SplitTile(
+                            label: 'Sold, all rounds',
+                            total: (d['outcomeSoldTotal'] ?? 0) as int,
+                            delivered: (d['outcomeSoldDelivered'] ?? 0) as int,
+                            pending: (d['outcomeSoldPending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting collection',
+                            color: context.colors.successGreen,
+                            icon: Icons.sell_rounded,
+                            route: '/sold-packages'),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Destroyed · goods',
+                      icon: Icons.local_fire_department_rounded,
+                      tiles: [
+                        // ⚠️ ONE tile, split by WHETHER IT HAS BEEN
+                        // DESTROYED -- never by delivery. Nothing is handed
+                        // over to be burnt: 23 of the 39 carry no delivery
+                        // state at all, so a delivered/pending split read
+                        // "9 delivered · 7 awaiting" of 39 and left the
+                        // reader to wonder about the other 23. Done or not
+                        // done is the question this page answers.
+                        //
+                        // Off `disposition_rows`, the same view
+                        // /destroyed-packages pages through, so the tile and
+                        // the page it opens cannot disagree. That is also
+                        // why it says 17 where the destruction LIST says 16:
+                        // one package reached destroyed on a warehouse entry
+                        // tagged [FINAL:DESTROYED] with no destruction_items
+                        // row behind it at all.
+                        _SplitTile(
                             label: 'Destroyed',
-                            value: '${d['destroyed'] ?? 0}',
-                            color: context.colors.warningAmber,
-                            icon: Icons.local_fire_department_rounded),
+                            total: (d['outcomeDestroyedTotal'] ?? 0) as int,
+                            delivered: (d['outcomeDestroyedDone'] ?? 0) as int,
+                            pending:
+                                (d['outcomeDestroyedAwaiting'] ?? 0) as int,
+                            deliveredLabel: 'destroyed',
+                            pendingLabel: 'awaiting destruction',
+                            color: context.colors.dangerRed,
+                            icon: Icons.local_fire_department_rounded,
+                            route: '/destroyed-packages'),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Top Management rulings · goods',
+                      icon: Icons.account_balance_rounded,
+                      tiles: [
+                        // ⚠️ The rail's "Final Outcomes" section, one tile
+                        // per page, in the rail's own order. These are the
+                        // DG's rulings on goods nothing could sell.
+                        _SplitTile(
+                            label: 'Government use',
+                            total: (d['proposal_government_use_total'] ?? 0)
+                                as int,
+                            delivered:
+                                (d['proposal_government_use_delivered'] ?? 0)
+                                    as int,
+                            pending:
+                                (d['proposal_government_use_pending'] ?? 0)
+                                    as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.accentLightBlue,
+                            icon: Icons.account_balance_rounded,
+                            route: '/government-use-packages'),
+                        _SplitTile(
+                            label: 'Auction',
+                            total: (d['proposal_auction_total'] ?? 0) as int,
+                            delivered:
+                                (d['proposal_auction_delivered'] ?? 0) as int,
+                            pending:
+                                (d['proposal_auction_pending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.primaryGold,
+                            icon: Icons.gavel_rounded,
+                            route: '/auction-packages'),
+                        _SplitTile(
+                            label: 'Re-exported',
+                            total: (d['outcomeReexportTotal'] ?? 0) as int,
+                            delivered:
+                                (d['outcomeReexportDelivered'] ?? 0) as int,
+                            pending:
+                                (d['outcomeReexportPending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.accentLightBlue,
+                            icon: Icons.flight_takeoff_rounded,
+                            route: '/reexported-packages'),
+                        _SplitTile(
+                            label: 'Converted',
+                            total: (d['proposal_convert_total'] ?? 0) as int,
+                            delivered:
+                                (d['proposal_convert_delivered'] ?? 0) as int,
+                            pending:
+                                (d['proposal_convert_pending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.heldOrange,
+                            icon: Icons.autorenew_rounded,
+                            route: '/converted-packages'),
+                        _SplitTile(
+                            label: 'Removed from premises',
+                            total:
+                                (d['proposal_remove_from_premises_total'] ?? 0)
+                                    as int,
+                            delivered: (d[
+                                    'proposal_remove_from_premises_delivered'] ??
+                                0) as int,
+                            pending: (d[
+                                    'proposal_remove_from_premises_pending'] ??
+                                0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.textMuted,
+                            icon: Icons.logout_rounded,
+                            route: '/removed-packages'),
                       ],
                     ),
                     const Gap(16),
@@ -749,21 +1074,36 @@ class _LifecycleGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Icon(icon, size: 15, color: context.colors.textMuted),
-          const Gap(8),
-          Text(title.toUpperCase(),
-              style: TextStyle(
-                  fontSize: 10.5,
-                  letterSpacing: 0.6,
-                  fontWeight: FontWeight.w800,
-                  color: context.colors.textMuted)),
-        ]),
+        _GroupHeading(title: title, icon: icon),
         const Gap(8),
         Wrap(spacing: 12, runSpacing: 12, children: tiles),
       ],
     );
   }
+}
+
+/// The small capitalised heading over a group of tiles.
+///
+/// ⚠️ One definition, shared by the lifecycle groups and the shortcut
+/// rows above them. Two copies of "10.5pt, 0.6 letter-spacing, w800, muted"
+/// is two headings that drift apart, and a dashboard whose two halves are
+/// labelled in slightly different type reads as two dashboards.
+class _GroupHeading extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _GroupHeading({required this.title, required this.icon});
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Icon(icon, size: 15, color: context.colors.textMuted),
+        const Gap(8),
+        Text(title.toUpperCase(),
+            style: TextStyle(
+                fontSize: 10.5,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w800,
+                color: context.colors.textMuted)),
+      ]);
 }
 
 /// A single lifecycle metric tile (icon + big number + label).
@@ -772,16 +1112,45 @@ class _LifecycleTile extends StatelessWidget {
   final String value;
   final Color color;
   final IconData icon;
+
+  /// Where this figure lives in full, if it has a page.
+  ///
+  /// ⚠️ Optional. A number an officer cannot act on is a number they
+  /// have to go and find; a number with nowhere to go should not pretend.
+  final String? route;
+
+  /// Let the tile take its width from the row instead of the fixed 168.
+  ///
+  /// ⚠️ The lifecycle groups WRAP, so their tiles need a fixed width or
+  /// the wrap has nothing to measure. The shortcut rows above are Rows of
+  /// Expanded, where a fixed width fights the layout — so the same tile
+  /// serves both, and the caller says which it is.
+  final bool stretch;
+
   const _LifecycleTile(
       {required this.label,
       required this.value,
       required this.color,
-      required this.icon});
+      required this.icon,
+      this.route,
+      this.stretch = false});
 
   @override
   Widget build(BuildContext context) {
+    final tile = _tile(context);
+    if (route == null) return tile;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => context.go(route!),
+        child: tile,
+      ),
+    );
+  }
+
+  Widget _tile(BuildContext context) {
     return Container(
-      width: 168,
+      width: stretch ? null : 168,
       // Fixed height (tall enough for a TWO-line label) so every tile in a row
       // is the same size regardless of whether its label wraps to one or two
       // lines (e.g. "Sent for Destruction" vs "Sent for Sale").
@@ -832,6 +1201,128 @@ class _LifecycleTile extends StatelessWidget {
   }
 }
 
+/// One tile carrying a figure and its DELIVERY split.
+///
+/// ⚠️ Delivered and not-yet-delivered are two halves of ONE fact, and
+/// two tiles said they were two facts. A reader had to notice the numbers
+/// added up to the total on a third tile to see the relationship at all --
+/// and with sold, destroyed and re-exported each split that way, the panel
+/// grew to nine tiles saying what three can.
+///
+/// The total leads; the split sits under it as "39 delivered · 37 pending".
+/// [pendingLabel] names the waiting half, because what a lot is waiting FOR
+/// differs by outcome -- collection for a sale, the contractor for a burn.
+class _SplitTile extends StatelessWidget {
+  final String label;
+  final int total;
+  final int delivered;
+  final int pending;
+  final Color color;
+  final IconData icon;
+  final String deliveredLabel;
+  final String pendingLabel;
+  final String? route;
+
+  const _SplitTile({
+    required this.label,
+    required this.total,
+    required this.delivered,
+    required this.pending,
+    required this.color,
+    required this.icon,
+    this.deliveredLabel = 'delivered',
+    this.pendingLabel = 'pending',
+    this.route,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tile = _tile(context);
+    if (route == null) return tile;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+          onTap: () => context.go(route!), child: tile),
+    );
+  }
+
+  Widget _tile(BuildContext context) {
+    final muted = context.colors.textSecondary;
+    // ⚠️ Rows with no hand-over step at all are neither half -- an
+    // entry tagged final with no tender, destruction or proposal behind it
+    // has nobody to collect from. They are in the total and in neither
+    // number below it, so the tile says so rather than letting the reader
+    // find the arithmetic does not close.
+    final noStep = total - delivered - pending;
+    return Container(
+      width: 232,
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const Gap(10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text('$total',
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            height: 1.0)),
+                    const Gap(6),
+                    Expanded(
+                      child: Text(label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+                const Gap(3),
+                Text(
+                    noStep > 0
+                        ? '$delivered $deliveredLabel · $pending $pendingLabel '
+                            '· $noStep n/a'
+                        : '$delivered $deliveredLabel · $pending $pendingLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: muted,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Highlights the next scheduled tender-sale date (or a calm "none scheduled").
 class _NextTenderSaleBanner extends StatelessWidget {
   final String? date;
@@ -841,7 +1332,7 @@ class _NextTenderSaleBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final has = date != null && date!.isNotEmpty;
     final gold = context.colors.primaryGold;
-    String pretty = 'â€”';
+    String pretty = '—';
     if (has) {
       final parsed = DateTime.tryParse(date!);
       pretty = parsed != null
@@ -896,89 +1387,70 @@ class _NextTenderSaleBanner extends StatelessWidget {
 /// Headline stat card for storage charges: shows the current per-day rate
 /// (e.g. "LKR 40 / day") as the big number, with the live total accruing across
 /// all goods still held in the yard shown underneath as a subtitle.
-class _WarehouseChargeCard extends StatelessWidget {
+// ⚠️ `_WarehouseChargeCard` lived here and is gone.
+//
+// It was the last card drawn in the old shape, and it packed two different
+// figures into one line: "Current W/H Rate · Accrued: LKR 242,3…". The
+// accrued total is 242,304,500 — nine digits — so the line it shared with a
+// label was always going to end in an ellipsis, and the number an officer
+// most wants from it was the part that got cut.
+//
+// They are two questions: what the rate IS, and what has built up. Two
+// tiles, in the same shape as everything else on the page.
+
+/// The per-day rate, as a tile.
+class _StorageRateTile extends StatelessWidget {
   final WidgetRef ref;
-  const _WarehouseChargeCard({required this.ref});
+  const _StorageRateTile({required this.ref});
 
   @override
   Widget build(BuildContext context) {
-    final gold = context.colors.primaryGold;
     final rate = ref.watch(currentStorageRateProvider);
-    final accrued = ref.watch(currentWarehouseChargeProvider);
-
-    final rateText = rate.maybeWhen(
-        data: (r) => 'LKR ${NumberFormat('#,##0').format(r)}',
-        orElse: () => 'â€¦');
-    final accruedText = accrued.maybeWhen(
-        data: (c) => 'Accrued: LKR ${NumberFormat('#,##0').format(c)}',
-        orElse: () => 'Accruedâ€¦');
-
-    return Container(
-      // Match _StatCard padding exactly so this card is the same height.
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.borderColor),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [gold.withOpacity(0.10), context.colors.cardDark],
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              color: gold.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(Icons.payments_rounded, color: gold, size: 22),
-          ),
-          const Gap(14),
-          // Two equal halves so this card matches the other stat cards' height:
-          // the per-day rate (headline) and the live accrued total. Each half is
-          // a value + label line, mirroring [_StatCard].
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Flexible(
-                      child: Text(rateText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              height: 1.1)),
-                    ),
-                    const Gap(3),
-                    Text('/day',
-                        style: TextStyle(
-                            color: context.colors.textMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const Gap(2),
-                Text('Current W/H Rate · $accruedText',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: context.colors.textSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return _LifecycleTile(
+      stretch: true,
+      label: 'W/H rate per day',
+      value: rate.maybeWhen(
+          data: (r) => 'LKR ${NumberFormat('#,##0').format(r)}',
+          orElse: () => '…'),
+      color: context.colors.primaryGold,
+      icon: Icons.payments_rounded,
     );
   }
+}
+
+/// What has accrued on goods still in the yard.
+class _AccruedStorageTile extends StatelessWidget {
+  final WidgetRef ref;
+  const _AccruedStorageTile({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final accrued = ref.watch(currentWarehouseChargeProvider);
+    return _LifecycleTile(
+      stretch: true,
+      label: 'Accrued, still held',
+      // ⚠️ COMPACT, because the full figure is nine digits and the
+      // tile is a fifth of a row. "LKR 242.3M" fits and is read at a
+      // glance; "LKR 242,304,500" does not fit and was being shown as
+      // "LKR 242,3…", which is not a number at all.
+      value: accrued.maybeWhen(
+          data: (a) => _compactLkr(a.accrued), orElse: () => '…'),
+      color: context.colors.primaryGold,
+      icon: Icons.savings_rounded,
+    );
+  }
+}
+
+/// A large rupee figure in as few characters as it can be read in.
+///
+/// ⚠️ Rounded to one decimal at each step, not truncated: 242,304,500
+/// reads "242.3M", and an officer comparing it with yesterday's needs the
+/// digit that moves. Below a million it stays fully written out, because
+/// there it fits.
+String _compactLkr(double v) {
+  if (v >= 1000000) return 'LKR ${(v / 1000000).toStringAsFixed(1)}M';
+  if (v >= 1000) return 'LKR ${(v / 1000).toStringAsFixed(1)}K';
+  return 'LKR ${NumberFormat('#,##0').format(v)}';
 }
 
 /// Per-warehouse capacity utilisation for the admin's yard, shown as compact
@@ -1143,8 +1615,13 @@ class _RecentActivitySection extends StatelessWidget {
     // breakdown.
     final primary = statuses.isNotEmpty ? statuses.first : p.status;
     final (icon, color) = _statusVisual(context, primary);
+    // ⚠️ "states", not "activities". These are the DISTINCT STATUSES
+    // the package's items are in right now -- SR/24/2026 reads "Detain,
+    // destroyed" and showed "2 activities", which sounds like two things
+    // happened today. One of them may have been recorded months ago; what put
+    // the package on this list is that SOMETHING touched it today.
     final subtitle = statuses.length > 1
-        ? '${p.consigneeName} · ${statuses.length} activities'
+        ? '${p.consigneeName} · ${statuses.length} states'
         : p.consigneeName;
 
     return Padding(

@@ -63,7 +63,7 @@ class AppealStateChip extends StatelessWidget {
           'taken until the Appeal Directorate rules — the deadline does not '
           'release it.';
     } else if (decided) {
-      colour = context.colors.successGreen;
+      colour = context.colors.accentLightBlue;
       label = 'Decided · ${outcome!.decision}';
       icon = Icons.gavel_rounded;
       tip = 'The Appeal Directorate decided: ${outcome!.decision}. '

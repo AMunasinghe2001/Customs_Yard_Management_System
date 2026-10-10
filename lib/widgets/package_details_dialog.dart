@@ -1,3 +1,4 @@
+import 'sealed_valuation.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart'
     show
@@ -89,6 +90,7 @@ import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/theme.dart';
+import 'dialog_close_button.dart';
 import '../models/models.dart';
 import '../core/providers.dart';
 import '../core/post_status_activities.dart';
@@ -97,6 +99,11 @@ import 'one_tap_date_picker.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
+import 'error_view.dart';
+import 'appeal_state_chip.dart';
+import 'storage_charge_note.dart';
+import '../widgets/app_dialog.dart';
+import 'displaced_badge.dart';
 
 /// The valuation row shown in the Sale / Destruction sections.
 ///
@@ -165,37 +172,103 @@ class TenderHistorySection extends ConsumerWidget {
   /// Quantity this row covers, so a per-item unit price can be totalled.
   final int? qty;
 
-  const TenderHistorySection({super.key, required this.forfeited, this.qty});
+  /// The Valuation Directorate is reading its OWN figures.
+  ///
+  /// ⚠️ A reserve price is sealed until bidding closes so nobody can bid
+  /// against it -- but the directorate that SET it cannot be kept from it.
+  /// Sealing there hides a number from the only people whose job is to
+  /// decide it, and they are setting the NEXT round's price from exactly
+  /// these rounds.
+  final bool valuerView;
+
+  /// Whether to render the final outcome tile at the bottom.
+  final bool showFinalOutcome;
+
+  const TenderHistorySection({
+    super.key,
+    required this.forfeited,
+    this.qty,
+    this.showFinalOutcome = true,
+    this.valuerView = false,
+  });
+
+  /// True when these goods are PERISHABLE.
+  ///
+  /// ⚠️ A perishable runs ONE special tender sale. If it fails the goods
+  /// go straight to the Top Management Directorate through Unsold
+  /// Perishables -- there is no re-valuation and no second round, because
+  /// the goods are rotting. So this section must not offer the vocabulary
+  /// of a package that gets four attempts: no bids, no "re-valued" badge,
+  /// no "Tender 1", and no committee.
+  bool get _isPerishable =>
+      forfeited.source.trim().toLowerCase() == 'perishable';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final revals =
-        ref.watch(tenderRevaluationsProvider(forfeited.id)).valueOrNull ??
-            const <String, TenderRevaluationModel>{};
-    final bids = ref.watch(tenderBidsProvider(forfeited.id)).valueOrNull ??
-        const <String, List<double>>{};
+    final revals = _isPerishable
+        ? const <String, TenderRevaluationModel>{}
+        : (ref.watch(tenderRevaluationsProvider(forfeited.id)).valueOrNull ??
+            const <String, TenderRevaluationModel>{});
+    // ⚠️ Not fetched at all for a perishable. Migration 62 deleted the 20
+    // that existed and added a trigger, but a stale row must not be able to
+    // put a bid chip under a round nobody can re-price.
+    final bids = _isPerishable
+        ? const <String, List<double>>{}
+        : (ref.watch(tenderBidsProvider(forfeited.id)).valueOrNull ??
+            const <String, List<double>>{});
     // The committee round is priced by the ADG's submission. The seed also
     // records that as a tender_revaluations row, but a package valued through
     // the UI may not have one yet — so fall back to the committee itself,
     // otherwise the round would vanish from this list.
     final committeeAsync = ref.watch(tenderCommitteesProvider);
-    final committee = committeeAsync.valueOrNull?[forfeited.id];
+    // A committee is appointed after four failed rounds; a perishable has
+    // one, so it can never reach that door.
+    final committee =
+        _isPerishable ? null : committeeAsync.valueOrNull?[forfeited.id];
+    // ⚠️ Whether this package's story has ENDED. Converted, auctioned, taken
+    // into government use, removed -- after any of those there is no next
+    // tender, so nothing below may announce one.
+    final proposal =
+        ref.watch(unsoldProposalsProvider).valueOrNull?[forfeited.id];
+    final decided = proposal != null;
     // Members only exist once the DG/ADG appointed the committee. Held in a
     // local so every branch below reads the same list.
     final committeeMembers = committee?.members ?? const <CommitteeMember>[];
-    final sales =
-        ref.watch(tenderSalesProvider).valueOrNull ?? const <TenderSaleModel>[];
-
     // The rounds THIS package sat in, oldest first — that ordering is what
     // turns a sale id into "Valuation Tender" / "Tender 1" / ...
-    final mine = sales
-        .where((s) => s.items.any((i) => i.forfeitedPackageId == forfeited.id))
-        .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    //
+    // Fetched per package. This used to filter tenderSalesProvider, which pulls
+    // EVERY sale with its items, packages and warehouses; the Tender Sales tab
+    // had already cached that on Central Disposal, but the yard's Sold Goods
+    // page never loads it, so the popup paid a cold ~120ms fetch and this
+    // section appeared visibly later than the rest of the dialog.
+    final mine =
+        ref.watch(tenderRoundsForPackageProvider(forfeited.id)).valueOrNull ??
+            const <({
+              String id,
+              DateTime createdAt,
+              bool hasRun,
+              bool sold,
+              double? soldPrice
+            })>[];
 
     // Any round that has a valuation or bids but no matching sale row still
     // deserves a line, so collect those ids too.
     final ordered = <String>[for (final s in mine) s.id];
+    // Whether each round has actually RUN. A round still to be tendered must
+    // not show its price: that is the reserve price for live bidding.
+    final ranById = <String, bool>{for (final s in mine) s.id: s.hasRun};
+    // ⚠️ Which round SOLD, and for how much.
+    //
+    // Bids are only recorded when goods FAIL to sell — a round that sold has
+    // none, and it has no re-valuation of its own either, because nothing
+    // needed re-pricing afterwards. The skip rule below therefore threw away
+    // the one round that mattered most: the package's history stopped at the
+    // last failure and never said it had sold.
+    final soldById = <String, double?>{
+      for (final s in mine)
+        if (s.sold) s.id: s.soldPrice
+    };
     for (final id in {...revals.keys, ...bids.keys}) {
       if (id.isNotEmpty && !ordered.contains(id)) ordered.add(id);
     }
@@ -218,7 +291,6 @@ class TenderHistorySection extends ConsumerWidget {
     final rows = <Widget>[];
     for (var i = 0; i < ordered.length; i++) {
       final id = ordered[i];
-      final reval = revals[id];
       final roundBids = bids[id] ?? const <double>[];
       // Bids only exist to PRICE the next round, and the committee round is
       // the last one — its price comes from the committee, not from bidding,
@@ -231,34 +303,228 @@ class TenderHistorySection extends ConsumerWidget {
       final isLastRound = i == ordered.length - 1;
       final isCommitteeRound = (i + 1) > kMaxBidTenderRounds + 1 ||
           (isLastRound && committee?.submittedValue != null && i > 0);
+      // A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS
+      // KEYED TO. Proven against live data (SR/37/2025, Pipe Tees x180):
+      //   round 1  820 x180 = 147,600  vs best bid 110,700  -> unsold
+      //   round 2  738 x180 = 132,840  vs best bid 103,320  -> unsold
+      //   round 3  656 x180 = 118,080  vs best bid  95,940  -> unsold
+      //   round 4  574 x180 = 103,320  vs best bid 174,168  -> SOLD
+      // Every round's bids sit below its own figure, and the round whose bid
+      // finally cleared it is the one that sold.
+      //
       // Round 1 has no re-valuation of its own — it ran at the Valuation
-      // Directorate's original figure. The committee round falls back to the
-      // ADG's submitted value.
+      // Directorate's original figure. The committee round runs at the ADG's
+      // submitted value.
+      final reval = revals[id];
       final unit = reval?.valuationCost ??
           (i == 0
               ? forfeited.valuationCost
               : (isCommitteeRound ? committee?.submittedValue : null));
       // A committee round is ALWAYS worth showing: it is the last attempt, and
       // hiding it would end the history at Tender 3.
-      if (unit == null && roundBids.isEmpty && !isCommitteeRound) continue;
+      // Sealed until THIS round has run. The committee round is the clearest
+      // case: the ADG submits a price and the package is only tendered at it
+      // afterwards, so showing it here leaked the reserve price of a tender
+      // that had not opened yet.
+      // ⚠️ Never sealed for the VALUER. The seal exists so nobody can
+      // bid against a live reserve price -- and the directorate that SET
+      // it is not "nobody". Sealing here hid a number from the only
+      // people whose job is to decide it, on the page where they decide
+      // the next one.
+      final sealed = !valuerView && !(ranById[id] ?? false);
+      final soldHere = soldById.containsKey(id);
+      // A sealed round still renders — it is the one that says "not yet".
+      // ⚠️ And a round that SOLD always renders, whatever else it lacks: it
+      // has no bids (bidding only happens when goods do not sell) and no
+      // re-valuation (nothing was re-priced after it), so every other test
+      // here would drop it.
+      if (unit == null &&
+          roundBids.isEmpty &&
+          !isCommitteeRound &&
+          !sealed &&
+          !soldHere) {
+        continue;
+      }
       rows.add(_TenderRoundTile(
-        label: tenderRoundLabel(i + 1),
+        sealed: sealed,
+        // ⚠️ A perishable's one round is a SPECIAL TENDER SALE, not
+        // "Valuation Tender". That name only means something as the first
+        // of a series -- it is the price the goods went to tender at, before
+        // the re-valuations that follow. A perishable has no series, and
+        // calling its single sale "Valuation Tender" implied a Tender 1 that
+        // is never coming.
+        label: _isPerishable ? 'Special Tender Sale' : tenderRoundLabel(i + 1),
         isCommitteeRound: isCommitteeRound,
+        isPerishableRound: _isPerishable,
         // Who set this price. Only the committee round names its officers.
         committeeMembers: isCommitteeRound ? committeeMembers : const [],
         // Separates "still loading" from "nobody was appointed", so the tile
         // can say which instead of silently listing none.
         committeeLoading: isCommitteeRound && committeeAsync.isLoading,
-        priceLabel: unit == null
+        // The round that sold shows what it FETCHED. On a Sold Goods popup
+        // that is the number the whole page is about, and it belongs at the
+        // end of the story rather than only in the table behind it.
+        soldLabel: soldHere && soldById[id] != null
+            ? 'Sold for LKR ${money.format(soldById[id])}'
+            : (soldHere ? 'Sold' : null),
+        priceLabel: (unit == null || sealed)
             ? null
             : 'LKR ${money.format(unit * effQty)}'
                 '  (@ ${money.format(unit)} \u00d7 $effQty)',
-        revalued: reval != null && !isCommitteeRound,
+        // ⚠️ The FIRST round is never a re-valuation.
+        //
+        // "Valuation Tender" IS the first valuation — the price the package
+        // went to tender at. Every round AFTER it runs at a fresh figure, and
+        // those are the re-valuations. Badging round one "re-valued" said the
+        // opening price had already been revised, and put the word on the one
+        // row that cannot be a revision of anything.
+        //
+        // (A `tender_revaluations` row keyed to round one still sets its
+        // PRICE — that is what the round ran at — it just is not a revision
+        // of an earlier round, because there is no earlier round.)
+        revalued: i > 0 && reval != null && !isCommitteeRound,
         bids: isCommitteeRound
             ? const []
             : [for (final b in roundBids) 'LKR ${money.format(b)}'],
       ));
     }
+    // The NEXT tender's price, when one is already set. Mirrors the committee
+    // block: it says a figure exists and is withheld, without carrying it.
+    //
+    // Detected here rather than passed in, so EVERY popup that shows tender
+    // history gets it — a caller cannot forget. A PENDING row (no round yet,
+    // key '') is a price for a tender that has not been placed; a figure keyed
+    // to a round belongs to that round and is already listed above.
+    //
+    // ⚠️ TWO reasons a pending row is NOT a next tender:
+    //
+    //   * The package already has a final outcome. Converted, auctioned,
+    //     taken into government use, removed — there is no next tender after
+    //     any of those, so a sealed "coming next" tile on those pages was
+    //     announcing a round that can never happen.
+    //   * The figure IS the committee's. The committee price is written as a
+    //     pending re-valuation as well as onto the committee itself, so the
+    //     same number appeared twice: once as "Committee Tender 1" and again
+    //     as a phantom "Committee Tender 2". There is only ever ONE committee
+    //     round.
+    final pending = revals[''];
+    final isCommitteePrice = pending != null &&
+        committee?.submittedValue != null &&
+        (pending.valuationCost - committee!.submittedValue!).abs() < 0.01;
+    if (pending != null && !decided && !isCommitteePrice) {
+      // ⚠️ The NEXT round's price, and the last place the seal was still
+      // hardcoded. `sealed: true` here is right for every reader except the
+      // one who WROTE the figure: this tile is the Valuation Directorate's
+      // own pending re-valuation, and its popup told it the number was
+      // "shown once the tender closes" -- on the page where it had just
+      // typed it.
+      //
+      // The seal is not decoration. It is why the price is withheld from
+      // bidders, and it stays for everyone else.
+      final nextQty = qty ??
+          forfeited.entryQty ??
+          (forfeited.itemId != null
+              ? (forfeited.packageDetails?.items
+                      .where((i) => i.id == forfeited.itemId)
+                      .firstOrNull
+                      ?.quantity ??
+                  1)
+              : (forfeited.packageDetails?.items
+                      .fold<int>(0, (a, i) => a + i.quantity) ??
+                  1));
+      rows.add(_TenderRoundTile(
+        sealed: !valuerView,
+        upcoming: valuerView,
+        label: tenderRoundLabel(ordered.length + 1),
+        isCommitteeRound: false,
+        committeeMembers: const [],
+        committeeLoading: false,
+        priceLabel: valuerView
+            ? 'LKR ${money.format(pending.valuationCost * nextQty)}'
+                '  (@ ${money.format(pending.valuationCost)} \u00d7 $nextQty)'
+            : null,
+        revalued: true,
+        bids: const [],
+      ));
+    }
+
+    // If the package is at or past Tender 3 and no committee round tile was
+    // added yet, add the Committee Tender 1 tile with its current appointment /
+    // valuation / submission state.
+    final hasCommitteeTile =
+        rows.any((r) => r is _TenderRoundTile && r.isCommitteeRound);
+    if (!hasCommitteeTile && (ordered.length >= 4 || committee != null)) {
+      final isAppointed = committeeMembers.isNotEmpty;
+      final hasValue = committee?.committeeValue != null;
+      final isSubmitted = committee?.submittedValue != null;
+
+      final String? cPriceLabel;
+      final String cSubtitle;
+
+      if (!isAppointed) {
+        cPriceLabel = null;
+        cSubtitle = 'Awaiting committee appointment · no bidding';
+      } else if (!hasValue) {
+        cPriceLabel = null;
+        cSubtitle =
+            'Committee appointed (${committeeMembers.length} members) · Valuation pending';
+      } else if (!isSubmitted) {
+        final val = committee!.committeeValue!;
+        cPriceLabel =
+            'LKR ${money.format(val * effQty)}  (@ ${money.format(val)} × $effQty)';
+        cSubtitle =
+            'Valued by committee (${committeeMembers.length} members) · Awaiting ADG submission';
+      } else {
+        final val = committee!.submittedValue!;
+        cPriceLabel =
+            'LKR ${money.format(val * effQty)}  (@ ${money.format(val)} × $effQty)';
+        cSubtitle =
+            'Priced by the tender committee (${committeeMembers.length} members) · no bidding';
+      }
+
+      rows.add(_TenderRoundTile(
+        sealed: false,
+        label: 'Committee Tender 1',
+        isCommitteeRound: true,
+        committeeSubtitle: cSubtitle,
+        committeeMembers: committeeMembers,
+        committeeLoading: committeeAsync.isLoading,
+        priceLabel: cPriceLabel,
+        revalued: false,
+        bids: const [],
+      ));
+    }
+
+    // ⚠️ How the story ENDS, at the end of the story.
+    //
+    // ⚠️ Not for the VALUER. Its work is one step of a process with
+    // several still to run -- the price it sets goes to Central Disposal,
+    // which re-tenders, and only after that does anything reach Top
+    // Management. Announcing an ending on the form where the next round is
+    // priced describes a future nobody has decided.
+    if (showFinalOutcome && !valuerView) {
+      final soldPrice = mine.where((s) => s.sold).firstOrNull?.soldPrice;
+      // ⚠️ A FOURTH state: the tender is still running.
+      //
+      // The tile knew sold, decided, and "awaiting Top Management" -- so a
+      // package on its first round, with the sale open and bidding not yet
+      // closed, was told every tender had been exhausted. 71 forfeited
+      // packages in this yard have exactly one round; CED/GL1/SR/18/2025's
+      // Engine Cylinder Block sat in a sale opened three days ago and read
+      // as though the DG were already deciding its fate.
+      //
+      // Goods reach Top Management only when every round has RUN and none
+      // sold. `hasRun` is the same clock the round tiles seal prices on, so
+      // the outcome and the rounds above it cannot disagree.
+      final everySaleHasRun = mine.isNotEmpty && mine.every((s) => s.hasRun);
+      rows.add(_FinalOutcomeTile(
+        proposal: proposal,
+        soldPrice: soldPrice,
+        isPerishable: _isPerishable,
+        stillRunning: !everySaleHasRun,
+      ));
+    }
+
     if (rows.isEmpty) return const SizedBox.shrink();
 
     return _DetailSection(
@@ -271,6 +537,506 @@ class TenderHistorySection extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// What Top Management finally decided — or that they have not yet.
+///
+/// ⚠️ Both states are drawn, because "still waiting" is an answer. A package
+/// that has run out of tenders sits with the DG until they rule, and a popup
+/// that showed nothing there could not be told apart from one whose outcome
+/// had simply failed to load.
+/// An ending with a HAND-OVER the yard is still waiting on.
+///
+/// ⚠️ Re-export and Release only. Both are two events wearing one date:
+/// the yard RULES it -- writing the tag or the receipt -- and the goods
+/// LEAVE later, when a ship sails or an owner arrives. Only the first was
+/// ever stored, so both pages reported every row as finished on the day it
+/// was decided.
+///
+/// ⚠️ NOT Sold or Destroyed. Those already state their ending twice --
+/// Sold has the tender history's Final Outcome panel and a Sold Price
+/// column, Destroyed has a Destruction Status & Financials section -- and a
+/// third panel there repeated what was directly above it.
+enum HandoverKind {
+  reexport(
+    title: 'Re-export Outcome',
+    icon: Icons.flight_takeoff_rounded,
+    decidedLabel: 'Decision Recorded',
+    doneLabel: 'Shipped On',
+    pendingLabel: 'Shipping Status',
+    doneValue: 'Shipped',
+    pendingValue: 'Not yet shipped',
+    pendingHint: 'Still held by the yard',
+    noteLabel: 'Reason Recorded',
+    pillDone: 'SHIPPED',
+    pillPending: 'PENDING',
+  ),
+  released(
+    title: 'Release Outcome',
+    icon: Icons.keyboard_return_rounded,
+    decidedLabel: 'Release Recorded',
+    doneLabel: 'Collected On',
+    pendingLabel: 'Collection Status',
+    doneValue: 'Collected',
+    pendingValue: 'Not yet collected',
+    pendingHint: 'Still held by the yard',
+    noteLabel: 'Release Note',
+    pillDone: 'COLLECTED',
+    pillPending: 'PENDING',
+  );
+
+  const HandoverKind({
+    required this.title,
+    required this.icon,
+    required this.decidedLabel,
+    required this.doneLabel,
+    required this.pendingLabel,
+    required this.doneValue,
+    required this.pendingValue,
+    required this.pendingHint,
+    required this.noteLabel,
+    required this.pillDone,
+    required this.pillPending,
+  });
+
+  final String title;
+  final IconData icon;
+  final String decidedLabel;
+  final String doneLabel;
+  final String pendingLabel;
+  final String doneValue;
+  final String pendingValue;
+  final String pendingHint;
+  final String noteLabel;
+  final String pillDone;
+  final String pillPending;
+}
+
+class HandoverOutcome {
+  final HandoverKind kind;
+
+  /// The note the officer wrote when recording the disposition.
+  final String? note;
+
+  /// When the disposition was recorded.
+  final DateTime? decidedAt;
+
+  /// Whether the goods have physically gone.
+  final bool delivered;
+
+  /// The day they went, when one was recorded.
+  ///
+  /// ⚠️ Null even on a DELIVERED row: rows marked delivered before the
+  /// date column existed carry no day. The heading alone is the whole of
+  /// what is known about those, and inventing a date would be worse.
+  final DateTime? deliveredAt;
+
+  const HandoverOutcome({
+    required this.kind,
+    this.note,
+    this.decidedAt,
+    required this.delivered,
+    this.deliveredAt,
+  });
+}
+
+/// The hand-over, in the same frame as Warehouse Summary.
+///
+/// ⚠️ A [_DetailSection] of [_DetailItem]s, not a tinted banner. It sits
+/// directly above Warehouse Summary and the two are read as a pair -- where
+/// the goods are, and whether they have gone -- so a banner in a different
+/// visual language between the dialog's other sections made the popup look
+/// assembled from two designs.
+class _HandoverSection extends StatelessWidget {
+  const _HandoverSection({required this.outcome});
+
+  final HandoverOutcome outcome;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = outcome.kind;
+    final d = DateFormat('dd MMM yyyy');
+    final note = (outcome.note ?? '').trim();
+    final gone = outcome.delivered;
+    return _DetailSection(
+      title: k.title,
+      icon: k.icon,
+      delay: 340,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ⚠️ The two events side by side, because they are the whole
+          // point of this section: the yard RULED it, and the goods LEFT.
+          // One had been stored since the beginning; the other had nowhere
+          // to live at all until it was given a column, so every row read
+          // as finished on the day it was decided.
+          Row(
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.assignment_turned_in_rounded,
+                  label: k.decidedLabel,
+                  value: outcome.decidedAt == null
+                      ? '—'
+                      : d.format(outcome.decidedAt!),
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: gone
+                      ? Icons.check_circle_rounded
+                      : Icons.schedule_rounded,
+                  label: gone ? k.doneLabel : k.pendingLabel,
+                  value: gone
+                      ? (outcome.deliveredAt == null
+                          ? k.doneValue
+                          : d.format(outcome.deliveredAt!))
+                      : k.pendingValue,
+                  // The one figure on this section a reader scans for.
+                  valueColor: gone
+                      ? context.colors.successGreen
+                      : context.colors.warningAmber,
+                  subValue: gone ? null : k.pendingHint,
+                  // ⚠️ The same pill the TABLE shows, in the same two
+                  // colours. A reader who marked a row Delivered and then
+                  // opened it had to re-read a date to check it had taken --
+                  // the state they had just changed was the one thing the
+                  // section did not show at a glance.
+                  trailing: _HandoverPill(delivered: gone, kind: k),
+                ),
+              ),
+            ],
+          ),
+          if (note.isNotEmpty)
+            _DetailItem(
+              icon: Icons.notes_rounded,
+              label: k.noteLabel,
+              value: note,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FinalOutcomeTile extends StatelessWidget {
+  const _FinalOutcomeTile(
+      {required this.proposal,
+      this.soldPrice,
+      this.isPerishable = false,
+      this.stillRunning = false});
+
+  /// A round of this package's tender has not closed yet.
+  ///
+  /// ⚠️ Goods reach Top Management when every round has RUN and none
+  /// sold. While one is still open the story has not ended, and saying it
+  /// has puts a decision in the DG's hands that nobody has asked for.
+  final bool stillRunning;
+
+  /// True for goods that ran a single SPECIAL tender sale.
+  ///
+  /// ⚠️ Only changes the WAITING line. A perishable reaches Top
+  /// Management after one failed sale, not after exhausting four rounds
+  /// and a committee, and telling an officer otherwise misdescribes the
+  /// only process these goods have.
+  final bool isPerishable;
+
+  final UnsoldProposalModel? proposal;
+
+  /// What the goods fetched, when they SOLD instead of reaching Top
+  /// Management.
+  ///
+  /// ⚠️ A sale is a third state, not a kind of proposal. A perishable that
+  /// sells never goes to the DG at all -- selling IS the ending -- so reading
+  /// the outcome from unsold_proposals alone left CED/GL1/SR/30/2026 sold for
+  /// Rs 5,533,000 and still showing "Awaiting Top Management" on the page that
+  /// exists to say what became of it.
+  final double? soldPrice;
+
+  IconData get _icon => switch (proposal?.proposal) {
+        'destroy' => Icons.local_fire_department_rounded,
+        'government_use' => Icons.account_balance_rounded,
+        'auction' => Icons.gavel_rounded,
+        're_export' => Icons.flight_takeoff_rounded,
+        'convert' => Icons.autorenew_rounded,
+        'remove_from_premises' => Icons.logout_rounded,
+        _ => Icons.hourglass_top_rounded,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    // ⚠️ Checked FIRST. Selling ends the story, so nothing below may announce
+    // a decision that is still to come.
+    final sold = soldPrice;
+    final decided = proposal != null;
+    // ⚠️ A tender still running is not an outcome at all, so it is not
+    // amber either -- amber is the colour of work waiting on somebody. It
+    // reads as neutral information, because that is what it is.
+    final running = stillRunning && sold == null && !decided;
+    final tint = (sold != null || decided)
+        ? context.colors.successGreen
+        : (running
+            ? context.colors.accentLightBlue
+            : context.colors.warningAmber);
+
+    return material.Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tint.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(
+                running
+                    ? Icons.storefront_rounded
+                    : (sold != null ? Icons.sell_rounded : _icon),
+                size: 16,
+                color: tint),
+            const Gap(8),
+            Text('FINAL OUTCOME',
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 10,
+                    letterSpacing: 0.9,
+                    fontWeight: FontWeight.w800)),
+            const Spacer(),
+            Text(
+                running
+                    ? 'At tender'
+                    : sold != null
+                        ? 'Sold'
+                        : decided
+                            ? unsoldProposalLabel(proposal!.proposal)
+                            : 'Awaiting Top Management',
+                style: TextStyle(
+                    color: tint, fontSize: 12.5, fontWeight: FontWeight.w800)),
+          ]),
+          if (sold != null) ...[
+            const Gap(6),
+            Text(
+                'Sold at tender for Rs ${sold.toStringAsFixed(2)}. These goods '
+                'never went to the Top Management Directorate — selling is '
+                'the outcome.',
+                style: TextStyle(
+                    color: context.colors.textSecondary, fontSize: 11.5)),
+          ] else if (decided) ...[
+            const Gap(6),
+            Text(
+                'Decided on '
+                '${DateFormat('dd MMM yyyy').format(proposal!.decidedAt)}'
+                '${(proposal!.note ?? '').trim().isEmpty ? '' : ' \u00b7 ${proposal!.note!.trim()}'}',
+                style: TextStyle(
+                    color: context.colors.textSecondary, fontSize: 11.5)),
+            // ⚠️ A decision is not a hand-over. The goods sit in the yard
+            // until someone comes for them, so the outcome on its own is
+            // only half the answer.
+            //
+            // ⚠️ Its OWN banner, the same one the Sold popup carries. This
+            // was a 11.5pt line squeezed under the decision note, on pages
+            // (Government Use, Auction, Re-export, Converted, Removed)
+            // whose whole job is to say whether the goods have gone yet.
+            // One fact, one treatment, wherever it is read.
+            const Gap(10),
+            DeliveryStatusBanner(
+              delivered: proposal!.delivered,
+              deliveredAt: proposal!.deliveredAt,
+              waitingFor: 'hand-over',
+              doneLabel: 'Delivered',
+            ),
+          ] else if (running) ...[
+            const Gap(6),
+            // ⚠️ Nothing has ended. Say what is happening instead of
+            // announcing a decision nobody has been asked for.
+            Text(
+                'This package is in a tender that has not closed yet. '
+                'Its outcome is decided when bidding ends.',
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
+          ] else ...[
+            const Gap(6),
+            // ⚠️ "Every tender has been exhausted" describes a package
+            // that failed four rounds and a committee. A perishable never
+            // has four: it runs ONE special sale, and if that fails the
+            // goods come here immediately -- because they are rotting, not
+            // because every avenue was tried.
+            Text(
+                isPerishable
+                    ? 'The special tender sale did not sell these goods. '
+                        'Perishables go straight to Top Management for a '
+                        'final decision -- there is no re-tender.'
+                    : 'Every tender has been exhausted. The package is with '
+                        'Top Management for a final decision.',
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Whether the goods have actually left, as a banner.
+///
+/// ⚠️ This was a row in a list of fields reading "Pending" in RED. Red is
+/// the colour of something wrong, and goods waiting to be collected are not
+/// wrong -- they are the yard's outstanding work. It also sat between a
+/// receipt number and a tax figure, where the one thing a reader opens this
+/// popup to check was the least visible thing on it.
+///
+/// ⚠️ It says WHAT IS WAITING, not just "Pending". A sale waits for a
+/// buyer to collect; a re-export waits for a ship; a release waits for its
+/// owner. "Pending" is the same word for three different jobs.
+class DeliveryStatusBanner extends StatelessWidget {
+  const DeliveryStatusBanner({
+    super.key,
+    required this.delivered,
+    this.deliveredAt,
+    this.waitingFor = 'collection',
+    this.doneLabel = 'Delivered',
+    this.receiptNo,
+    this.charge,
+  });
+
+  final bool delivered;
+  final DateTime? deliveredAt;
+
+  /// What the goods are waiting FOR, in a word: 'collection', 'shipment'.
+  final String waitingFor;
+
+  /// The past-tense word for this ending: 'Delivered', 'Shipped',
+  /// 'Collected'.
+  final String doneLabel;
+
+  /// The receipt written for the storage charge, when one was taken.
+  final String? receiptNo;
+
+  /// What was collected, when it was.
+  final double? charge;
+
+  @override
+  Widget build(BuildContext context) {
+    // ⚠️ GREEN when gone, AMBER while waiting -- never red. Amber is the
+    // colour this app uses for work outstanding, and the delivery pill on
+    // every table beside this popup already uses exactly these two.
+    final tint =
+        delivered ? context.colors.successGreen : context.colors.warningAmber;
+    final money = NumberFormat('#,##0.00');
+    final d = DateFormat('dd MMM yyyy');
+
+    return material.Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: material.Alignment.centerLeft,
+          end: material.Alignment.centerRight,
+          colors: [tint.withOpacity(0.14), tint.withOpacity(0.04)],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tint.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          material.Container(
+            width: 40,
+            height: 40,
+            alignment: material.Alignment.center,
+            decoration: BoxDecoration(
+              color: tint.withOpacity(0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+                delivered
+                    ? Icons.check_circle_rounded
+                    : Icons.local_shipping_rounded,
+                size: 21,
+                color: tint),
+          ),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                    delivered
+                        ? (deliveredAt == null
+                            ? doneLabel
+                            : '$doneLabel on ${d.format(deliveredAt!)}')
+                        : 'Awaiting $waitingFor',
+                    style: material.TextStyle(
+                      color: tint,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                    )),
+                const Gap(2),
+                Text(
+                    delivered
+                        ? 'The goods have left the yard.'
+                        : 'The goods are still in the yard, and still take '
+                            'up its space.',
+                    style: material.TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 11.5,
+                        height: 1.3)),
+                // The receipt is the RECORD of the money, so it belongs
+                // with the hand-over rather than three fields away.
+                if (delivered &&
+                    ((receiptNo ?? '').isNotEmpty || (charge ?? 0) > 0)) ...[
+                  const Gap(6),
+                  Wrap(spacing: 8, runSpacing: 4, children: [
+                    if ((receiptNo ?? '').isNotEmpty)
+                      _MiniTag(
+                          icon: Icons.receipt_long_rounded,
+                          label: 'Receipt ${receiptNo!}',
+                          tint: tint),
+                    if ((charge ?? 0) > 0)
+                      _MiniTag(
+                          icon: Icons.payments_rounded,
+                          label: 'Storage LKR ${money.format(charge)}',
+                          tint: tint),
+                  ]),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small icon+text tag, for facts that ride along with a banner.
+class _MiniTag extends StatelessWidget {
+  const _MiniTag({required this.icon, required this.label, required this.tint});
+
+  final IconData icon;
+  final String label;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) => material.Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: tint.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: tint.withOpacity(0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 11, color: tint),
+          const Gap(4),
+          Text(label,
+              style: material.TextStyle(
+                  color: tint, fontSize: 10.5, fontWeight: FontWeight.w700)),
+        ]),
+      );
 }
 
 /// One appointed committee officer, shown under the committee round.
@@ -337,7 +1103,24 @@ class _CommitteeMemberChip extends StatelessWidget {
 class _TenderRoundTile extends StatelessWidget {
   final String label;
   final String? priceLabel;
+
+  /// This round has not been tendered yet, so its price is withheld and the
+  /// tile says so instead of showing a figure.
+  final bool sealed;
+
+  /// This round has not RUN yet, but its price is shown anyway.
+  ///
+  /// ⚠️ The Valuation Directorate's own view. "Not yet tendered" is
+  /// still worth saying there -- it is the difference between a price that
+  /// fetched nothing and one nobody has bid on -- but the reason changes:
+  /// not "withheld until the tender closes", which is what the seal says,
+  /// simply that the round is still to come.
+  final bool upcoming;
   final bool revalued;
+
+  /// What this round FETCHED, when it is the one that sold. Null on every
+  /// other round.
+  final String? soldLabel;
   final List<String> bids;
 
   /// The committee-priced round. It takes no bids, so the bid line is replaced
@@ -352,12 +1135,27 @@ class _TenderRoundTile extends StatelessWidget {
   /// no committee was ever appointed for.
   final bool committeeLoading;
 
+  /// Custom subtitle for committee round (e.g. pending / valued / submitted).
+  final String? committeeSubtitle;
+
+  /// True when this is a PERISHABLE's single special sale.
+  ///
+  /// ⚠️ Changes what an empty bid list MEANS. Everywhere else it is an
+  /// omission -- somebody has not entered them yet. Here it is the rule:
+  /// perishable goods take no bids at all.
+  final bool isPerishableRound;
+
   const _TenderRoundTile({
     required this.label,
     required this.priceLabel,
+    this.sealed = false,
     required this.revalued,
+    this.soldLabel,
     required this.bids,
     this.isCommitteeRound = false,
+    this.isPerishableRound = false,
+    this.upcoming = false,
+    this.committeeSubtitle,
     this.committeeMembers = const [],
     this.committeeLoading = false,
   });
@@ -391,6 +1189,11 @@ class _TenderRoundTile extends StatelessWidget {
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800)),
             ),
+            // ⚠️ Three kinds of round, three markings, and they must not be
+            // confusable: the FIRST carries no badge (it is the valuation
+            // itself), the middle rounds are re-valuations, and the last is
+            // priced by the committee — which is a different act by different
+            // people, not another re-valuation.
             if (revalued) ...[
               const Gap(8),
               Icon(Icons.price_change_rounded,
@@ -401,9 +1204,33 @@ class _TenderRoundTile extends StatelessWidget {
                       color: context.colors.accentLightBlue,
                       fontSize: 11,
                       fontWeight: FontWeight.w600)),
+            ] else if (isCommitteeRound) ...[
+              const Gap(8),
+              Icon(Icons.groups_2_rounded,
+                  size: 14, color: context.colors.primaryGold),
+              const Gap(4),
+              Text('committee value',
+                  style: TextStyle(
+                      color: context.colors.primaryGold,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+            ],
+            if (soldLabel != null) ...[
+              const Gap(8),
+              Icon(Icons.check_circle_rounded,
+                  size: 14, color: context.colors.successGreen),
+              const Gap(4),
+              Text(soldLabel!,
+                  style: TextStyle(
+                      color: context.colors.successGreen,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
             ],
             const Spacer(),
-            if (priceLabel != null)
+            // A sealed round says WHY the figure is missing, in place of it.
+            if (sealed)
+              const Flexible(child: SealedValuation(compact: true))
+            else if (priceLabel != null)
               Flexible(
                 child: Text(priceLabel!,
                     textAlign: TextAlign.right,
@@ -416,16 +1243,36 @@ class _TenderRoundTile extends StatelessWidget {
               ),
           ]),
           const Gap(8),
+          // Say WHY the price is missing, the same way the committee block
+          // does. A bare "Sealed" chip reads as a glitch; this says the figure
+          // is deliberately withheld and when it will appear.
+          if (sealed || upcoming) ...[
+            Text(
+                sealed
+                    ? 'This round has not been tendered yet. Its valuation '
+                        'is the reserve price, so it is shown once the '
+                        'tender closes.'
+                    // ⚠️ Same fact, different reason. The valuer is not
+                    // being kept from the figure -- it set it -- so the
+                    // line says what is still to happen instead of what is
+                    // being withheld.
+                    : 'Set for the next round. Central Disposal re-tenders '
+                        'at this price.',
+                style:
+                    TextStyle(fontSize: 11, color: context.colors.textMuted)),
+            const Gap(8),
+          ],
           if (isCommitteeRound) ...[
             Text(
                 committeeLoading
                     ? 'Priced by the tender committee · loading members…'
-                    : committeeMembers.isEmpty
-                        ? 'Priced by the tender committee · no bidding'
-                        : 'Priced by the tender committee '
-                            '(${committeeMembers.length} '
-                            '${committeeMembers.length == 1 ? 'member' : 'members'})'
-                            ' · no bidding',
+                    : (committeeSubtitle ??
+                        (committeeMembers.isEmpty
+                            ? 'Priced by the tender committee · no bidding'
+                            : 'Priced by the tender committee '
+                                '(${committeeMembers.length} '
+                                '${committeeMembers.length == 1 ? 'member' : 'members'})'
+                                ' · no bidding')),
                 style:
                     TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
             if (committeeMembers.isNotEmpty) ...[
@@ -441,7 +1288,14 @@ class _TenderRoundTile extends StatelessWidget {
               ),
             ],
           ] else if (bids.isEmpty)
-            Text('No bids recorded',
+            // ⚠️ "No bids recorded" reads as an omission -- somebody
+            // forgot to enter them. For a perishable it is the RULE:
+            // the goods run one special sale and take no bids at all,
+            // so the line says which of the two this is.
+            Text(
+                isPerishableRound
+                    ? 'Perishable goods take no bids'
+                    : 'No bids recorded',
                 style:
                     TextStyle(color: context.colors.textMuted, fontSize: 11.5))
           else
@@ -490,6 +1344,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   /// The forfeited row whose tender history (per-round valuation + bids)
   /// should be shown. Set by the Unsold pages; null hides the section.
   final ForfeitedPackageModel? tenderHistoryFor;
+  final bool showFinalOutcome;
   final bool useWarehouseSummary;
 
   // Optional yard label (e.g. 'Grey Line 1') shown in the Warehouse Summary so
@@ -504,6 +1359,21 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final double? valuationTotalCost;
   final int? valuationQty;
 
+  /// True while the goods are still in a tender/destruction sale that has not
+  /// yet run. The valuation is the reserve price, so the whole Valuation
+  /// section AND the per-round tender history are replaced by a "sealed"
+  /// notice — see [valuationSealed].
+  final bool valuationSealedUntilSale;
+
+  /// The VALUATION DIRECTORATE is reading its own figures.
+  ///
+  /// ⚠️ Passed by that portal alone. A reserve price is sealed until
+  /// bidding closes so nobody can bid against it -- and the directorate
+  /// that SET it is not "nobody". Sealing there hid a number from the
+  /// only people whose job is to decide it, on the very page where they
+  /// decide the next round's.
+  final bool valuerView;
+
   // Optional generic footer action (e.g. the Appeal Directorate's "Hold Appeal"
   // / "Release"). When [footerActionLabel] is set, a button is shown in the
   // dialog footer — styled like the Final Disposition footer — that calls
@@ -514,6 +1384,9 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final String? footerActionHint;
   final VoidCallback? onFooterAction;
   final Color? headerAccentColor;
+  final bool appealHold;
+  final String? appealHoldNote;
+  final DateTime? appealHeldAt;
 
   // Appeal Directorate decision banner. When [appealDecisionLabel] is set, a
   // prominent banner is shown at the top of the body telling the owning yard
@@ -523,6 +1396,8 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // 'OTHER'). When set, the Final Disposition dialog enables ONLY the matching
   // action — the yard must proceed exactly as the Appeal Directorate decided.
   final String? appealDecisionCode;
+  final String? appealDecisionNote;
+  final DateTime? appealDecidedAt;
 
   // Final-disposition gating (Forfeited screen). The footer "Final Disposition"
   // button is shown ONLY when [allowFinalDisposition] is true — i.e. the appeal
@@ -563,33 +1438,57 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.highlightItemId,
     this.useLegacySummary = false,
     this.tenderHistoryFor,
+    this.showFinalOutcome = true,
     this.useWarehouseSummary = false,
     this.yardLabel,
     this.valuationUnitCost,
     this.valuationTotalCost,
     this.valuationQty,
+    this.valuationSealedUntilSale = false,
+    this.valuerView = false,
     this.footerActionLabel,
     this.footerActionIcon,
     this.footerActionColor,
     this.footerActionHint,
     this.onFooterAction,
     this.headerAccentColor,
+    this.appealHold = false,
+    this.appealHoldNote,
+    this.appealHeldAt,
     this.appealDecisionLabel,
     this.appealDecisionCode,
+    this.appealDecisionNote,
+    this.appealDecidedAt,
     this.allowFinalDisposition = true,
     this.onSaleOrDestroyRequest,
     this.forceFinalDisposition = false,
     this.isSoldPage = false,
     this.allowEdit = false,
     this.srFinancials,
+    this.handover,
   });
 
   final SrFinancials? srFinancials;
+
+  /// An ending the yard is still waiting to hand over — see [HandoverKind].
+  ///
+  /// ⚠️ Re-export and Release only. Both were recorded once and reported
+  /// finished from that moment; neither popup said whether the goods had
+  /// actually gone. Sold and Destroyed already state their ending twice and
+  /// pass null here.
+  final HandoverOutcome? handover;
 
   @override
   ConsumerState<PackageDetailsDialog> createState() =>
       _PackageDetailsDialogState();
 }
+
+/// Shown where the entering officer is genuinely absent from the record.
+///
+/// Packages carried over when the register was migrated have no `inspected_by`
+/// and no creation audit row, so no name exists to show. This is a statement
+/// about the RECORD, not a failed lookup -- see [_SystemEntrySection].
+const String _kNoEntrantRecorded = 'Not recorded';
 
 class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     with SingleTickerProviderStateMixin {
@@ -686,7 +1585,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           .calculatePackageCharge([specificItem], widget.storageRate);
     }
 
-    final result = await showDialog<bool>(
+    final result = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => material.AlertDialog(
@@ -751,7 +1650,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                 size: 18, color: context.colors.primaryGold),
                           ),
                           onTap: () async {
-                            final picked = await showDialog<DateTime>(
+                            final picked = await showAppDialog<DateTime>(
                               context: ctx,
                               builder: (_) => OneTapDatePicker(
                                 initialDate: releaseDate,
@@ -837,7 +1736,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             // Same custom picker as the SR form (consistent look).
                             final existing =
                                 DateTime.tryParse(dateCtrl.text.trim());
-                            final date = await showDialog<DateTime>(
+                            final date = await showAppDialog<DateTime>(
                               context: context,
                               builder: (_) => OneTapDatePicker(
                                 initialDate: existing ?? DateTime.now(),
@@ -911,9 +1810,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   if (ctx.mounted) Navigator.pop(ctx, true);
                 } catch (e) {
                   if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: context.colors.dangerRed));
+                    showErrorSnack(ctx, e);
                   }
                 }
               },
@@ -977,7 +1874,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           description: 'Custom disposition: $dispositionType',
         );
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => material.AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1016,7 +1913,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               Icon(Icons.calendar_month, color: m.color),
                         ),
                         onTap: () async {
-                          final picked = await showDialog<DateTime>(
+                          final picked = await showAppDialog<DateTime>(
                             context: ctx,
                             builder: (_) => OneTapDatePicker(
                               initialDate: dispositionDate,
@@ -1123,7 +2020,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           orElse: () => widget.package.items.first,
         );
 
-    showDialog(
+    showAppDialog(
       context: ctx,
       builder: (dialogCtx) => _PackageActionsDialog(
         packageId: entry.packageId,
@@ -1168,7 +2065,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     required bool isOfficer,
   }) {
     final qty = entry?.itemCount ?? item.effectiveQuantity;
-    showDialog(
+    showAppDialog(
       context: ctx,
       builder: (dialogCtx) => _FinalDispositionDialog(
         item: item,
@@ -1194,7 +2091,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           // any of it up afterwards would fail.
           final messenger = material.ScaffoldMessenger.maybeOf(ctx);
           final successColour = context.colors.successGreen;
-          final failColour = context.colors.dangerRed;
+          // No failure colour captured: showErrorSnack picks it by kind.
 
           // Close the details dialog BEFORE the write, not after it.
           //
@@ -1229,12 +2126,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
               ),
             );
           } catch (e) {
-            messenger?.showSnackBar(
-              material.SnackBar(
-                content: Text('Failed: $e'),
-                backgroundColor: failColour,
-              ),
-            );
+            // Worded by kind, like everywhere else -- a timeout here is not a
+            // failure the officer caused, and should not read like one.
+            if (ctx.mounted) showErrorSnack(ctx, e);
           }
         },
       ),
@@ -1244,7 +2138,25 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
   @override
   Widget build(BuildContext context) {
     final p = widget.package;
-    String officerDisplay = 'Unknown Officer';
+    final hasAppealDecision =
+        widget.appealDecisionLabel?.trim().isNotEmpty ?? false;
+    final showAppealStatus = widget.appealHold || hasAppealDecision;
+    final appealIsHold = widget.appealHold;
+    final appealAccent = appealIsHold
+        ? context.colors.warningAmber
+        : context.colors.accentLightBlue;
+    final appealDate =
+        appealIsHold ? widget.appealHeldAt : widget.appealDecidedAt;
+    final appealNote =
+        (appealIsHold ? widget.appealHoldNote : widget.appealDecisionNote)
+            ?.trim();
+    // ⚠️ NOT "Unknown Officer". Most of these entries were bulk-loaded when
+    // the register was migrated, so no officer was ever recorded against them
+    // -- there is nobody to name, and nothing has gone wrong. "Unknown"
+    // read as a lookup that had FAILED and sent people hunting for a bug.
+    // `_recordedEntrant` below marks the difference so the section can say
+    // which of the two it is.
+    String officerDisplay = _kNoEntrantRecorded;
     String? salaryNumber;
 
     if (p.inspectedByName != null) {
@@ -1294,6 +2206,37 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                 (i) => i.id == widget.highlightEntry!.packageItemId,
                 orElse: () => p.items.first)
             : null);
+
+    // The forfeited row the Appeal section reads, for whichever item this
+    // popup is about.
+    //
+    // ⚠️ THIS item's row, and no other. An SR can hold several items, each
+    // with its OWN forfeited row and its own appeal — CED/GL1/SR/24/2025 has
+    // four, and only Paint Thinner Cans was ruled on. Falling back to
+    // "whichever row came first" showed that ruling on the popup for Laptop
+    // Chargers, which had never been appealed at all: the table said Enabled
+    // and the popup said Decided · Other about the same goods.
+    //
+    // ⚠️ `forfeitedByItemProvider` keys STRICTLY by item and drops any
+    // package-level row (`if (itemId == null) continue`), so there is no
+    // package-wide entry to fall back to here. An item with no row of its
+    // own simply has no appeal to show, and showing nothing is right: the
+    // table says Enabled for exactly those goods.
+    final appealFor = widget.tenderHistoryFor ??
+        (highlightedItem == null
+            ? null
+            : ref
+                .watch(forfeitedByItemProvider(p.id))
+                .valueOrNull?[highlightedItem.id]);
+
+    // Perishables never enter a warehouse -- no storage, no appeal window,
+    // straight to disposal. So an EMPTY warehouse summary is the correct
+    // answer for them, and the section has to say so rather than showing the
+    // same "No warehouse details" blank that a failed load would produce.
+    final isPerishable = highlightedItem != null
+        ? highlightedItem.nature == kNaturePerishable
+        : p.items.isNotEmpty &&
+            p.items.every((i) => i.nature == kNaturePerishable);
 
     // Show ONLY the item this popup is about whenever it's known (via
     // highlightItemId OR a highlightEntry) — a decided/forfeited item may have
@@ -1400,7 +2343,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                 highlightReturnedById == currentProfile?.id
             ? currentProfile?.fullName
             : null) ??
-        'Unknown Officer';
+        _kNoEntrantRecorded;
     final returnedOfficerBadge = widget.highlightEntry?.returnedByBadge ??
         (highlightReturnedById != null &&
                 highlightReturnedById == currentProfile?.id
@@ -1626,12 +2569,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       ),
                     ),
                     const Gap(12),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded,
-                          color: Colors.white.withOpacity(0.7)),
-                      splashRadius: 24,
-                    ),
+                    DialogCloseButton(
+                        prominent: widget.headerAccentColor != null),
                   ],
                 ),
               ),
@@ -1692,151 +2631,148 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         delay: 100,
                         child: Column(
                           children: [
-                              if (isOld) ...[
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.numbers_rounded,
-                                        label: 'New SR Number',
-                                        value: p.srNumber,
-                                        valueColor:
-                                            context.colors.accentLightBlue,
-                                      ),
+                            if (isOld) ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.numbers_rounded,
+                                      label: 'New SR Number',
+                                      value: p.srNumber,
+                                      valueColor:
+                                          context.colors.accentLightBlue,
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.history_edu_rounded,
-                                        label: 'Old SR Number (Migrated)',
-                                        value: p.oldSrNumber!,
-                                        valueColor:
-                                            context.colors.primaryGold,
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.history_edu_rounded,
+                                      label: 'Old SR Number (Migrated)',
+                                      value: p.oldSrNumber!,
+                                      valueColor: context.colors.primaryGold,
                                     ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.history_rounded,
-                                        label: 'Entry Type',
-                                        value: 'Old Entry (Migrated)',
-                                        valueColor:
-                                            context.colors.primaryGold,
-                                      ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.history_rounded,
+                                      label: 'Entry Type',
+                                      value: 'Old Entry (Migrated)',
+                                      valueColor: context.colors.primaryGold,
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.calendar_today_rounded,
-                                        label: 'Entry Date',
-                                        value: p.entryDate != null
-                                            ? DateFormat('yyyy-MM-dd')
-                                                .format(p.entryDate!)
-                                            : 'N/A',
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.calendar_today_rounded,
+                                      label: 'Entry Date',
+                                      value: p.entryDate != null
+                                          ? DateFormat('yyyy-MM-dd')
+                                              .format(p.entryDate!)
+                                          : 'N/A',
                                     ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.receipt_long_rounded,
-                                        label: 'Cusdec No',
-                                        value: p.cusdecNo ?? 'N/A',
-                                      ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.receipt_long_rounded,
+                                      label: 'Cusdec No',
+                                      value: p.cusdecNo ?? 'N/A',
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.calendar_month_rounded,
-                                        label: 'Cusdec Date',
-                                        value: p.cusdecDate ?? 'N/A',
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.calendar_month_rounded,
+                                      label: 'Cusdec Date',
+                                      value: p.cusdecDate ?? 'N/A',
                                     ),
-                                  ],
-                                ),
-                              ] else ...[
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.numbers_rounded,
-                                        label: 'SR Number',
-                                        value: p.srNumber,
-                                      ),
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.numbers_rounded,
+                                      label: 'SR Number',
+                                      value: p.srNumber,
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.fiber_new_rounded,
-                                        label: 'Entry Type',
-                                        value: 'New Entry (Standard)',
-                                        valueColor:
-                                            context.colors.accentLightBlue,
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.fiber_new_rounded,
+                                      label: 'Entry Type',
+                                      value: 'New Entry (Standard)',
+                                      valueColor:
+                                          context.colors.accentLightBlue,
                                     ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.calendar_today_rounded,
-                                        label: 'Entry Date',
-                                        value: p.entryDate != null
-                                            ? DateFormat('yyyy-MM-dd')
-                                                .format(p.entryDate!)
-                                            : 'N/A',
-                                      ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.calendar_today_rounded,
+                                      label: 'Entry Date',
+                                      value: p.entryDate != null
+                                          ? DateFormat('yyyy-MM-dd')
+                                              .format(p.entryDate!)
+                                          : 'N/A',
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.receipt_long_rounded,
-                                        label: 'Cusdec No',
-                                        value: p.cusdecNo ?? 'N/A',
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.receipt_long_rounded,
+                                      label: 'Cusdec No',
+                                      value: p.cusdecNo ?? 'N/A',
                                     ),
-                                  ],
-                                ),
-                                _DetailItem(
-                                  icon: Icons.calendar_month_rounded,
-                                  label: 'Cusdec Date',
-                                  value: p.cusdecDate ?? 'N/A',
-                                ),
-                              ],
-                              _DetailItem(
-                                icon: Icons.gavel_rounded,
-                                label: 'Case Number',
-                                value: p.caseNumber ?? 'N/A',
+                                  ),
+                                ],
                               ),
                               _DetailItem(
-                                icon: Icons.local_shipping_rounded,
-                                label: 'Container Number',
-                                value: p.containerNumber ?? 'N/A',
-                              ),
-                              // Package-level: one deposit per SR, taken at
-                              // registration against the cost of destruction.
-                              _DetailItem(
-                                icon: Icons.savings_rounded,
-                                label: 'Destroying Deposit',
-                                value: p.destroyingDeposit == null
-                                    ? 'N/A'
-                                    : 'LKR ${NumberFormat('#,##0.##').format(p.destroyingDeposit)}',
-                              ),
-                              _DetailItem(
-                                icon: Icons.description_rounded,
-                                label: 'Package Description',
-                                value:
-                                    p.description ?? 'No description provided',
+                                icon: Icons.calendar_month_rounded,
+                                label: 'Cusdec Date',
+                                value: p.cusdecDate ?? 'N/A',
                               ),
                             ],
-                          ),
+                            _DetailItem(
+                              icon: Icons.gavel_rounded,
+                              label: 'Case Number',
+                              value: p.caseNumber ?? 'N/A',
+                            ),
+                            _DetailItem(
+                              icon: Icons.local_shipping_rounded,
+                              label: 'Container Number',
+                              value: p.containerNumber ?? 'N/A',
+                            ),
+                            // Package-level: one deposit per SR, taken at
+                            // registration against the cost of destruction.
+                            _DetailItem(
+                              icon: Icons.savings_rounded,
+                              label: 'Destroying Deposit',
+                              value: p.destroyingDeposit == null
+                                  ? 'N/A'
+                                  : 'LKR ${NumberFormat('#,##0.##').format(p.destroyingDeposit)}',
+                            ),
+                            _DetailItem(
+                              icon: Icons.description_rounded,
+                              label: 'Package Description',
+                              value: p.description ?? 'No description provided',
+                            ),
+                          ],
                         ),
+                      ),
 
                       // Consignee Information Section
                       _DetailSection(
@@ -2018,9 +2954,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                 ),
                                                 _DetailItem(
                                                   icon: Icons.payments_rounded,
-                                                  label: 'Value',
+                                                  // The TOTAL, with the unit price beneath it — the same shape
+                                                  // the Valuation column uses. This showed the bare unitValue
+                                                  // under a label reading just "Value", while every table showed
+                                                  // unitValue x quantity under that same word.
+                                                  label: 'Value (total)',
                                                   value:
-                                                      'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                      'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue * highlightedItem.quantity)}'
+                                                      '  ·  @ ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)} × ${highlightedItem.quantity}',
                                                 ),
                                                 if (highlightedItem
                                                         .goodsDescription
@@ -2155,9 +3096,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       child: _DetailItem(
                                                         icon: Icons
                                                             .payments_rounded,
-                                                        label: 'Value',
+                                                        // Total, with the unit
+                                                        // price beneath —
+                                                        // matching the tables.
+                                                        label: 'Value (total)',
                                                         value:
-                                                            'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                            'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue * highlightedItem.quantity)}'
+                                                            '  ·  @ ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)} × ${highlightedItem.quantity}',
                                                       ),
                                                     ),
                                                   ],
@@ -2191,7 +3136,56 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         // Valuation Directorate cost (Central Disposal /
                         // Valuation request popups) — shown next to the package's
                         // own declared value.
-                        if (widget.valuationUnitCost != null)
+                        // Sealed while the sale is still open: show that the
+                        // figure is deliberately withheld, not simply missing.
+                        // ⚠️ Not for the valuer. They set this figure; a
+                        // lock panel where their own number should be is a
+                        // page telling them they may not see their own work.
+                        if (widget.valuationSealedUntilSale &&
+                            !widget.valuerView)
+                          _DetailSection(
+                            title: 'Valuation',
+                            icon: Icons.lock_outline_rounded,
+                            delay: 320,
+                            child: material.Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.colors.surfaceDark,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: context.colors.borderColor),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SealedValuation(),
+                                  const Gap(6),
+                                  Text(SealedValuation.tooltip,
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: context.colors.textMuted)),
+                                ],
+                              ),
+                            ),
+                          )
+                        // ⚠️ Only when there is NO tender history below.
+                        //
+                        // Tender History opens with the Valuation Tender —
+                        // the first round and the figure it ran at — so this
+                        // card was the same fact stated twice. Worse, the two
+                        // did not agree: this shows the ORIGINAL valuation,
+                        // while the first round shows the re-valuation keyed
+                        // to it, and a reader had no way to tell which was
+                        // which. One place, and it is the one that also shows
+                        // every round after it.
+                        //
+                        // A package that never went to tender has no history
+                        // section at all, and still needs its valuation, so
+                        // this stays for exactly that case.
+                        else if (widget.valuationUnitCost != null &&
+                            !(widget.tenderHistoryFor != null &&
+                                !widget.valuationSealedUntilSale))
                           _DetailSection(
                             title: 'Valuation',
                             icon: Icons.calculate_rounded,
@@ -2229,12 +3223,43 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               ),
                             ),
                           ),
+                        // ⚠️ The appeal's OWN story, for the Appeal
+                        // Directorate's popup. Its two tables say a package
+                        // is "On Appeal Hold" or "Decided · Sell", and the
+                        // popup then said nothing at all about the appeal —
+                        // not when it was lodged, not when the deadline
+                        // falls, not what was ruled or when.
+                        //
+                        // ⚠️ Resolved HERE when the caller did not pass one,
+                        // rather than at each call site. Eight screens open
+                        // this popup (Abandoned, Detained, Other, Goods
+                        // History, Old Entries, Released, Forfeited,
+                        // Warehouses) and none of them passed
+                        // `tenderHistoryFor`, so an officer asking "was this
+                        // appealed?" got no answer on any of them — while the
+                        // table they had just clicked from showed an Appeal
+                        // column. The popup has the package and a ref, so it
+                        // can answer for itself.
+                        if (appealFor != null)
+                          _AppealHistorySection(
+                            forfeited: appealFor,
+                            itemId: highlightedItem?.id,
+                          ),
                         // Per-round valuation + bids, for unsold packages.
-                        if (widget.tenderHistoryFor != null)
+                        // Also sealed: each round carries its own valuation.
+                        if (widget.tenderHistoryFor != null &&
+                            !widget.valuationSealedUntilSale)
                           TenderHistorySection(
                             forfeited: widget.tenderHistoryFor!,
                             qty: widget.valuationQty,
+                            showFinalOutcome: widget.showFinalOutcome,
+                            valuerView: widget.valuerView,
                           ),
+                        // ⚠️ Directly ABOVE Warehouse Summary, and in the
+                        // same frame. The two are read as a pair -- where
+                        // the goods are, and where they went.
+                        if (widget.handover != null)
+                          _HandoverSection(outcome: widget.handover!),
                         if (!widget.useWarehouseSummary)
                           _DetailSection(
                             title: 'Warehouse Summary',
@@ -2261,8 +3286,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           value: widget.yardLabel!,
                                         ),
                                       )
-                                    : const _EmptyState(
-                                        message: 'No warehouse details'))
+                                    : _EmptyState(
+                                        icon: isPerishable
+                                            ? Icons.ac_unit_rounded
+                                            : Icons.inbox_rounded,
+                                        message: isPerishable
+                                            ? 'Not stored in a warehouse'
+                                            : 'No warehouse details',
+                                        reason: isPerishable
+                                            ? 'Perishable goods go straight '
+                                                'to disposal — they are stored '
+                                                'in the yard without warehouse '
+                                                'admission.'
+                                            : null,
+                                      ))
                                 : material.Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
@@ -2283,7 +3320,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           icon: Icons.warehouse_rounded,
                                           label: 'Warehouse',
                                           value: legacyEntries
-                                              .map((e) => e.warehouseName.trim())
+                                              .map(
+                                                  (e) => e.warehouseName.trim())
                                               .where((w) => w.isNotEmpty)
                                               .toSet()
                                               .join(', '),
@@ -2297,11 +3335,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                   final zn = e.zone?.trim();
                                                   if (zn != null &&
                                                       zn.isNotEmpty) {
-                                                    return zn.toLowerCase().startsWith('zone')
+                                                    return zn
+                                                            .toLowerCase()
+                                                            .startsWith('zone')
                                                         ? zn
                                                         : 'Zone $zn';
                                                   }
-                                                  return e.warehouseCode.trim().isNotEmpty
+                                                  return e.warehouseCode
+                                                          .trim()
+                                                          .isNotEmpty
                                                       ? e.warehouseCode.trim()
                                                       : null;
                                                 })
@@ -2383,12 +3425,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         .fold<int>(
                                             0, (sum, e) => sum + e.itemCount);
 
-                                    final currentWarehouses = relatedEntries
-                                        .where((e) => !e.isReturned)
-                                        .map((e) => e.warehouseName)
-                                        .toSet()
-                                        .toList();
-
+                                    // ⚠️ An item that has LEFT has no current
+                                    // warehouse, whatever its entries say.
+                                    //
+                                    // The test was `!e.isReturned` alone, so a
+                                    // straggling entry — one the sale never
+                                    // closed out — kept printing "Current
+                                    // Warehouse: Open Area 01" for goods that
+                                    // had already been sold and delivered. The
+                                    // item's own STATUS is the authority here:
+                                    // sold, destroyed, re-exported or released
+                                    // all mean the goods are gone, and a
+                                    // warehouse row that disagrees is a
+                                    // bookkeeping leftover, not a location.
                                     // ── Categorize returned entries by disposition ──
                                     // Releases carry no [STATUS] prefix in returnNotes;
                                     // dispositions are tagged e.g. [FORFEIT], [RE-EXPORT].
@@ -2446,10 +3495,36 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     final isItemDisposed =
                                         isItemReexport || isItemDestroy;
                                     final isItemConfiscated = isItemForfeited;
+                                    // ⚠️ The FINAL OUTCOMES, as distinct from
+                                    // the decisions above them: 'destroy' is
+                                    // the ruling, 'destroyed' is what
+                                    // happened. Both deserve the badge, and
+                                    // the outcome more than the decision --
+                                    // it is the end of the story.
+                                    //
+                                    // These sat in `_neutralStatuses`, so an
+                                    // item that had actually been SOLD or
+                                    // DESTROYED got no badge and no tint at
+                                    // all, while a released one did (through
+                                    // a separate quantity test). One outcome
+                                    // was visible and the rest were not.
+                                    final isItemSold = _itemStatus == 'sold';
+                                    final isItemDestroyedDone =
+                                        _itemStatus == 'destroyed';
+                                    final isItemReexportedDone =
+                                        _itemStatus == 're-exported';
+                                    final isItemReleasedDone =
+                                        _itemStatus == 'released' ||
+                                            _itemStatus == 'returned';
+                                    final isItemFinalOutcome = isItemSold ||
+                                        isItemDestroyedDone ||
+                                        isItemReexportedDone ||
+                                        isItemReleasedDone;
                                     final isItemTerminal = isItemForfeited ||
                                         isItemAbandoned ||
                                         isItemDetained ||
-                                        isItemDisposed;
+                                        isItemDisposed ||
+                                        isItemFinalOutcome;
                                     // A custom ("Other") status — anything that
                                     // is not a known disposition and not a
                                     // neutral working/left-yard state — should
@@ -2471,9 +3546,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     // held, no other disposition) shows a RELEASED
                                     // badge instead of falling back to a neutral
                                     // 'returned' status with no badge.
-                                    final isItemReleased = _releasedQty > 0 &&
-                                        heldQty == 0 &&
-                                        _dispoCounts.isEmpty;
+                                    // A fully-released item whose STATUS was
+                                    // never updated: the quantities say it
+                                    // left even though the column still reads
+                                    // 'returned' or blank.
+                                    final isItemReleased = isItemReleasedDone ||
+                                        (_releasedQty > 0 &&
+                                            heldQty == 0 &&
+                                            _dispoCounts.isEmpty);
                                     final showStatusBadge = isItemTerminal ||
                                         isItemOther ||
                                         isItemReleased;
@@ -2490,6 +3570,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         return const Color(0xFF00ACC1);
                                       if (isItemDestroy)
                                         return const Color(0xFFE64A19);
+                                      if (isItemSold)
+                                        return context.colors.successGreen;
+                                      if (isItemDestroyedDone)
+                                        return const Color(0xFFE64A19);
+                                      if (isItemReexportedDone)
+                                        return const Color(0xFF00ACC1);
                                       if (isItemReleased)
                                         return context.colors.successGreen;
                                       if (isItemOther)
@@ -2506,6 +3592,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                       if (isItemDetained) return 'DETAINED';
                                       if (isItemReexport) return 'RE-EXPORT';
                                       if (isItemDestroy) return 'DESTROYED';
+                                      if (isItemSold) return 'SOLD';
+                                      if (isItemDestroyedDone) {
+                                        return 'DESTROYED';
+                                      }
+                                      if (isItemReexportedDone) {
+                                        return 'RE-EXPORTED';
+                                      }
                                       if (isItemReleased) return 'RELEASED';
                                       if (isItemOther) {
                                         return (item.status ?? '')
@@ -2742,9 +3835,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               Expanded(
                                                 child: _DetailItem(
                                                   icon: Icons.payments_rounded,
-                                                  label: 'Value',
+                                                  // The TOTAL, with the unit price beneath it — the same shape
+                                                  // the Valuation column uses. This showed the bare unitValue
+                                                  // under a label reading just "Value", while every table showed
+                                                  // unitValue x quantity under that same word.
+                                                  label: 'Value (total)',
                                                   value:
-                                                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                                                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
+                                                      '  ·  @ ${NumberFormat('#,##0.00').format(item.unitValue)} × ${item.quantity}',
                                                 ),
                                               ),
                                             ],
@@ -2778,8 +3876,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       ),
                                                     ),
                                                     const Gap(12),
+                                                    // ⚠️ Named for what the
+                                                    // FORM calls it. The
+                                                    // officer picks a "Post
+                                                    // Status Activity"
+                                                    // (stored in
+                                                    // `hold_reason`) and
+                                                    // every list filters on
+                                                    // that name — calling it
+                                                    // "Reason" only here
+                                                    // made the popup look
+                                                    // like it was showing
+                                                    // some other field.
                                                     Text(
-                                                      'Reason',
+                                                      'Post Status Activity',
                                                       style: material.TextStyle(
                                                         color: context
                                                             .colors.textMuted,
@@ -2849,94 +3959,60 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                 ),
                                               ],
                                             ),
-                                          if (currentWarehouses.isNotEmpty)
-                                            _DetailItem(
-                                              icon: Icons.warehouse_rounded,
-                                              label: 'Current Warehouse',
-                                              value: currentWarehouses.first,
+                                          // ⚠️ "Current Warehouse" and the
+                                          // "Disposition Breakdown" block
+                                          // used to sit here and have been
+                                          // REMOVED, not lost: both are now
+                                          // answered once, per admission, by
+                                          // _ItemStorageSection below.
+                                          //
+                                          // They said the same thing three
+                                          // times over. A released item read
+                                          // "Left the warehouse — released to
+                                          // the owner", then "Currently Held
+                                          // x0 / Released x40", then
+                                          // "Delivered out … Quantity 40" —
+                                          // and the breakdown's counts could
+                                          // drift from the entries they were
+                                          // summarising. The storage section
+                                          // lists each admission with its own
+                                          // warehouse, zone, quantity and
+                                          // state, which covers the split
+                                          // cases the breakdown existed for
+                                          // without restating them.
+                                          // ⚠️ Every avenue this ITEM went
+                                          // down, under the item itself.
+                                          //
+                                          // The popup could already show a
+                                          // tender history, but only when a
+                                          // caller passed ONE forfeited
+                                          // package in -- so from Goods
+                                          // History, where an SR holds several
+                                          // items that each met a different
+                                          // end, it showed nothing at all. The
+                                          // valuation, the bids, the
+                                          // committee, the appeal and the
+                                          // final outcome all belong to the
+                                          // item, so they are rendered per
+                                          // item.
+                                          // Where these goods have been and
+                                          // what that has cost. Before the
+                                          // lifecycle, because storage is
+                                          // what happens FIRST and is still
+                                          // happening while everything below
+                                          // is being decided.
+                                          if (widget.tenderHistoryFor == null)
+                                            _ItemStorageSection(
+                                              package: p,
+                                              item: item,
+                                              highlightEntry:
+                                                  widget.highlightEntry,
                                             ),
-                                          // Show the Disposition Breakdown whenever
-                                          // the item is still held (detained) OR has
-                                          // any released / disposed portion — so a
-                                          // released item shows "Released x20" even
-                                          // if its status isn't 'detained'.
-                                          if (isItemDetained ||
-                                              _releasedQty > 0 ||
-                                              _dispoCounts.isNotEmpty) ...[
-                                            const Gap(16),
-                                            material.Container(
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: context.colors.cardDark,
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                border: Border.all(
-                                                  color: context
-                                                      .colors.borderColor,
-                                                ),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  material.Text(
-                                                    'Disposition Breakdown',
-                                                    style: material.TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: context
-                                                          .colors.textPrimary,
-                                                    ),
-                                                  ),
-                                                  const Gap(12),
-                                                  _DispositionRow(
-                                                    label: 'Currently Held',
-                                                    count: heldQty,
-                                                    color: context
-                                                        .colors.primaryGold,
-                                                    officer: null,
-                                                  ),
-                                                  if (_releasedQty > 0) ...[
-                                                    const Gap(12),
-                                                    _DispositionRow(
-                                                      label: 'Released',
-                                                      count: _releasedQty,
-                                                      color: context
-                                                          .colors.successGreen,
-                                                      officer:
-                                                          _releasedOfficer ??
-                                                              'Unknown Officer',
-                                                    ),
-                                                  ],
-                                                  // Each disposition type parsed from
-                                                  // returnNotes (Forfeit, Re-export,
-                                                  // Abandoned, Destroy, Other custom)
-                                                  ..._dispoCounts.entries
-                                                      .map((entry) {
-                                                    return Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                              top: 12),
-                                                      child: _DispositionRow(
-                                                        label: _dispoLabel(
-                                                            entry.key,
-                                                            _dispoRawLabel[entry
-                                                                    .key] ??
-                                                                entry.key),
-                                                        count: entry.value,
-                                                        color: _dispoColor(
-                                                            entry.key),
-                                                        officer: _dispoOfficers[
-                                                                entry.key] ??
-                                                            'Unknown Officer',
-                                                      ),
-                                                    );
-                                                  }),
-                                                ],
-                                              ),
+                                          if (widget.tenderHistoryFor == null)
+                                            _ItemLifecycleSection(
+                                              packageId: p.id,
+                                              item: item,
                                             ),
-                                          ],
                                         ],
                                       ),
                                     );
@@ -2959,6 +4035,35 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         ),
                         const Gap(16),
                       ],
+
+                      // ⚠️ BEFORE the entry sections. Storage is a fact about
+                      // the GOODS; "System Entry By" and "Released By" name
+                      // the officers who signed for them. Reading the people
+                      // last is how every paper form in this office is laid
+                      // out -- the signature goes at the bottom.
+                      //
+                      // ⚠️ And ask FIRST, then build the frame. The note
+                      // returns an empty box for a package with no warehouse
+                      // entries -- goods that never reached a zone -- while a
+                      // section wrapping it still drew its heading and its
+                      // border, so the popup carried an empty panel titled
+                      // STORAGE.
+                      if ((widget.useLegacySummary ||
+                              isNoChargeContext ||
+                              isSoldContext) &&
+                          (ref.watch(storageChargeVisibleProvider(p.id)) ??
+                              false))
+                        _DetailSection(
+                          title: 'Storage',
+                          icon: Icons.warehouse_rounded,
+                          delay: 480,
+                          child: StorageChargeNote(
+                            packageId: p.id,
+                            packageItemId:
+                                widget.highlightEntry?.packageItemId ??
+                                    widget.highlightItemId,
+                          ),
+                        ),
 
                       // Entry Person Section
                       _SystemEntrySection(
@@ -3094,6 +4199,22 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             ],
                           ),
                         ),
+                      // ⚠️ What the SPACE has cost, on every popup that does
+                      // not already carry the section above.
+                      //
+                      // That section is skipped in three cases and each
+                      // leaves a real gap: `useLegacySummary` (which is
+                      // nearly every popup in the app), a no-charge status,
+                      // and a sale. The first shows an entry-date charge in
+                      // its summary but only on the pages that have one; the
+                      // second and third are goods the state has taken or
+                      // sold, where nobody is billed -- but the days in a
+                      // zone still happened, and every valuation, committee
+                      // and sale decision is made against them.
+                      //
+                      // The note says which of the two figures it is: an
+                      // accrued CHARGE payable on collection, or the COST of
+                      // space nobody will be billed for.
                       if (() {
                         // Sold Packages page: always show Sale & Financial.
                         if (widget.isSoldPage) return true;
@@ -3127,18 +4248,66 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           valuationQty: widget.valuationQty ??
                               widget.highlightEntry?.itemCount,
                         ),
-                      // Destroyed packages can also be delivered out — show a
-                      // Delivered/Pending section with a Mark Delivered button
-                      // (yard-side), mirroring the Sale & Financial section.
-                      if (isDestroyedEntry)
-                        _DestructionDeliverySection(
+                      // ⚠️ Scoped to the item this popup is ABOUT, not to the
+                      // package. `p.items.any(...)` asked whether ANY item was
+                      // being destroyed, so opening a SOLD item showed it the
+                      // Destruction Status panel because a sibling under the
+                      // same SR number was pending destruction. One number
+                      // covers several goods, and they meet different ends.
+                      //
+                      // ⚠️ And an APPEAL RULING overrides the item's status.
+                      // CED/GL1/SR/03/2025 held Latex Gloves whose status
+                      // still read `destroyed` while the Directorate had
+                      // ruled SALE — so a package the Decided Goods table
+                      // labels "Decided · Sell" opened showing DESTRUCTION
+                      // STATUS. Seven rows carry that contradiction. The
+                      // ruling is the later word and the authoritative one:
+                      // the status is what the yard recorded before the
+                      // appeal was heard.
+                      if (!_appealRuledAwayFromDestruction(
+                              widget.tenderHistoryFor, highlightedItem?.id) &&
+                          (isDestroyedEntry ||
+                              (highlightedItem != null
+                                  ? _statusIsDestruction(highlightedItem.status)
+                                  : p.items.any(
+                                      (i) => _statusIsDestruction(i.status)))))
+                        _DestructionFinancialsSection(
                           package: p,
-                          packageItemId: widget.highlightEntry?.packageItemId,
-                          valuationQty: widget.valuationQty ??
-                              widget.highlightEntry?.itemCount,
+                          // ⚠️ The ITEM this popup is about, not just the
+                          // package. A package can hold one item already
+                          // destroyed and another still pending, and the
+                          // section used to ask "does ANY item say
+                          // destroyed?" — so opening a PENDING row showed
+                          // DESTROYED because a sibling was.
+                          item: highlightedItem,
+                          srFinancials: widget.srFinancials,
                         ),
-                      if (widget.srFinancials != null)
-                        _DisposalExpensesSection(sr: widget.srFinancials!),
+                      // ⚠️ The OTHER expenses — auction, advertising,
+                      // transport, labour — shown wherever they exist.
+                      //
+                      // The panel above is destruction-only and correctly so.
+                      // But the Disposal Expenses tab lists SRs whose costs
+                      // are an auction fee or a transport charge with no
+                      // destruction at all, and opening Details on one of
+                      // those showed the goods and the storage and then
+                      // simply stopped: the very figures the row was listing
+                      // appeared nowhere in the popup it opened.
+                      if (widget.srFinancials != null &&
+                          _hasNonDestructionExpense(widget.srFinancials!))
+                        _DisposalExpenseBreakdown(sr: widget.srFinancials!),
+                      // ⚠️ Disposal expenses belong to DESTRUCTION, and the
+                      // `else` that used to be here gave them to everything
+                      // that was NOT being destroyed. So a SOLD item showed
+                      // "Disposal Expenses & Financials" — a destroying
+                      // deposit, a cost breakdown, a shortfall — for goods
+                      // that were never destroyed: every figure in it either
+                      // zero, or an auction cost re-labelled as a disposal
+                      // shortfall, which is worse than blank.
+                      //
+                      // Sold goods have their own money section, Sale &
+                      // Financial Information, and that one is true. This
+                      // panel now appears only where its numbers mean
+                      // something — inside the destruction section above.
                     ],
                   ),
                 ),
@@ -3158,7 +4327,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                     children: [
                       material.Tooltip(
                         message: !canUpdatePackage
-                            ? 'Package updates are restricted to DC / SDDC officers only'
+                            ? 'Package updates are restricted to SDDC / DDC officers only'
                             : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -3174,7 +4343,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           onPressed: !canUpdatePackage
                               ? null
                               : () {
-                                  showDialog(
+                                  showAppDialog(
                                     context: context,
                                     builder: (_) => PackageUpdateDialog(
                                       package: p,
@@ -3198,7 +4367,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
                           message: isOfficer
-                              ? 'Actions are restricted to DC / SDDC officers only'
+                              ? 'Actions are restricted to SDDC / DDC officers only'
                               : (isConfiscated
                                   ? 'Confiscated / Forfeited / Abandoned packages cannot be actioned'
                                   : ''),
@@ -3266,7 +4435,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       ),
                       material.Tooltip(
                         message: isOfficer
-                            ? 'Only DC / SDDC can record the final disposition'
+                            ? 'Only SDDC / DDC can record the final disposition'
                             : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -3281,7 +4450,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           icon: const Icon(Icons.outbound_rounded, size: 18),
                           label: const Text('Final Disposition'),
                           // Officers may view but never record the final
-                          // disposition — the action is DC / SDDC only.
+                          // disposition — the action is SDDC / DDC only.
                           onPressed: isOfficer
                               ? null
                               : () => _showFinalDispositionDialog(
@@ -3345,9 +4514,359 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
   }
 }
 
-class _DisposalExpensesSection extends StatelessWidget {
+bool _statusIsDestruction(String? status) {
+  final st = (status ?? '').toLowerCase();
+  return st == 'destroyed' ||
+      st == 'supposed to be destroyed' ||
+      st == 'destroy';
+}
+
+/// Whether this SR carries any expense the Destruction panel does not show.
+///
+/// ⚠️ Destruction is deliberately excluded: it has its own panel with the
+/// deposit, the shortfall and the refund beside it, and repeating the figure
+/// in two places invites the reader to add it twice.
+bool _hasNonDestructionExpense(SrFinancials sr) =>
+    sr.advertisingExpense > 0 ||
+    sr.labourExpense > 0 ||
+    sr.transportExpense > 0 ||
+    sr.auctionExpense > 0;
+
+/// The expense breakdown for an SR whose costs are not a destruction.
+/// What happened to this package's APPEAL: when it was forfeited, when the
+/// window closes, whether a hold is on it, and what was finally ruled.
+///
+/// ⚠️ The Appeal Directorate's two tables label a package "On Appeal Hold" or
+/// "Decided · Sell", and its Details popup said nothing about the appeal at
+/// all — not the date it was lodged, not the deadline, not the ruling or when
+/// it was made. An officer opening the row could not check the very thing the
+/// page exists for.
+///
+/// A ruling is per ITEM (item_appeal_decisions), so when the popup is about
+/// one item this shows THAT item's ruling. The package-level fields are the
+/// fallback for rows decided before per-item rulings existed.
+/// True when the Appeal Directorate ruled this item to something OTHER than
+/// destruction.
+///
+/// ⚠️ A ruling outranks the item's status. The status is what the yard
+/// recorded when it seized the goods; the ruling is what the Directorate
+/// decided afterwards, and it is the later word. Seven seeded rows carry an
+/// item marked `destroyed` whose ruling is SALE or RELEASE — without this the
+/// popup showed a Destruction Status panel for goods the Decided Goods table
+/// had just labelled "Decided · Sell".
+///
+/// DESTROY and a missing ruling both return false: the first agrees with the
+/// destruction panel, the second leaves the status to decide as before.
+bool _appealRuledAwayFromDestruction(
+    ForfeitedPackageModel? forfeited, String? itemId) {
+  if (forfeited == null || itemId == null) return false;
+  final raw = forfeited.itemAppealDecisions[itemId] as Map<String, dynamic>?;
+  final decision =
+      ((raw?['decision'] as String?) ?? forfeited.appealDecision ?? '')
+          .trim()
+          .toUpperCase();
+  if (decision.isEmpty) return false;
+  return decision != 'DESTROY';
+}
+
+/// What the appeal window's start date is called, for this kind of goods.
+///
+/// ⚠️ `forfeited_packages` holds every route into the appeal window, not
+/// just forfeits: abandoned, "Other", detained and perishable goods all get a
+/// row, and `forfeited_at` is simply the day that window opened. Calling it
+/// "Forfeited on" for all of them says the State has taken goods that are
+/// still under inquiry -- which is both wrong and the kind of wrong an
+/// officer would act on.
+///
+/// The wording follows [SourceChip], so one row reads the same in the table
+/// and in the popup.
+String _appealStartLabel(String source) =>
+    switch (source.trim().toLowerCase()) {
+      'abandoned' => 'Abandoned on',
+      'detain' || 'detained' => 'Detained on',
+      'perishable' => 'Recorded on',
+      // "Other" is a status, not an event with a verb of its own.
+      'other' => 'Recorded on',
+      _ => 'Forfeited on',
+    };
+
+class _AppealHistorySection extends StatelessWidget {
+  final ForfeitedPackageModel forfeited;
+
+  /// The item this popup is about, when it is about one.
+  final String? itemId;
+
+  const _AppealHistorySection({required this.forfeited, this.itemId});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateFormat('yyyy-MM-dd');
+    final f = forfeited;
+
+    // The ruling for THIS item, falling back to the package's own.
+    final raw = itemId == null
+        ? null
+        : f.itemAppealDecisions[itemId] as Map<String, dynamic>?;
+    final decision = (raw?['decision'] as String?) ?? f.appealDecision;
+    final note = (raw?['note'] as String?) ?? f.appealDecisionNote;
+    final decidedAt = raw?['decided_at'] != null
+        ? DateTime.tryParse(raw!['decided_at'].toString())
+        : f.appealDecidedAt;
+
+    final outcome = ItemAppealOutcome(decision: decision, onHold: f.appealHold);
+    final decided = outcome.isDecided;
+
+    // The state line, in the same words the tables use.
+    final (String state, Color colour, IconData icon) = f.appealHold
+        ? (
+            'On Appeal Hold',
+            context.colors.warningAmber,
+            Icons.pan_tool_rounded
+          )
+        : decided
+            ? (
+                'Decided · ${outcome.label ?? decision!}',
+                context.colors.successGreen,
+                Icons.gavel_rounded
+              )
+            : DateTime.now().isBefore(f.appealDeadline)
+                ? (
+                    'In appeal window',
+                    context.colors.accentLightBlue,
+                    Icons.schedule_rounded
+                  )
+                : (
+                    'Window closed, no appeal',
+                    context.colors.textMuted,
+                    Icons.event_busy_rounded
+                  );
+
+    return _DetailSection(
+      title: 'Appeal',
+      icon: Icons.balance_rounded,
+      delay: 340,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          material.Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: colour.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: colour.withOpacity(0.35)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: colour),
+                const Gap(10),
+                Expanded(
+                  child: Text(state,
+                      style: material.TextStyle(
+                          color: colour,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+          const Gap(12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.gavel_rounded,
+                  // ⚠️ Named for what this row ACTUALLY is. The appeal window
+                  // opens for abandoned, "Other", detained and perishable
+                  // goods too -- 250 of the 318 rows in this database are one
+                  // of those -- and every one of them read "Forfeited on",
+                  // which is a statement that the State has taken goods still
+                  // under inquiry. The same mistake SourceChip already
+                  // corrects for Detained.
+                  label: _appealStartLabel(f.source),
+                  value: date.format(f.forfeitedAt),
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.event_rounded,
+                  label: 'Appeal deadline',
+                  value: date.format(f.appealDeadline),
+                  // Red only while it still MEANS something: once a ruling is
+                  // in, a passed deadline is history, not a warning.
+                  valueColor: !decided &&
+                          !f.appealHold &&
+                          DateTime.now().isAfter(f.appealDeadline)
+                      ? context.colors.dangerRed
+                      : null,
+                ),
+              ),
+            ],
+          ),
+          if (f.appealHold) ...[
+            const Gap(12),
+            _DetailItem(
+              icon: Icons.pan_tool_rounded,
+              label: 'Hold placed on',
+              value:
+                  f.appealHeldAt != null ? date.format(f.appealHeldAt!) : '—',
+            ),
+            if ((f.appealHoldNote ?? '').trim().isNotEmpty) ...[
+              const Gap(12),
+              _DetailItem(
+                icon: Icons.sticky_note_2_rounded,
+                label: 'Reason for the hold',
+                value: f.appealHoldNote!.trim(),
+              ),
+            ],
+          ],
+          if (decided) ...[
+            const Gap(12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.check_circle_rounded,
+                    label: 'Ruling',
+                    value: outcome.label ?? decision!,
+                    valueColor: context.colors.successGreen,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.event_available_rounded,
+                    label: 'Decided on',
+                    value: decidedAt != null ? date.format(decidedAt) : '—',
+                  ),
+                ),
+              ],
+            ),
+            if ((note ?? '').trim().isNotEmpty) ...[
+              const Gap(12),
+              _DetailItem(
+                icon: Icons.sticky_note_2_rounded,
+                label: 'Directorate’s note',
+                value: note!.trim(),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DisposalExpenseBreakdown extends StatelessWidget {
   final SrFinancials sr;
-  const _DisposalExpensesSection({required this.sr});
+  const _DisposalExpenseBreakdown({required this.sr});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final rows = <(String, double, IconData)>[
+      ('Advertising', sr.advertisingExpense, Icons.campaign_rounded),
+      ('Labour', sr.labourExpense, Icons.groups_rounded),
+      ('Transport', sr.transportExpense, Icons.local_shipping_rounded),
+      ('Auction', sr.auctionExpense, Icons.gavel_rounded),
+      // Shown only when there IS one, so a non-destruction SR does not carry
+      // an empty destruction line.
+      if (sr.destructionExpense > 0)
+        (
+          'Destruction',
+          sr.destructionExpense,
+          Icons.local_fire_department_rounded
+        ),
+    ].where((r) => r.$2 > 0).toList();
+
+    return _DetailSection(
+      title: 'Disposal Expenses',
+      icon: Icons.receipt_long_rounded,
+      delay: 360,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ⚠️ _DetailItem, the same card every other figure in this popup
+          // uses — a bespoke tile here would make one section look like a
+          // different app. Two to a row, matching the destruction panel.
+          for (var i = 0; i < rows.length; i += 2) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: rows[i].$3,
+                    label: rows[i].$1,
+                    value: 'LKR ${money.format(rows[i].$2)}',
+                    valueColor: context.colors.textPrimary,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: i + 1 < rows.length
+                      ? _DetailItem(
+                          icon: rows[i + 1].$3,
+                          label: rows[i + 1].$1,
+                          value: 'LKR ${money.format(rows[i + 1].$2)}',
+                          valueColor: context.colors.textPrimary,
+                        )
+                      : const SizedBox(),
+                ),
+              ],
+            ),
+            const Gap(12),
+          ],
+          const Gap(12),
+          material.Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.colors.surfaceDark,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.colors.borderColor),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.summarize_rounded,
+                    size: 16, color: context.colors.textMuted),
+                const Gap(10),
+                Text('Total spent',
+                    style: material.TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Text('LKR ${money.format(sr.depositSpent)}',
+                    style: material.TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DestructionFinancialsSection extends StatelessWidget {
+  final PackageModel package;
+
+  /// The item the popup was opened for, when it was opened for one.
+  ///
+  /// ⚠️ Null only for a whole-package view. Where it is set it DECIDES the
+  /// status: a package with one destroyed item and one pending item is not
+  /// "destroyed", and the row the officer clicked says which they meant.
+  final PackageItem? item;
+  final SrFinancials? srFinancials;
+
+  const _DestructionFinancialsSection({
+    required this.package,
+    this.item,
+    this.srFinancials,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -3355,142 +4874,150 @@ class _DisposalExpensesSection extends StatelessWidget {
     final green = context.colors.successGreen;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // ⚠️ THIS item's status when the popup is about one, and only then the
+    // package's. Asking `package.items.any(destroyed)` reported DESTROYED on
+    // a row the table itself was showing as Pending, because a DIFFERENT
+    // item in the same SR had been destroyed.
+    final bool isDestroyed;
+    if (item != null) {
+      final st = (item!.status ?? '').toLowerCase();
+      isDestroyed = st == 'destroyed' ||
+          package.warehouseEntries.any((e) =>
+              e.packageItemId == item!.id &&
+              (e.returnNotes ?? '')
+                  .trim()
+                  .toUpperCase()
+                  .startsWith('[FINAL:DESTROYED'));
+    } else {
+      isDestroyed = package.status?.toLowerCase() == 'destroyed' ||
+          package.items.any((i) {
+            final st = (i.status ?? '').toLowerCase();
+            return st == 'destroyed';
+          }) ||
+          package.warehouseEntries.any((e) {
+            final n = (e.returnNotes ?? '').trim().toUpperCase();
+            return n.startsWith('[FINAL:DESTROYED');
+          });
+    }
+
     return _DetailSection(
-      title: 'Disposal Expenses & Financials',
-      icon: Icons.receipt_long_rounded,
+      title: 'Destruction Status & Financials',
+      icon: Icons.local_fire_department_rounded,
       delay: 350,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ── Status Badge ──
           Row(
             children: [
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.savings_rounded,
-                  label: 'Destroying Deposit',
-                  value: 'LKR ${money.format(sr.destroyingDeposit)}',
-                  valueColor: green,
-                ),
-              ),
-              const Gap(12),
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.payments_rounded,
-                  label: 'Total Expenses',
-                  value: 'LKR ${money.format(sr.depositSpent)}',
-                  valueColor:
-                      sr.depositSpent > 0 ? context.colors.dangerRed : null,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.undo_rounded,
-                  label: sr.deficit > 0 ? 'Shortfall' : 'Refund Amount',
-                  value: sr.deficit > 0
-                      ? '− LKR ${money.format(sr.deficit)}'
-                      : 'LKR ${money.format(sr.refund)}',
-                  valueColor: sr.deficit > 0 ? context.colors.dangerRed : green,
-                ),
-              ),
-              const Gap(12),
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.info_outline_rounded,
-                  label: 'Expense Status',
-                  value: sr.depositSpent == 0
-                      ? 'Pending'
-                      : (sr.deficit > 0 ? 'Shortfall' : 'Refundable'),
-                  valueColor: sr.depositSpent == 0
-                      ? context.colors.warningAmber
-                      : (sr.deficit > 0 ? context.colors.dangerRed : green),
-                ),
-              ),
-            ],
-          ),
-          const Gap(12),
-          material.Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark ? context.colors.surfaceDark : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.colors.borderColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Cost Breakdown',
-                  style: material.TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+              material.Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: (isDestroyed ? green : context.colors.warningAmber)
+                      .withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: (isDestroyed ? green : context.colors.warningAmber)
+                        .withOpacity(0.35),
                   ),
                 ),
-                const Gap(8),
-                Row(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Destruction',
-                        amount: sr.destructionExpense,
-                        color: context.colors.dangerRed,
+                    material.Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color:
+                            isDestroyed ? green : context.colors.warningAmber,
+                        shape: BoxShape.circle,
                       ),
                     ),
                     const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Advertising',
-                        amount: sr.advertisingExpense,
-                        color: context.colors.warningAmber,
-                      ),
-                    ),
-                    const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Labour',
-                        amount: sr.labourExpense,
-                        color: context.colors.accentLightBlue,
+                    Text(
+                      isDestroyed ? 'DESTROYED' : 'PENDING DESTRUCTION',
+                      style: material.TextStyle(
+                        color:
+                            isDestroyed ? green : context.colors.warningAmber,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
                       ),
                     ),
                   ],
                 ),
-                const Gap(8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Transport',
-                        amount: sr.transportExpense,
-                        color: context.colors.customsBlue,
-                      ),
-                    ),
-                    const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Auction',
-                        amount: sr.auctionExpense,
-                        color: context.colors.primaryGold,
-                      ),
-                    ),
-                    const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Deposit',
-                        amount: sr.destroyingDeposit,
-                        color: green,
-                      ),
-                    ),
-                  ],
+              ),
+            ],
+          ),
+          const Gap(14),
+
+          if (srFinancials != null) ...[
+            // ── Deposit & Total Expenses ──
+            Row(
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.savings_rounded,
+                    label: 'Destruction Deposit',
+                    value:
+                        'LKR ${money.format(srFinancials!.destroyingDeposit)}',
+                    valueColor: green,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.payments_rounded,
+                    label: 'Total Expenses',
+                    value: 'LKR ${money.format(srFinancials!.depositSpent)}',
+                    valueColor: srFinancials!.depositSpent > 0
+                        ? context.colors.dangerRed
+                        : null,
+                  ),
                 ),
               ],
             ),
-          ),
-          if (sr.goods.isNotEmpty) ...[
-            const Gap(14),
+
+            // ── Refund / Shortfall ──
+            Row(
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.undo_rounded,
+                    label: srFinancials!.deficit > 0
+                        ? 'Shortfall'
+                        : 'Refund Amount',
+                    value: srFinancials!.deficit > 0
+                        ? '− LKR ${money.format(srFinancials!.deficit)}'
+                        : 'LKR ${money.format(srFinancials!.refund)}',
+                    valueColor: srFinancials!.deficit > 0
+                        ? context.colors.dangerRed
+                        : green,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.info_outline_rounded,
+                    label: 'Expense Status',
+                    value: srFinancials!.depositSpent == 0
+                        ? 'Pending'
+                        : (srFinancials!.deficit > 0
+                            ? 'Shortfall'
+                            : 'Refundable'),
+                    valueColor: srFinancials!.depositSpent == 0
+                        ? context.colors.warningAmber
+                        : (srFinancials!.deficit > 0
+                            ? context.colors.dangerRed
+                            : green),
+                  ),
+                ),
+              ],
+            ),
+            const Gap(12),
+
+            // ── Cost Breakdown ──
             material.Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -3503,7 +5030,7 @@ class _DisposalExpensesSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Goods Cost Distribution',
+                    'Cost Breakdown',
                     style: material.TextStyle(
                       color: context.colors.textPrimary,
                       fontSize: 12,
@@ -3511,95 +5038,98 @@ class _DisposalExpensesSection extends StatelessWidget {
                     ),
                   ),
                   const Gap(8),
-                  Row(children: [
-                    Expanded(
-                        flex: 4,
-                        child: Text('Goods Name',
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                    Expanded(
-                        child: Text('Qty',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                    Expanded(
-                        flex: 2,
-                        child: Text('Destruction',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                    Expanded(
-                        flex: 2,
-                        child: Text('Advertising',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                  ]),
-                  material.Divider(
-                      color: context.colors.borderColor, height: 12),
-                  for (final g in sr.goods)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Row(children: [
-                        Expanded(
-                          flex: 4,
-                          child: Text(g.goodsName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: context.colors.textPrimary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Destruction',
+                          amount: srFinancials!.destructionExpense,
+                          color: context.colors.dangerRed,
                         ),
-                        Expanded(
-                          child: Text('${g.quantity}',
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 12)),
+                      ),
+                      const Gap(8),
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Labour',
+                          amount: srFinancials!.labourExpense,
+                          color: context.colors.accentLightBlue,
                         ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                              g.destructionExpense == 0
-                                  ? '—'
-                                  : money.format(g.destructionExpense),
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                  color: g.destructionExpense == 0
-                                      ? context.colors.textMuted
-                                      : context.colors.dangerRed,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                  const Gap(8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Transport',
+                          amount: srFinancials!.transportExpense,
+                          color: context.colors.customsBlue,
                         ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                              g.advertisingExpense == 0
-                                  ? '—'
-                                  : money.format(g.advertisingExpense),
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                  color: g.advertisingExpense == 0
-                                      ? context.colors.textMuted
-                                      : context.colors.warningAmber,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
+                      ),
+                      // ⚠️ ADVERTISING IS ALWAYS SHOWN, like Destruction,
+                      // Labour and Transport beside it.
+                      //
+                      // It used to appear only when non-zero, on the same
+                      // wrong premise the entry form carried: that a
+                      // destruction is never advertised. It is, and the cost
+                      // comes out of the destroying deposit -- so a blank
+                      // here means "nothing spent yet", which is information,
+                      // not an empty box to hide.
+                      const Gap(8),
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Advertising',
+                          amount: srFinancials!.advertisingExpense,
+                          color: context.colors.warningAmber,
                         ),
-                      ]),
-                    ),
+                      ),
+                      // Auction stays conditional: a destroyed item is never
+                      // sold, so a figure here is legacy data rather than a
+                      // field anyone fills.
+
+                      if (srFinancials!.auctionExpense > 0) ...[
+                        const Gap(8),
+                        Expanded(
+                          child: _ExpenseCostBox(
+                            label: 'Auction',
+                            amount: srFinancials!.auctionExpense,
+                            color: context.colors.primaryGold,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),
-          ],
+          ] else
+            // No financial data available yet
+            material.Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color:
+                    isDark ? context.colors.surfaceDark : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 18, color: context.colors.textMuted),
+                  const Gap(10),
+                  Expanded(
+                    child: Text(
+                      'Financial data will be available once destruction expenses are recorded by the Central Disposal Directorate.',
+                      style: material.TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -3692,6 +5222,556 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
+/// Everything that happened to ONE item, under that item.
+///
+/// ⚠️ The popup could already show a tender history, but only when a caller
+/// handed it a single forfeited package. Opened from Goods History -- where an
+/// SR holds several items that each met a different end -- it showed nothing,
+/// so an officer reading one SR could not tell that the Truck Tyres sold while
+/// the Steel Sheets were still sitting in Open Area 01.
+///
+/// Everything here is per item because forfeiture is per item: the appeal, the
+/// tender rounds with their valuations and bids, the committee, the final
+/// outcome and the hand-over all belong to the item, not to the SR number.
+///
+/// Renders NOTHING for an item that never left the ordinary path -- no
+/// forfeiture, no appeal. A section reading "no tender history" on goods that
+/// were never meant to go to tender is noise.
+/// Where THESE goods have physically been, and what that has cost — one
+/// block per item, from the day they were admitted to the day they leave.
+///
+/// ⚠️ Per ITEM, not per SR. An SR's items are admitted separately, can sit in
+/// different warehouses and zones, are held under different reasons and leave
+/// on different days — so a single package-level "Current Warehouse" line
+/// answered the question for one item and quietly misled about every other.
+///
+/// Renders nothing for an item that has never been in a warehouse: an empty
+/// storage block on goods that were never admitted is noise.
+class _ItemStorageSection extends ConsumerWidget {
+  final PackageModel package;
+  final PackageItem item;
+  final WarehouseEntryModel? highlightEntry;
+
+  const _ItemStorageSection({
+    required this.package,
+    required this.item,
+    this.highlightEntry,
+  });
+
+  static String fmtDate(DateTime d) => DateFormat('dd MMM yyyy').format(d);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Entries belonging to THIS item. Watch live packageDataProvider so
+    // warehouse entries and displacements update dynamically.
+    final freshPkg = ref.watch(packageDataProvider(package.id)).valueOrNull ??
+        ref.watch(packageByIdProvider(package.id)).valueOrNull ??
+        package;
+    final allEntries = freshPkg.warehouseEntries.isNotEmpty
+        ? freshPkg.warehouseEntries
+        : package.warehouseEntries;
+
+    final entries = allEntries.where((e) {
+      if (e.packageItemId == item.id || e.packageItemId == null) return true;
+      if (freshPkg.items.length == 1 || package.items.length == 1) return true;
+      return false;
+    }).toList();
+
+    if (highlightEntry != null &&
+        (highlightEntry!.packageId == package.id ||
+            highlightEntry!.packageId == freshPkg.id)) {
+      if (highlightEntry!.packageItemId == null ||
+          highlightEntry!.packageItemId == item.id ||
+          freshPkg.items.length <= 1 ||
+          package.items.length <= 1) {
+        final existingIdx =
+            entries.indexWhere((e) => e.id == highlightEntry!.id);
+        if (existingIdx != -1) {
+          entries[existingIdx] = highlightEntry!;
+        } else {
+          entries.add(highlightEntry!);
+        }
+      }
+    }
+    entries.sort((a, b) => a.admittedAt.compareTo(b.admittedAt));
+
+    // Put the entry that opened the popup first in the reader's view. The
+    // movement note is important enough to see without opening each history
+    // row, especially when an SR has more than one warehouse admission.
+    WarehouseEntryModel? displacedEntry;
+    if (highlightEntry?.movedForSpace == true) {
+      displacedEntry =
+          entries.where((e) => e.id == highlightEntry!.id).firstOrNull;
+    }
+    displacedEntry ??= entries.where((e) => e.movedForSpace).firstOrNull;
+
+    final isPerishable = item.nature == kNaturePerishable;
+    if (entries.isEmpty && !isPerishable) return const SizedBox.shrink();
+
+    final rates = ref.watch(storageRateProvider).valueOrNull ??
+        const <DateTime, double>{};
+    final live = entries.where((e) => !e.isReturned).toList();
+    final money = NumberFormat('#,##0.00');
+
+    // ⚠️ Unsold goods carry NO figure at all — see storage_charge_note.dart.
+    // Top Management has ruled on them after every sale route failed, so
+    // nobody is billed and nobody is pricing them against the days any
+    // more. The same package reappears under each Final Outcome page, so
+    // the rule travels with the figure rather than with a page.
+    final proposals = ref.watch(unsoldProposalsProvider).valueOrNull;
+    final byItem = ref.watch(forfeitedByItemProvider(package.id)).valueOrNull;
+    final hasProposal = proposals != null &&
+        proposals.isNotEmpty &&
+        byItem != null &&
+        byItem.values.any((f) => proposals.containsKey(f.id));
+
+    final TenderSaleItemModel? saleItem = ref
+        .watch(saleItemForPackageItemProvider('${package.id}|${item.id}'))
+        .valueOrNull;
+
+    final unsoldDisposal = hasProposal || saleItem?.unsold == true;
+
+    final isDelivered = saleItem?.isDelivered == true;
+    final DateTime perishableStart = package.entryDate ?? package.createdAt;
+    final DateTime? perishableEnd = isDelivered
+        ? (saleItem?.deliveredAt ?? saleItem?.soldAt ?? DateTime.now())
+        : null;
+    final int perishableUnits = item.quantity > 0 ? item.quantity : 1;
+    final double perishableSpaceCost = isPerishable && entries.isEmpty
+        ? spaceCostFor(
+            from: perishableStart,
+            units: perishableUnits,
+            rates: rates,
+            until: perishableEnd,
+          )
+        : 0.0;
+
+    // Charges accrue per entry and stop when the goods leave, so the total is
+    // the sum over entries — live ones still climbing, closed ones fixed.
+    final charge = entries.isNotEmpty
+        ? entries.fold<double>(
+            0, (a, e) => a + e.calculatePackageCharge(package.items, rates))
+        : (saleItem?.sold == true ? perishableSpaceCost : 0.0);
+
+    // ⚠️ And what the SPACE cost, which is a different question. Forfeited,
+    // confiscated, abandoned and destroyed goods are never billed — that is
+    // a billing rule, not a statement that they were free to keep. They
+    // occupied a zone for the same days as anything else, and every
+    // valuation, committee figure and sale decision is taken against that
+    // cost. Showing "No charge" and nothing else hid it entirely.
+    final spaceCost = entries.isNotEmpty
+        ? entries.fold<double>(
+            0,
+            (a, e) =>
+                a +
+                spaceCostFor(
+                  from: e.admittedAt,
+                  units: e.itemCount,
+                  rates: rates,
+                  until: e.returnedAt,
+                ))
+        : perishableSpaceCost;
+
+    final billed = charge > 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: material.Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.colors.cardDark,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.colors.borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.inventory_2_outlined,
+                  size: 15, color: context.colors.accentLightBlue),
+              const Gap(8),
+              material.Text('Storage & Movement',
+                  style: material.TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: context.colors.textPrimary)),
+              const Spacer(),
+              if (!unsoldDisposal && (billed || spaceCost > 0))
+                material.Text(
+                    'LKR ' + money.format(billed ? charge : spaceCost),
+                    style: material.TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        // Not gold when nobody pays it: the figure is real
+                        // but it is a cost to the yard, not a bill to anyone.
+                        color: billed
+                            ? context.colors.primaryGold
+                            : context.colors.textSecondary)),
+            ]),
+            const Gap(4),
+            material.Text(
+              unsoldDisposal
+                  ? 'No warehouse charge — storage is not billed on unsold '
+                      'goods.'
+                  : !billed && spaceCost > 0
+                      ? (isPerishable && entries.isEmpty
+                          ? 'Perishable goods held in yard — space cost accrued so far.'
+                          : 'Not billed — these goods were taken by the State. '
+                              'This is what the space they occupied has cost.')
+                      : (entries.isEmpty && isPerishable)
+                          ? (isDelivered
+                              ? 'Perishable goods delivered — storage charges billed for yard stay.'
+                              : saleItem?.sold == true
+                                  ? 'Perishable goods sold — storage charges accrue until delivery.'
+                                  : 'Charges accrue until the goods are sold or delivered out.')
+                          : live.isEmpty
+                              ? 'These goods have left the warehouse.'
+                              : 'Charges accrue until the goods are delivered '
+                                  'out.',
+              style: material.TextStyle(
+                  fontSize: 10.5, color: context.colors.textMuted),
+            ),
+            if (displacedEntry != null)
+              DisplacedNotice(
+                entry: displacedEntry,
+                warehouses: ref.watch(warehousesProvider).valueOrNull,
+              ),
+            const Gap(10),
+            if (entries.isEmpty && isPerishable) ...[
+              material.Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceDark,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: context.colors.borderColor),
+                ),
+                child: Row(children: [
+                  Icon(Icons.yard_outlined,
+                      size: 16, color: context.colors.warningAmber),
+                  const Gap(8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        material.Text(
+                          'Stored in Yard',
+                          style: material.TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: context.colors.textPrimary,
+                          ),
+                        ),
+                        const Gap(2),
+                        material.Text(
+                          'Admitted: ${fmtDate(perishableStart)}'
+                          '${isDelivered ? ' · Delivered: ${fmtDate(perishableEnd!)}' : saleItem?.sold == true ? ' · Sold: ${fmtDate(saleItem!.soldAt!)} (accruing to delivery)' : ' · Active in Yard'}'
+                          ' · Units: $perishableUnits',
+                          style: material.TextStyle(
+                            fontSize: 11,
+                            color: context.colors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!unsoldDisposal && perishableSpaceCost > 0)
+                    material.Text(
+                      'LKR ${money.format(perishableSpaceCost)}',
+                      style: material.TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: billed
+                            ? context.colors.primaryGold
+                            : context.colors.textSecondary,
+                      ),
+                    ),
+                ]),
+              ),
+            ],
+            for (final e in entries) ...[
+              _ItemStorageEntryRow(
+                entry: e,
+                charge: e.calculatePackageCharge(package.items, rates),
+                hideCharge: unsoldDisposal,
+                spaceCost: spaceCostFor(
+                  from: e.admittedAt,
+                  units: e.itemCount,
+                  rates: rates,
+                  until: e.returnedAt,
+                ),
+                // Shown above the card already. An admission usually
+                // inherits the item's activity, so repeating it on every
+                // entry is noise — it earns its place only when this
+                // admission was made under a DIFFERENT one.
+                itemActivity: (item.reasons ?? '').trim(),
+                warehouses: ref.watch(warehousesProvider).valueOrNull,
+                showDisplacementNotice: e.id != displacedEntry?.id,
+              ),
+              if (e != entries.last) const Gap(8),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One admission of one item into one warehouse.
+class _ItemStorageEntryRow extends StatelessWidget {
+  final WarehouseEntryModel entry;
+  final double charge;
+
+  /// What the space cost regardless of who is billed — see the section above.
+  final double spaceCost;
+
+  /// The item's own Post Status Activity, already shown above the card.
+  final String itemActivity;
+
+  /// Unsold goods carry no money figure at all.
+  final bool hideCharge;
+
+  /// Every warehouse in the yard, so a displaced entry can name where it was
+  /// MEANT to go. See DisplacedBadge for why this is not embedded in the
+  /// query.
+  final List<WarehouseModel>? warehouses;
+
+  /// The selected moved entry is shown once under the section heading. Other
+  /// moved admissions keep their own notice inside their history row.
+  final bool showDisplacementNotice;
+
+  const _ItemStorageEntryRow(
+      {required this.entry,
+      required this.charge,
+      this.spaceCost = 0,
+      this.itemActivity = '',
+      this.hideCharge = false,
+      this.warehouses,
+      this.showDisplacementNotice = true});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final out = entry.isReturned;
+    // Still in the warehouse is the live case and reads as such; a closed
+    // entry is history, and is deliberately quieter.
+    final tone = out ? context.colors.textMuted : context.colors.successGreen;
+
+    // WHERE: the warehouse and the zone within it. A zone is how goods are
+    // actually found on the ground, so a warehouse alone is half an answer.
+    final zone = (entry.zone ?? '').trim();
+    final place = zone.isEmpty || zone.toLowerCase() == 'n/a'
+        ? entry.warehouseName
+        : entry.warehouseName + ' · Zone ' + zone;
+
+    return material.Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceDark.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.colors.borderColor.withOpacity(0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(out ? Icons.logout_rounded : Icons.warehouse_rounded,
+                size: 13, color: tone),
+            const Gap(6),
+            Expanded(
+              child: material.Text(place,
+                  style: material.TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: context.colors.textPrimary)),
+            ),
+            _MiniTag(
+                icon: out
+                    ? Icons.check_circle_outline_rounded
+                    : Icons.inventory_2_outlined,
+                label: out ? 'Delivered out' : 'In warehouse',
+                tint: tone),
+          ]),
+          const Gap(8),
+          Wrap(spacing: 14, runSpacing: 6, children: [
+            // Under WHICH status this admission was made. Skipped when it
+            // simply repeats the activity printed above the card.
+            if (entry.holdReason.trim().isNotEmpty &&
+                entry.holdReason.trim().toLowerCase() !=
+                    itemActivity.toLowerCase())
+              _StorageFact(label: 'Held under', value: entry.holdReason.trim()),
+            _StorageFact(label: 'Quantity', value: entry.itemCount.toString()),
+            _StorageFact(
+                label: 'Admitted',
+                value: _ItemStorageSection.fmtDate(entry.admittedAt)),
+            if (entry.admittedByName != null)
+              _StorageFact(label: 'Admitted by', value: entry.admittedByName!),
+            _StorageFact(
+                label: out ? 'Days stored' : 'Days so far',
+                value: entry.storageDays.toString()),
+            if (out && entry.returnedAt != null)
+              _StorageFact(
+                  label: 'Left on',
+                  value: _ItemStorageSection.fmtDate(entry.returnedAt!)),
+            if (out && entry.returnedByName != null)
+              _StorageFact(label: 'Released by', value: entry.returnedByName!),
+            // Two different questions, so two different labels. "No charge"
+            // alone answered neither: it said who pays without saying what
+            // the space cost.
+            if (hideCharge)
+              const _StorageFact(label: 'Storage charge', value: 'Not charged')
+            else
+              _StorageFact(
+                  label:
+                      charge > 0 ? 'Storage charge' : 'Space cost (not billed)',
+                  value: charge > 0
+                      ? 'LKR ' + money.format(charge)
+                      : spaceCost > 0
+                          ? 'LKR ' + money.format(spaceCost)
+                          : 'No charge',
+                  strong: charge > 0),
+          ]),
+          // ⚠️ Below the figures, not among them: this is not another fact
+          // about the storage, it is the reason the location above is not the
+          // one the reader expected.
+          if (showDisplacementNotice)
+            DisplacedNotice(entry: entry, warehouses: warehouses),
+        ],
+      ),
+    );
+  }
+}
+
+/// A label over its value, for the storage grid.
+class _StorageFact extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool strong;
+
+  const _StorageFact(
+      {required this.label, required this.value, this.strong = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        material.Text(label,
+            style: material.TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w600,
+                color: context.colors.textMuted)),
+        const Gap(2),
+        material.Text(value,
+            style: material.TextStyle(
+                fontSize: 11.5,
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+                color: strong
+                    ? context.colors.primaryGold
+                    : context.colors.textSecondary)),
+      ],
+    );
+  }
+}
+
+class _ItemLifecycleSection extends ConsumerWidget {
+  final String packageId;
+  final PackageItem item;
+
+  const _ItemLifecycleSection({
+    required this.packageId,
+    required this.item,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final forfeited =
+        ref.watch(forfeitedByItemProvider(packageId)).valueOrNull?[item.id];
+    final appeal =
+        ref.watch(itemAppealOutcomesProvider(packageId)).valueOrNull?[item.id];
+    // An appeal HOLD or a ruling is worth showing even with no forfeiture --
+    // it is why the goods are not moving.
+    final hasAppeal = appeal != null && (appeal.isDecided || appeal.onHold);
+    if (forfeited == null && !hasAppeal) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: material.Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.colors.cardDark,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.colors.borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.timeline_rounded,
+                  size: 15, color: context.colors.accentLightBlue),
+              const Gap(8),
+              material.Text(
+                'Goods Lifecycle',
+                style: material.TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: context.colors.textPrimary,
+                ),
+              ),
+            ]),
+            const Gap(12),
+            // ── Appeal ──────────────────────────────────────────────────
+            // Shown FIRST: while an appeal is held nothing below it can
+            // proceed, so it is the answer to "why has nothing happened".
+            if (hasAppeal) ...[
+              Row(children: [
+                Expanded(
+                  child: material.Text(
+                    appeal.onHold ? 'Appeal' : 'Appeal decision',
+                    style: material.TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: context.colors.textMuted),
+                  ),
+                ),
+                AppealStateChip(
+                  entryDate: forfeited?.forfeitedAt,
+                  deadline: forfeited?.appealDeadline,
+                  outcome: appeal,
+                ),
+              ]),
+              if ((forfeited?.appealDecisionNote ?? '').trim().isNotEmpty) ...[
+                const Gap(6),
+                material.Text(
+                  forfeited!.appealDecisionNote!.trim(),
+                  style: material.TextStyle(
+                      fontSize: 11, color: context.colors.textSecondary),
+                ),
+              ],
+              const Gap(12),
+            ],
+            // ── Tender rounds, valuations, bids, committee, outcome ─────
+            // The SAME section the disposal pages use, so a round reads
+            // identically wherever it is opened -- one definition, and no
+            // second story to keep in step with the first.
+            if (forfeited != null)
+              TenderHistorySection(
+                forfeited: forfeited,
+                qty: forfeited.entryQty ?? item.quantity,
+              )
+            else
+              material.Text(
+                'No tender rounds recorded for these goods.',
+                style: material.TextStyle(
+                    fontSize: 11, color: context.colors.textMuted),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _DetailSection extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -3758,6 +5838,41 @@ class _DetailSection extends StatelessWidget {
   }
 }
 
+/// The Delivered / Pending pill the hand-over section carries.
+///
+/// ⚠️ Deliberately the same two colours as the table's own pill -- green
+/// for gone, amber for still here -- because it answers the same question
+/// about the same row. A third colour scheme for the same fact would make
+/// the popup and the table look like two systems.
+class _HandoverPill extends StatelessWidget {
+  const _HandoverPill({required this.delivered, required this.kind});
+
+  final bool delivered;
+  final HandoverKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint =
+        delivered ? context.colors.successGreen : context.colors.warningAmber;
+    return material.Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: tint.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(delivered ? Icons.check_circle_rounded : Icons.schedule_rounded,
+            size: 12, color: tint),
+        const Gap(5),
+        Text(delivered ? kind.pillDone : kind.pillPending,
+            style: material.TextStyle(
+                color: tint, fontSize: 10.5, fontWeight: FontWeight.w800)),
+      ]),
+    );
+  }
+}
+
 class _DetailItem extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -3765,12 +5880,16 @@ class _DetailItem extends StatelessWidget {
   final String? subValue;
   final Color? valueColor;
 
+  /// A widget pinned to the RIGHT of the row -- a status pill, typically.
+  final Widget? trailing;
+
   const _DetailItem({
     required this.icon,
     required this.label,
     required this.value,
     this.subValue,
     this.valueColor,
+    this.trailing,
   });
 
   @override
@@ -3831,6 +5950,10 @@ class _DetailItem extends StatelessWidget {
                 ],
               ),
             ),
+            if (trailing != null) ...[
+              const Gap(8),
+              trailing!,
+            ],
           ],
         ),
       ),
@@ -3893,7 +6016,9 @@ class _CargoItemTile extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      'HS: ${(item.hsCode?.isNotEmpty == true) ? item.hsCode! : '—'}  ·  Value: LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                      // "Value/unit", not "Value": the tables under the same
+                      // word show unitValue × quantity.
+                      'HS: ${(item.hsCode?.isNotEmpty == true) ? item.hsCode! : '—'}  ·  Value/unit: LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
                       style: material.TextStyle(
                           color: context.colors.textMuted, fontSize: 11),
                     ),
@@ -4151,87 +6276,154 @@ class _SystemEntrySection extends StatelessWidget {
     this.customIcon,
   });
 
+  /// True when there is no officer to name, rather than one we failed to load.
+  bool get _unrecorded => officerDisplay == _kNoEntrantRecorded;
+
+  /// The officer's initials, for the avatar.
+  ///
+  /// ⚠️ Two letters at most, and only from words that start with one.
+  /// A name like "D. M. Perera" would otherwise read "DM" from the
+  /// initials somebody already wrote out.
+  String get _initials {
+    if (_unrecorded) return '?';
+    final words = officerDisplay
+        .split(RegExp(r'[\s.]+'))
+        .where((w) => w.isNotEmpty && RegExp(r'^[A-Za-z]').hasMatch(w))
+        .toList();
+    if (words.isEmpty) return '?';
+    if (words.length == 1) return words.first[0].toUpperCase();
+    return (words.first[0] + words.last[0]).toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    // ⚠️ An unrecorded entry is drawn in MUTED grey, not gold. Gold and
+    // bold announces a person; using it for "Not recorded" made a blank
+    // field look like a finding.
+    final tint = _unrecorded ? context.colors.textMuted : gold;
+
     return material.Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            context.colors.primaryGold.withOpacity(0.1),
-            context.colors.primaryGold.withOpacity(0.05),
-          ],
-        ),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? context.colors.surfaceDark.withOpacity(0.5)
+            : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.primaryGold.withOpacity(0.3)),
+        border: Border.all(color: context.colors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              material.Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: context.colors.primaryGold.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(customIcon ?? Icons.verified_user_rounded,
-                    size: 16, color: context.colors.primaryGold),
-              ),
-              const Gap(10),
-              Text(
-                (customTitle ?? 'System Entry By').toUpperCase(),
-                style: material.TextStyle(
-                  color: context.colors.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ],
-          ),
-          const Gap(2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  officerDisplay,
+          // ⚠️ The SAME header bar every other section has -- the tinted
+          // strip, the gold icon, the spaced capitals. This panel used a
+          // gradient card of its own, so the last thing on every popup
+          // looked like it came from a different screen.
+          material.Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: context.colors.textPrimary.withOpacity(0.03),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(15)),
+              border:
+                  Border(bottom: BorderSide(color: context.colors.borderColor)),
+            ),
+            child: Row(
+              children: [
+                Icon(customIcon ?? Icons.verified_user_rounded,
+                    size: 18, color: gold),
+                const Gap(10),
+                Text(
+                  (customTitle ?? 'System Entry By').toUpperCase(),
                   style: material.TextStyle(
-                    color: context.colors.primaryGold,
-                    fontSize: 14,
+                    color: context.colors.textPrimary,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 0.3,
+                    letterSpacing: 1.2,
                   ),
                 ),
-              ),
-              if (badgeNumber != null && badgeNumber!.isNotEmpty)
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // ⚠️ An AVATAR, not another icon. The header already
+                // carries one, and repeating it says nothing; initials say
+                // a person signed this.
                 material.Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  width: 44,
+                  height: 44,
+                  alignment: material.Alignment.center,
                   decoration: BoxDecoration(
-                    color: context.colors.primaryGold.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: context.colors.primaryGold.withOpacity(0.4)),
+                    color: tint.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: tint.withOpacity(0.35)),
                   ),
                   child: Text(
-                    'Salary No: $badgeNumber',
+                    _initials,
                     style: material.TextStyle(
-                      color: context.colors.primaryGold,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      color: tint,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
-            ],
+                const Gap(14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        officerDisplay,
+                        style: material.TextStyle(
+                          color: _unrecorded
+                              ? context.colors.textMuted
+                              : context.colors.textPrimary,
+                          fontSize: 14.5,
+                          fontWeight:
+                              _unrecorded ? FontWeight.w500 : FontWeight.w700,
+                          fontStyle:
+                              _unrecorded ? FontStyle.italic : FontStyle.normal,
+                        ),
+                      ),
+                      // Says WHY it is blank, so nobody goes looking for a
+                      // broken lookup.
+                      if (_unrecorded) ...[
+                        const Gap(3),
+                        Text(
+                          'This entry predates officer tracking \u2014 no '
+                          'officer was saved against it.',
+                          style: material.TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 11,
+                              height: 1.3),
+                        ),
+                      ] else if (badgeNumber != null &&
+                          badgeNumber!.isNotEmpty) ...[
+                        const Gap(3),
+                        Text(
+                          'Salary No: ${badgeNumber!}',
+                          style: material.TextStyle(
+                            color: context.colors.textSecondary,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-    ).animate().slideY(
-        delay: Duration(milliseconds: delay), duration: 300.ms, begin: 0.1);
+    ).animate().fadeIn(delay: Duration(milliseconds: delay)).slideY(begin: 0.1);
   }
 }
 
@@ -4263,42 +6455,11 @@ class _SaleFinancialsSection extends ConsumerStatefulWidget {
 
 class _SaleFinancialsSectionState
     extends ConsumerState<_SaleFinancialsSection> {
-  bool _toggling = false;
-
   String get _saleItemKey =>
       '${widget.package.id}|${widget.packageItemId ?? ''}|${widget.receipt ?? ''}';
 
-  Future<void> _toggleDelivery(TenderSaleItemModel item) async {
-    setState(() => _toggling = true);
-    final newValue = !item.isDelivered;
-    try {
-      await ref
-          .read(disposalServiceProvider)
-          .toggleDeliveryStatus(item.id, newValue);
-      ref.invalidate(saleItemForPackageProvider(widget.package.id));
-      ref.invalidate(saleItemForPackageItemProvider(_saleItemKey));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
-          backgroundColor: newValue
-              ? context.colors.successGreen
-              : context.colors.warningAmber,
-        ));
-        // Close the details popup on success.
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: context.colors.dangerRed,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _toggling = false);
-    }
-  }
+  // Marking delivery lives in the Sold Goods table now -- see
+  // _DeliveryStatusCell. This section only reports the status.
 
   @override
   Widget build(BuildContext context) {
@@ -4315,16 +6476,10 @@ class _SaleFinancialsSectionState
 
         double taxSum = 0;
         for (final t in saleItem.appliedTaxes) {
-          taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
+          taxSum += parseDbNum(t['amount']) ?? 0;
         }
 
-        final profile = ref.watch(currentProfileProvider);
-        // Only a yard (admin/officer) confirms delivery; Central Disposal views.
-        final canEdit = profile != null && !profile.isDisposal;
         final delivered = saleItem.isDelivered;
-        final actionColor = delivered
-            ? context.colors.warningAmber
-            : context.colors.successGreen;
 
         return _DetailSection(
           title: 'Sale & Financial Information',
@@ -4339,6 +6494,22 @@ class _SaleFinancialsSectionState
             ),
             child: Column(
               children: [
+                // ⚠️ FIRST, and as a banner. It was a row reading
+                // "Pending" in RED, sitting between a receipt number and
+                // a tax figure -- the one thing a reader opens this
+                // popup to check was the least visible thing on it, and
+                // red is the colour of something wrong. Goods waiting to
+                // be collected are not wrong; they are the yard's
+                // outstanding work, which is what amber means here and
+                // on every delivery pill in the tables beside it.
+                DeliveryStatusBanner(
+                  delivered: delivered,
+                  deliveredAt: saleItem.deliveredAt,
+                  waitingFor: 'collection by the buyer',
+                  doneLabel: 'Delivered',
+                  receiptNo: saleItem.handoverReceiptNo,
+                  charge: saleItem.handoverCharge,
+                ),
                 if (saleItem.receiptNumber?.trim().isNotEmpty == true)
                   _DetailItem(
                     icon: Icons.receipt_long_rounded,
@@ -4369,227 +6540,35 @@ class _SaleFinancialsSectionState
                   label: 'Sold Price (Rs)',
                   value: saleItem.soldPrice.toStringAsFixed(2),
                 ),
-                if (saleItem.appliedTaxes.isNotEmpty)
+                // ⚠️ The taxes STORED on this item -- the ones that were
+                // enabled at the moment it sold -- never today's tax table.
+                // Enabling a tax later must not change what a past sale was
+                // charged, and disabling one must not make the charge vanish.
+                // That is why each sold item carries its own list.
+                if (saleItem.appliedTaxes.isNotEmpty) ...[
                   ...saleItem.appliedTaxes.map((t) => _DetailItem(
                         icon: Icons.receipt_rounded,
                         label: '${t['name']} (${t['percentage']}%)',
                         value: ((t['amount'] as num?)?.toDouble() ?? 0)
                             .toStringAsFixed(2),
                       )),
+                  _DetailItem(
+                    icon: Icons.functions_rounded,
+                    label: 'Total Tax',
+                    value: taxSum.toStringAsFixed(2),
+                  ),
+                ],
                 _DetailItem(
                   icon: Icons.account_balance_wallet_rounded,
                   label: 'Total Sale Value (Inc. Taxes)',
                   value: (saleItem.soldPrice + taxSum).toStringAsFixed(2),
                   valueColor: context.colors.primaryGold,
                 ),
-                _DetailItem(
-                  icon: Icons.local_shipping_rounded,
-                  label: 'Delivery Status',
-                  value: delivered ? 'Delivered' : 'Pending',
-                  valueColor: delivered
-                      ? context.colors.successGreen
-                      : context.colors.dangerRed,
-                ),
-                // Delivery date shown ONLY once delivered — the timestamp is
-                // captured automatically when Mark Delivered is pressed.
-                if (delivered && saleItem.deliveredAt != null)
-                  _DetailItem(
-                    icon: Icons.event_available_rounded,
-                    label: 'Delivery Date',
-                    value:
-                        DateFormat('yyyy-MM-dd').format(saleItem.deliveredAt!),
-                    valueColor: context.colors.successGreen,
-                  ),
-                // Only show the action while the package is still pending —
-                // once delivered there is no "Mark as Not Delivered" revert.
-                if (canEdit && !delivered) ...[
-                  const Gap(10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed:
-                          _toggling ? null : () => _toggleDelivery(saleItem),
-                      icon: _toggling
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.local_shipping_rounded, size: 18),
-                      label: const Text('Mark Delivered'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: actionColor,
-                        side: BorderSide(color: actionColor.withOpacity(0.6)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Delivery section for a DESTROYED package — Delivered/Pending status + a
-/// yard-side "Mark Delivered" button, mirroring the Sale & Financial section.
-class _DestructionDeliverySection extends ConsumerStatefulWidget {
-  final PackageModel package;
-  final String? packageItemId;
-
-  /// Quantity this destruction covers — see _SaleFinancialsSection.
-  final int? valuationQty;
-  const _DestructionDeliverySection(
-      {required this.package, this.packageItemId, this.valuationQty});
-  @override
-  ConsumerState<_DestructionDeliverySection> createState() =>
-      _DestructionDeliverySectionState();
-}
-
-class _DestructionDeliverySectionState
-    extends ConsumerState<_DestructionDeliverySection> {
-  bool _toggling = false;
-
-  String get _key => '${widget.package.id}|${widget.packageItemId ?? ''}';
-
-  Future<void> _toggle(DestructionItemModel item) async {
-    setState(() => _toggling = true);
-    final newValue = !item.delivered;
-    try {
-      await ref
-          .read(disposalServiceProvider)
-          .toggleDestructionDelivery(item.id, newValue);
-      ref.read(destructionsRefreshProvider.notifier).trigger();
-      ref.invalidate(destructionItemForPackageProvider(widget.package.id));
-      ref.invalidate(destructionItemForPackageItemProvider(_key));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(material.SnackBar(
-          content: material.Text(
-              newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
-          backgroundColor: newValue
-              ? context.colors.successGreen
-              : context.colors.warningAmber,
-        ));
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(material.SnackBar(
-          content: material.Text('Error: $e'),
-          backgroundColor: context.colors.dangerRed,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _toggling = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final async = ref.watch(destructionItemForPackageItemProvider(_key));
-    return async.when(
-      loading: () => const material.Center(
-        child: material.Padding(
-            padding: EdgeInsets.all(16),
-            child: material.CircularProgressIndicator()),
-      ),
-      error: (_, __) => const material.SizedBox.shrink(),
-      data: (item) {
-        if (item == null) return const material.SizedBox.shrink();
-        final profile = ref.watch(currentProfileProvider);
-        // Only a yard (admin/officer) confirms delivery; Central Disposal views.
-        final canEdit = profile != null && !profile.isDisposal;
-        final delivered = item.delivered;
-        final actionColor = delivered
-            ? context.colors.warningAmber
-            : context.colors.successGreen;
-        return _DetailSection(
-          title: 'Destruction & Delivery',
-          icon: Icons.delete_forever_rounded,
-          delay: 650,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.colors.surfaceDark,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.colors.borderColor),
-            ),
-            child: Column(
-              children: [
-                _DetailItem(
-                  icon: Icons.delete_forever_rounded,
-                  label: 'Status',
-                  value: 'Destroyed',
-                  valueColor: context.colors.dangerRed,
-                ),
-                // Receipt No + Notes are stored combined as
-                // "Receipt No: <no> | Notes: <notes>" — split into two rows.
-                if (_receiptNoOf(item.notes) != null)
-                  _DetailItem(
-                    icon: Icons.receipt_long_rounded,
-                    label: 'Receipt No',
-                    value: _receiptNoOf(item.notes)!,
-                  ),
-                if (_notesOf(item.notes) != null)
-                  _DetailItem(
-                    icon: Icons.notes_rounded,
-                    label: 'Notes',
-                    value: _notesOf(item.notes)!,
-                  ),
-                // Valuation Directorate valuation, for comparison.
-                if (() {
-                  final fp = item.forfeited;
-                  return fp?.valuationCost != null;
-                }())
-                  _ValuationDetailRow(
-                      fp: item.forfeited!, soldQty: widget.valuationQty),
-                // Destruction records a price only — no taxes (unlike a sale).
-                _DetailItem(
-                  icon: Icons.payments_rounded,
-                  label: 'Destruction Price (Rs)',
-                  value: item.destroyedPrice.toStringAsFixed(2),
-                  valueColor: context.colors.primaryGold,
-                ),
-                _DetailItem(
-                  icon: Icons.local_shipping_rounded,
-                  label: 'Delivery Status',
-                  value: delivered ? 'Delivered' : 'Pending',
-                  valueColor: delivered
-                      ? context.colors.successGreen
-                      : context.colors.dangerRed,
-                ),
-                // Delivery date shown ONLY once delivered — captured
-                // automatically when Mark Delivered is pressed.
-                if (delivered && item.deliveredAt != null)
-                  _DetailItem(
-                    icon: Icons.event_available_rounded,
-                    label: 'Delivery Date',
-                    value: DateFormat('yyyy-MM-dd').format(item.deliveredAt!),
-                    valueColor: context.colors.successGreen,
-                  ),
-                if (canEdit && !delivered) ...[
-                  const Gap(10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _toggling ? null : () => _toggle(item),
-                      icon: _toggling
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.local_shipping_rounded, size: 18),
-                      label: const Text('Mark Delivered'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: actionColor,
-                        side: BorderSide(color: actionColor.withOpacity(0.6)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
+                // ⚠️ No Mark Delivered button here. Confirming delivery is
+                // the yard's ONE routine action on a sold row, and doing it
+                // from a popup meant open, scroll, press, watch it close. It
+                // now lives in the Sold Goods table beside the status it
+                // changes; this popup only REPORTS that status.
               ],
             ),
           ),
@@ -4665,7 +6644,19 @@ class _NoteDisplay extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   final String message;
 
-  const _EmptyState({required this.message});
+  /// Why the section is empty, when "nothing here" is the CORRECT answer
+  /// rather than missing data. Without it an intentional blank reads as a
+  /// failure to load -- which is exactly how the perishables' (correctly)
+  /// empty warehouse summary read.
+  final String? reason;
+
+  final IconData icon;
+
+  const _EmptyState({
+    required this.message,
+    this.reason,
+    this.icon = Icons.inbox_rounded,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4675,7 +6666,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_rounded,
+            Icon(icon,
                 size: 32, color: context.colors.textMuted.withOpacity(0.4)),
             const Gap(2),
             Text(
@@ -4685,6 +6676,20 @@ class _EmptyState extends StatelessWidget {
                   fontSize: 12,
                   fontStyle: FontStyle.italic),
             ),
+            if (reason != null) ...[
+              const Gap(6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  reason!,
+                  textAlign: material.TextAlign.center,
+                  style: material.TextStyle(
+                      color: context.colors.textMuted.withOpacity(0.8),
+                      fontSize: 11,
+                      height: 1.45),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -4751,9 +6756,14 @@ class _NoEntryItemCard extends StatelessWidget {
               Expanded(
                 child: _DetailItem(
                   icon: Icons.payments_rounded,
-                  label: 'Value',
+                  // The TOTAL, with the unit price beneath it — the same shape
+                  // the Valuation column uses. This showed the bare unitValue
+                  // under a label reading just "Value", while every table showed
+                  // unitValue x quantity under that same word.
+                  label: 'Value (total)',
                   value:
-                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
+                      '  ·  @ ${NumberFormat('#,##0.00').format(item.unitValue)} × ${item.quantity}',
                 ),
               ),
             ],
@@ -4988,7 +6998,14 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         row.unitOfMeasureCtrl.text = 'Cartons';
         row.qtyCtrl.text = (hi.innerQuantity ?? 1).toString();
         row.innerUnitCtrl.text = hi.unitOfMeasure;
-        row.innerQtyCtrl.text = hi.quantity.toString();
+        // ⚠️ Back OUT of the total. `quantity` holds cartons x per-carton,
+        // and this box asks for ONE carton's contents -- showing the total
+        // here made "5 Cartons of 5 Pieces each" out of 5 pieces in 5
+        // cartons, and the next save stored that reading as fact.
+        final hiCartons = hi.innerQuantity ?? 1;
+        row.innerQtyCtrl.text =
+            (hiCartons > 0 ? (hi.quantity ~/ hiCartons) : hi.quantity)
+                .toString();
       } else {
         row.qtyCtrl.text = hi.quantity.toString();
         row.unitOfMeasureCtrl.text = hi.unitOfMeasure;
@@ -5048,7 +7065,11 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
           row.unitOfMeasureCtrl.text = 'Cartons';
           row.qtyCtrl.text = (item.innerQuantity ?? 1).toString();
           row.innerUnitCtrl.text = item.unitOfMeasure;
-          row.innerQtyCtrl.text = item.quantity.toString();
+          // ⚠️ Back OUT of the total -- see the highlighted-item branch above.
+          final cartons = item.innerQuantity ?? 1;
+          row.innerQtyCtrl.text =
+              (cartons > 0 ? (item.quantity ~/ cartons) : item.quantity)
+                  .toString();
         } else {
           row.qtyCtrl.text = item.quantity.toString();
           row.unitOfMeasureCtrl.text = item.unitOfMeasure;
@@ -5128,7 +7149,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
     // (same look/size) and dates read as YYYY-MM-DD — not the Material picker's
     // MM/DD/YYYY manual-entry box.
     final existing = DateTime.tryParse(controller.text.trim());
-    final DateTime? picked = await showDialog<DateTime>(
+    final DateTime? picked = await showAppDialog<DateTime>(
       context: context,
       builder: (_) => OneTapDatePicker(
         initialDate: existing ?? DateTime.now(),
@@ -5177,8 +7198,13 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                   : row.goodsDescriptionCtrl.text.trim(),
               // Cartons stored inverted: quantity/unit hold the inner contents;
               // packaging (Cartons + count) goes to innerUnit/innerQuantity.
+              // ⚠️ CARTONS x PER-CARTON. `innerQtyCtrl` is one carton's
+              // contents, so storing it raw recorded 5 cartons of 5 pieces
+              // as 5 pieces -- and every charge, capacity and Qty column
+              // downstream reads this number.
               quantity: row.unitOfMeasureCtrl.text == 'Cartons'
-                  ? (int.tryParse(row.innerQtyCtrl.text) ?? 1)
+                  ? ((int.tryParse(row.qtyCtrl.text) ?? 1) *
+                      (int.tryParse(row.innerQtyCtrl.text) ?? 1))
                   : (int.tryParse(row.qtyCtrl.text) ?? 1),
               unitValue: double.tryParse(row.valueCtrl.text) ?? 0,
               hsCode: row.hsCodeCtrl.text.trim().isEmpty
@@ -5213,8 +7239,10 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                   goodsDescription: r.goodsDescriptionCtrl.text.trim().isEmpty
                       ? null
                       : r.goodsDescriptionCtrl.text.trim(),
+                  // ⚠️ CARTONS x PER-CARTON -- see the sibling save above.
                   quantity: r.unitOfMeasureCtrl.text == 'Cartons'
-                      ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                      ? ((int.tryParse(r.qtyCtrl.text) ?? 1) *
+                          (int.tryParse(r.innerQtyCtrl.text) ?? 1))
                       : (int.tryParse(r.qtyCtrl.text) ?? 1),
                   unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
                   hsCode: r.hsCodeCtrl.text.trim().isEmpty
@@ -5272,6 +7300,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
       ref.read(packagesRefreshTriggerProvider.notifier).trigger();
       ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
+      ref.invalidate(forfeitedPackagesProvider);
+      ref.invalidate(forfeitCountsProvider);
       ref.invalidate(dashboardStatsProvider); // Dashboard stats refresh
       ref.invalidate(recentPackagesProvider); // Recent inspections refresh
       ref.invalidate(allWarehouseEntriesProvider);
@@ -5290,11 +7320,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error updating package: $e'),
-              backgroundColor: context.colors.dangerRed),
-        );
+        showErrorSnack(context, e);
       }
     } finally {
       if (mounted) setState(() => _isUpdating = false);
@@ -5389,12 +7415,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                         ],
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded,
-                          color: Colors.white.withOpacity(0.7)),
-                      splashRadius: 24,
-                    ),
+                    DialogCloseButton(prominent: false),
                   ],
                 ),
               ),
@@ -6086,7 +8107,20 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
             spacing: 12,
             runSpacing: 10,
             children: List.generate(widget.row.selectedReasons.length, (rIdx) {
-              final activities = postStatusActivitiesFor(widget.row.status);
+              // ⚠️ The same rule the SR form applies, not the same LIST.
+              //
+              // The two must agree, or editing an item would offer something
+              // the form would not — or drop something it allowed. The rule
+              // is: the status decides, except a perishable, whose status is
+              // in neither group and which therefore gets everything.
+              //
+              // This row has no `nature` field, but it does not need one: a
+              // perishable's STATUS is 'Perishable', which is what identifies
+              // it here and is exactly why a filtered list would leave it
+              // with nothing to choose.
+              final activities = widget.row.status == 'Perishable'
+                  ? kAllPostStatusActivities
+                  : postStatusActivitiesFor(widget.row.status);
               return SizedBox(
                 width: 380,
                 child: Row(
@@ -6095,7 +8129,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                       child: StyledDropdownFormField<String>(
                         label: 'Activity ${rIdx + 1} *',
                         menuWidth: 300,
-                        fillColor: context.colors.cardDark,
+                        fillColor: context.colors.fieldFill,
                         value: activities
                                 .contains(widget.row.selectedReasons[rIdx])
                             ? widget.row.selectedReasons[rIdx]
@@ -6378,10 +8412,14 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
 
     // Role-based action permissions.
     // - Officers: no disposition actions enabled at all.
-    // - Admins: Release, Re-export, Abandoned, Forfeit and Other are enabled.
-    //   Destroy remains disabled for everyone.
+    // - Admins (DC/SDDC): every action is enabled, Destroy included — it goes
+    //   through the same [FINAL:DESTROYED] warehouse-entry write as Release /
+    //   Forfeit / Abandoned / Re-export / Other, just like the Final
+    //   Disposition sheet below already allows. This dialog used to disable
+    //   it unconditionally, so even an Appeal Directorate decision of DESTROY
+    //   could never actually be carried out from here.
     final isOfficer = ref.watch(currentProfileProvider)?.role == 'officer';
-    const _disabledForAll = {'Destroy'};
+    const _disabledForAll = <String>{};
     // The 30-day appeal window freezes EVERY action, whatever the status:
     // the owner may still appeal, so the goods cannot be released, forfeited,
     // abandoned, re-exported or destroyed until it closes.
@@ -6534,12 +8572,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                           ),
                         ),
                         const Gap(12),
-                        IconButton(
-                          icon: Icon(Icons.close_rounded,
-                              color: Colors.white.withOpacity(0.7)),
-                          splashRadius: 24,
-                          onPressed: () => Navigator.pop(context),
-                        ),
+                        DialogCloseButton(prominent: false),
                       ],
                     ),
                   ),
@@ -6741,7 +8774,8 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                               } else {
                                                 // Show selection dialog with live processed slots
                                                 final slots =
-                                                    await showDialog<Set<int>>(
+                                                    await showAppDialog<
+                                                        Set<int>>(
                                                   context: context,
                                                   builder: (ctx) =>
                                                       _PackageSelectionDialog(
@@ -6899,7 +8933,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                             if (t.isEmpty) return;
 
                                             final slots =
-                                                await showDialog<Set<int>>(
+                                                await showAppDialog<Set<int>>(
                                               context: context,
                                               builder: (ctx) =>
                                                   _PackageSelectionDialog(
@@ -7032,7 +9066,10 @@ bool _hasFinalDisposition(PackageModel pkg, String itemId) {
 
 bool _isForfeitStatusLocal(String? s) {
   final v = (s ?? '').trim().toLowerCase();
-  return v == 'forfeit' || v == 'forfeited' || v == 'forfiet';
+  return v == 'forfeit' ||
+      v == 'forfeited' ||
+      v == 'forfiet' ||
+      v == 'confiscated';
 }
 
 /// Receipt/Notes are stored combined as "Receipt No: <no> | Notes: <notes>".
@@ -7200,7 +9237,7 @@ class _FinalActionConfirmDialogState extends State<_FinalActionConfirmDialog> {
               suffixIcon: Icon(Icons.calendar_month, color: widget.color),
             ),
             onTap: () async {
-              final picked = await showDialog<DateTime>(
+              final picked = await showAppDialog<DateTime>(
                 context: context,
                 builder: (_) => OneTapDatePicker(
                   initialDate: _date,
@@ -7329,7 +9366,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       icon: Icons.assignment_return_rounded,
       label: 'Release',
       description:
-          'Return the goods to the owner. DC / SDDC approval required.',
+          'Return the goods to the owner. SDDC / DDC approval required.',
       color: Color(0xFF43A047),
       adminOnly: true,
     ),
@@ -7346,16 +9383,15 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'DESTROYED',
       icon: Icons.delete_forever_rounded,
       label: 'Destroy',
-      description:
-          'Send a disposal request to the Central Disposal Directorate.',
+      description: 'Mark goods for destruction. SDDC / DDC approval required.',
       color: Color(0xFFE64A19),
-      adminOnly: false,
+      adminOnly: true,
     ),
     _FinalActionDef(
       type: 'RE-EXPORTED',
       icon: Icons.flight_takeoff_rounded,
       label: 'Re-export',
-      description: 'Goods sent back to origin. DC / SDDC approval required.',
+      description: 'Goods sent back to origin. SDDC / DDC approval required.',
       color: Color(0xFF00ACC1),
       adminOnly: true,
     ),
@@ -7363,16 +9399,15 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'OTHER',
       icon: Icons.more_horiz_rounded,
       label: 'Other',
-      description: 'Custom outcome. DC / SDDC approval required.',
+      description: 'Custom outcome. SDDC / DDC approval required.',
       color: Color(0xFF7E57C2),
       adminOnly: true,
     ),
   ];
 
-  // Sale and Destroy are never written as a [FINAL:…] entry from this dialog —
-  // they are recorded by the Central Disposal Directorate. Picking one opens
-  // the disposal REQUEST flow instead (see [onRequestDisposal]).
-  static const _requestActions = {'SOLD', 'DESTROYED'};
+  // Sale is written via disposal request to Central Disposal Directorate.
+  // Release / Destroy / Re-export / Other are recorded directly.
+  static const _requestActions = {'SOLD'};
 
   // The final-action type that matches an Appeal Directorate decision code.
   static String? _typeForDecision(String code) {
@@ -7382,6 +9417,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       case 'SALE':
         return 'SOLD';
       case 'DESTROY':
+      case 'DESTRUCTION':
+      case 'SUPPOSED TO BE DESTROYED':
         return 'DESTROYED';
       case 'RE-EXPORT':
         return 'RE-EXPORTED';
@@ -7394,15 +9431,9 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
 
   // Whether THIS user may trigger the given action.
   // - Officers: nothing is enabled.
-  // - Sale / Destroy: ALWAYS disabled here. Those two outcomes belong to the
-  //   Central Disposal Directorate, and the only way to start them is the
-  //   "Send Disposal Request" button on the status page — one request, sent
-  //   deliberately, rather than a per-item action buried in a details popup.
-  // - When the Appeal Directorate has DECIDED, only the matching action is
-  //   enabled (the yard must proceed exactly as decided). A SALE / DESTROY
-  //   decision therefore enables nothing here — it is carried out by sending
-  //   the disposal request.
-  // - Otherwise (window passed, no decision): Release / Re-export / Other.
+  // - Sale: ALWAYS disabled here (must use "Send Disposal Request").
+  // - When Appeal Directorate has DECIDED: only matching action is enabled.
+  // - Otherwise: Release / Destroy / Re-export / Other are enabled for DC/SDDC.
   bool _isActionEnabled(_FinalActionDef a) {
     if (widget.isOfficer) return false;
     if (_requestActions.contains(a.type)) return false;
@@ -7419,7 +9450,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
   Future<void> _confirmFinalAction(_FinalActionDef a,
       {String? otherDetail}) async {
     final label = otherDetail != null ? 'Other: $otherDetail' : a.label;
-    final result = await showDialog<_FinalActionConfirmResult>(
+    final result = await showAppDialog<_FinalActionConfirmResult>(
       context: context,
       builder: (_) => _FinalActionConfirmDialog(
         label: label,
@@ -7537,12 +9568,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       ),
                     ),
                     const Gap(12),
-                    IconButton(
-                      icon: Icon(Icons.close_rounded,
-                          color: Colors.white.withOpacity(0.7)),
-                      splashRadius: 24,
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    DialogCloseButton(prominent: false),
                   ],
                 ),
               ),
@@ -7569,7 +9595,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       if (widget.isOfficer) ...[
                         const Gap(6),
                         Text(
-                          'Final disposition is restricted to DC / SDDC officers.',
+                          'Final disposition is restricted to SDDC / DDC officers.',
                           style: material.TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
@@ -7578,7 +9604,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       ] else ...[
                         const Gap(6),
                         Text(
-                          'Sale / Destroy go to the Central Disposal Directorate as a request; Release / Re-export / Other are recorded directly.',
+                          'Sale goes to Central Disposal as a request; Release / Destroy / Re-export / Other are recorded directly.',
                           style: material.TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
@@ -7620,16 +9646,10 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                                 !_otherExpanded);
                                           } else if (_requestActions
                                               .contains(a.type)) {
-                                            // Sale / Destroy → disposal request (not a direct
-                                            // [FINAL:…] write).
-                                            widget.onRequestDisposal!(
-                                                a.type == 'SOLD'
-                                                    ? 'sale'
-                                                    : 'destruction');
+                                            // Sale → disposal request
+                                            widget.onRequestDisposal!('sale');
                                           } else {
-                                            // Release / Re-export → per-action confirm dialog
-                                            // (date + notes) before recording, like the
-                                            // warehouse action final step.
+                                            // Release / Destroy / Re-export → per-action confirm dialog
                                             _confirmFinalAction(a);
                                           }
                                         },
@@ -7698,7 +9718,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                                         BorderRadius.circular(
                                                             4),
                                                   ),
-                                                  child: Text('DC / SDDC',
+                                                  child: Text('SDDC / DDC',
                                                       style: material.TextStyle(
                                                           fontSize: 8,
                                                           fontWeight:
@@ -7814,26 +9834,6 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
 
 // ── Disposition meta resolvers (by normalized returnNotes key) ────────────────
 
-Color _dispoColor(String key) {
-  switch (key) {
-    case 'FORFEIT':
-    case 'FORFEITED':
-    case 'FORFIET':
-    case 'CONFISCATED':
-      return const Color(0xFFE53935);
-    case 'RE-EXPORT':
-    case 'REEXPORT':
-      return const Color(0xFF00ACC1);
-    case 'ABANDONED':
-      return const Color(0xFF9E9E9E);
-    case 'DESTROY':
-    case 'DESTROYED':
-      return const Color(0xFFE64A19);
-    default:
-      return const Color(0xFF7E57C2); // Other / custom
-  }
-}
-
 String _dispoLabel(String key, String raw) {
   switch (key) {
     case 'FORFEIT':
@@ -7861,70 +9861,6 @@ String _dispoLabel(String key, String raw) {
 }
 
 // ── Disposition Row (shows status breakdown) ──────────────────────────────────
-
-class _DispositionRow extends StatelessWidget {
-  final String label;
-  final int count;
-  final Color color;
-  final String? officer;
-
-  const _DispositionRow({
-    required this.label,
-    required this.count,
-    required this.color,
-    required this.officer,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 4,
-          height: 40,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const Gap(12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: material.TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: context.colors.textPrimary,
-                ),
-              ),
-              if (officer != null) ...[
-                const Gap(2),
-                Text(
-                  officer!,
-                  style: material.TextStyle(
-                    fontSize: 11,
-                    color: context.colors.textMuted,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        Text(
-          'x$count',
-          style: material.TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _DispositionMeta {
   final IconData icon;
@@ -8115,8 +10051,6 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
                         decoration: const InputDecoration(
                           labelText: 'Quantity',
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
                         ),
                         onChanged: (v) => _setQty(int.tryParse(v) ?? 0),
                       ),

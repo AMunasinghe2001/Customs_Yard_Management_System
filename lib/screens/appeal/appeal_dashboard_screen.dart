@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../widgets/update_available_button.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +12,7 @@ import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
@@ -19,6 +21,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/app_dialog.dart';
 
 final _appealSearchProvider = StateProvider<String>((ref) => '');
 final _appealYardProvider = StateProvider<String?>((ref) => null); // null = all
@@ -64,17 +67,21 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
   Widget build(BuildContext context) {
     final accent = AppTheme.appealPurple;
     final profile = ref.watch(currentProfileProvider);
-    final async = ref.watch(appealForfeitedPackagesProvider);
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
-    // Pre-compute counts for tab labels
-    final allList = async.valueOrNull ?? [];
-    final activeCount = allList
-        .where((f) => !f.hasAppealDecision &&
-            (!f.isAppealExpired || f.isAppealHeld))
-        .length;
-    final decidedCount = allList.where((f) => f.hasAppealDecision).length;
+    // ⚠️ The tab labels count in SQL, unfiltered.
+    //
+    // They were folded from a fetch of EVERY forfeited package in the
+    // country -- the same fetch both tabs then filtered and paged in Dart.
+    // The counts stay unfiltered on purpose: a tab label says how much work
+    // the directorate holds, not how much the current search matches.
+    final counts = ref.watch(appealPageProvider(
+        const AppealQuery(decided: false, page: 0)));
+    final decidedCounts = ref.watch(appealPageProvider(
+        const AppealQuery(decided: true, page: 0)));
+    final activeCount = counts.valueOrNull?.total ?? 0;
+    final decidedCount = decidedCounts.valueOrNull?.total ?? 0;
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -83,7 +90,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
         children: [
           // ── Top bar ──────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
@@ -125,7 +132,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                   message: 'View profile',
                   child: InkWell(
                     borderRadius: BorderRadius.circular(999),
-                    onTap: () => showDialog(
+                    onTap: () => showAppDialog(
                       context: context,
                       builder: (_) => DisposalProfileDialog(accent: accent),
                     ),
@@ -167,6 +174,24 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                 },
               ),
               const Gap(4),
+              // ⚠️ Shown ONLY when there is an update.
+              //
+              // This portal builds its own header and never uses
+              // AppShell, so it inherits nothing the shell offers.
+              // The widget is shared; the shape is this portal's own.
+              UpdateAvailableButton(
+                trailing: const Gap(4),
+                builder: (ctx, update, onPressed) => FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: updateButtonAccent(ctx),
+                    foregroundColor: ctx.colors.primaryNavy,
+                  ),
+                  icon: const Icon(Icons.download_rounded, size: 16),
+                  label: Text(updateButtonLabel(update),
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  onPressed: onPressed,
+                ),
+              ),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: context.colors.dangerRed,
@@ -187,7 +212,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
           // ── Tab bar ───────────────────────────────────────────
           Container(
             color: context.colors.cardDark,
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
             child: Container(
               decoration: BoxDecoration(
                 color: context.colors.surfaceDark,
@@ -216,7 +241,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Icon(Icons.balance_rounded, size: 18),
                       const Gap(8),
-                      const Flexible(child: Text('Active Appeals', overflow: TextOverflow.ellipsis)),
+                      Flexible(child: PageTitle('Active Appeals', Icons.gavel_rounded, accent: accent)),
                       if (activeCount > 0) ...[
                         const Gap(6),
                         _TabBadge(activeCount, accent),
@@ -228,7 +253,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Icon(Icons.gavel_rounded, size: 18),
                       const Gap(8),
-                      const Flexible(child: Text('Decided Goods', overflow: TextOverflow.ellipsis)),
+                      Flexible(child: PageTitle('Decided Goods', Icons.fact_check_rounded, accent: accent)),
                       if (decidedCount > 0) ...[
                         const Gap(6),
                         _TabBadge(decidedCount, accent),
@@ -246,7 +271,6 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
               controller: _tabController,
               children: [
                 _ActiveTab(
-                  async: async,
                   accent: accent,
                   storageRate: storageRate,
                   page: _activePage,
@@ -258,7 +282,6 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                   listCard: _listCard,
                 ),
                 _DecidedTab(
-                  async: async,
                   accent: accent,
                   storageRate: storageRate,
                   page: _decidedPage,
@@ -419,12 +442,17 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
         action = () => _setHold(context, f, true);
       }
     }
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => PackageDetailsDialog(
         package: f.packageDetails!,
         storageRate: storageRate,
         headerAccentColor: AppTheme.appealPurple,
+        // ⚠️ The forfeited record itself, so the popup can show the APPEAL:
+        // when it was lodged, the deadline, any hold, and the ruling. Without
+        // it the dialog had no appeal data at all, and this directorate's own
+        // Details button said nothing about the appeal it exists to manage.
+        tenderHistoryFor: f,
         useLegacySummary: true,
         highlightItemId: f.itemId ??
             (f.packageDetails!.items.isNotEmpty
@@ -474,7 +502,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
 
   Future<void> _showDecisionDialog(
       BuildContext context, ForfeitedPackageModel f) async {
-    final result = await showDialog<_AppealDecisionResult>(
+    final result = await showAppDialog<_AppealDecisionResult>(
       context: context,
       builder: (_) => _AppealDecisionDialog(srNumber: f.srNumber),
     );
@@ -503,10 +531,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.dangerRed,
-          content: Text('Error: $e'),
-        ));
+        showErrorSnack(context, e);
       }
     }
   }
@@ -546,7 +571,7 @@ class _TabBadge extends StatelessWidget {
 }
 
 class _ActiveTab extends ConsumerStatefulWidget {
-  final AsyncValue<List<ForfeitedPackageModel>> async;
+
   final Color accent;
   final Map<DateTime, double> storageRate;
   final int page;
@@ -558,7 +583,6 @@ class _ActiveTab extends ConsumerStatefulWidget {
   final Widget Function(BuildContext, Widget) listCard;
 
   const _ActiveTab({
-    required this.async,
     required this.accent,
     required this.storageRate,
     required this.page,
@@ -578,18 +602,34 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.accent;
+    // ⚠️ One page from SQL, filters included. This tab used to take a fetch of
+    // every forfeited package in the country, filter it here and page it with
+    // `pageSlice` — which still loads everything, it only renders less.
+    // `appeal_rows` (postgres/45) carries all five membership rules, asserted
+    // row-for-row against the model on live data.
+    final search = ref.watch(_appealSearchProvider).trim();
+    final query = AppealQuery(
+      page: widget.page,
+      decided: false,
+      search: search.isEmpty ? null : search,
+      yardFilter: ref.watch(_appealYardProvider),
+    );
+    final feed = ref.watch(appealPageProvider(query));
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24 -- see Central Disposal. A table page spends its
+      // vertical space on rows, not on chrome.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Search + yard filter row
           Row(children: [
-            Text('Active Appeals',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            Expanded(
+              child: PageTitle('Active Appeals', Icons.gavel_rounded,
+                  subtitle:
+                      'Forfeited packages under active appeal review',
+                  accent: accent),
+            ),
             const Spacer(),
             SizedBox(
               width: 320,
@@ -626,53 +666,39 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
               },
             ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
+          const Gap(10),
           // Stat chips
-          widget.async.maybeWhen(
-            data: (list) {
-              final active = list
-                  .where((f) => !f.hasAppealDecision &&
-                      (!f.isAppealExpired || f.isAppealHeld))
-                  .toList();
-              final held = active.where((f) => f.isAppealHeld).length;
-              final openWindow = active.where((f) => !f.isAppealHeld).length;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Row(children: [
-                  _StatChip(label: 'Active', value: '${active.length}', color: context.colors.accentLightBlue),
-                  const Gap(12),
-                  _StatChip(label: 'In Appeal Window', value: '$openWindow', color: context.colors.successGreen),
-                  const Gap(12),
-                  _StatChip(label: 'On Appeal Hold', value: '$held', color: context.colors.warningAmber),
-                ]),
-              ).animate().fadeIn(duration: 300.ms);
-            },
+          // ⚠️ Counted in SQL over the whole active set under the same
+          // filters — not the page. Folded from twenty rows these would report
+          // twenty appeals however many the directorate is holding.
+          feed.maybeWhen(
+            data: (data) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                _StatChip(label: 'Active', value: '${data.active}', color: context.colors.accentLightBlue),
+                const Gap(12),
+                _StatChip(label: 'In Appeal Window', value: '${data.inWindow}', color: context.colors.successGreen),
+                const Gap(12),
+                _StatChip(label: 'On Appeal Hold', value: '${data.held}', color: context.colors.warningAmber),
+              ]),
+            ).animate().fadeIn(duration: 300.ms),
             orElse: () => const SizedBox.shrink(),
           ),
           Expanded(
-            child: widget.async.when(
+            child: feed.when(
               skipLoadingOnReload: true,
               loading: () => Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(appealForfeitedPackagesProvider)),
-              data: (list) {
-                final q = ref.watch(_appealSearchProvider).toLowerCase();
-                final yard = ref.watch(_appealYardProvider);
-                var rows = list
-                    .where((f) => !f.hasAppealDecision &&
-                        (!f.isAppealExpired || f.isAppealHeld))
-                    .toList();
-                if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
-                // Soonest deadline first, so the appeals needing attention
-                // most urgently lead instead of being paged out of sight.
-                rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
-                if (q.isNotEmpty) {
-                  rows = rows.where((f) =>
-                      f.srNumber.toLowerCase().contains(q) ||
-                      f.consigneeName.toLowerCase().contains(q) ||
-                      widget.itemName(f).toLowerCase().contains(q)).toList();
-                }
+                  onRetry: () => ref.refresh(appealPageProvider(query))),
+              data: (data) {
+                // ⚠️ Nothing is filtered or sorted here any more. The
+                // membership, the yard, the search and the soonest-deadline
+                // order are all in the SQL above — sorting a page would order
+                // twenty rows within themselves and leave the appeals needing
+                // attention most urgently paged out of sight, which is the
+                // very thing that sort existed to prevent.
+                final rows = data.rows;
                 return Column(children: [
                   Expanded(
                     child: widget.listCard(context,
@@ -696,17 +722,20 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                           DataColumn2(label: Center(child: Text('Appeal State')), size: ColumnSize.S, fixedWidth: 150),
                           DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                         ],
-                        rows: pageSlice(rows, widget.page, kClientPageSize)
+                        rows: rows
                             .map((f) => widget.buildRow(context, f, widget.storageRate))
                             .toList(),
                       ),
                     ),
                   ),
+                  // ⚠️ Against the SERVER's count: `rows.length` is the page
+                  // size now and would pin the pager to page 1.
                   TablePager(
-                    total: rows.length,
+                    total: data.total,
                     page: widget.page,
-                    pageSize: kClientPageSize,
+                    pageSize: kDispositionPageSize,
                     onPageChanged: widget.onPageChanged,
+                    accent: accent,
                   ),
                 ]);
               },
@@ -720,7 +749,7 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
 
 // ── Decided Packages tab ──────────────────────────────────────────────────────
 class _DecidedTab extends ConsumerStatefulWidget {
-  final AsyncValue<List<ForfeitedPackageModel>> async;
+
   final Color accent;
   final Map<DateTime, double> storageRate;
   final int page;
@@ -731,7 +760,6 @@ class _DecidedTab extends ConsumerStatefulWidget {
   final Widget Function(BuildContext, Widget) listCard;
 
   const _DecidedTab({
-    required this.async,
     required this.accent,
     required this.storageRate,
     required this.page,
@@ -750,17 +778,32 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.accent;
+    // One page from SQL, like the Active tab — the same view, the other flag.
+    //
+    // ⚠️ Ordered by when the ruling was MADE, newest first. This tab sorted by
+    // appeal deadline, carrying the Active tab's comment about "the appeals
+    // needing attention most urgently" — which says nothing about a closed
+    // appeal. A record is read newest-first.
+    final search = ref.watch(_appealSearchProvider).trim();
+    final query = AppealQuery(
+      page: widget.page,
+      decided: true,
+      search: search.isEmpty ? null : search,
+      yardFilter: ref.watch(_appealYardProvider),
+    );
+    final feed = ref.watch(appealPageProvider(query));
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Decided Goods',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            Expanded(
+              child: PageTitle('Decided Goods', Icons.fact_check_rounded,
+                  subtitle:
+                      'Packages with completed appeal rulings',
+                  accent: accent),
+            ),
             const Spacer(),
             SizedBox(
               width: 320,
@@ -797,28 +840,17 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
               },
             ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
+          const Gap(10),
           Expanded(
-            child: widget.async.when(
+            child: feed.when(
               skipLoadingOnReload: true,
               loading: () => Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(appealForfeitedPackagesProvider)),
-              data: (list) {
-                final q = ref.watch(_appealSearchProvider).toLowerCase();
-                final yard = ref.watch(_appealYardProvider);
-                var rows = list.where((f) => f.hasAppealDecision).toList();
-                if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
-                // Soonest deadline first, so the appeals needing attention
-                // most urgently lead instead of being paged out of sight.
-                rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
-                if (q.isNotEmpty) {
-                  rows = rows.where((f) =>
-                      f.srNumber.toLowerCase().contains(q) ||
-                      f.consigneeName.toLowerCase().contains(q) ||
-                      widget.itemName(f).toLowerCase().contains(q)).toList();
-                }
+                  onRetry: () => ref.refresh(appealPageProvider(query))),
+              data: (data) {
+                // Membership, filters and order all live in the SQL above.
+                final rows = data.rows;
                 return Column(children: [
                   Expanded(
                     child: widget.listCard(context,
@@ -842,17 +874,19 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                           DataColumn2(label: Center(child: Text('Decision')), size: ColumnSize.S, fixedWidth: 160),
                           DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                         ],
-                        rows: pageSlice(rows, widget.page, kClientPageSize)
+                        rows: rows
                             .map((f) => widget.buildDecidedRow(context, f, widget.storageRate))
                             .toList(),
                       ),
                     ),
                   ),
+                  // ⚠️ Against the SERVER's count, as on the Active tab.
                   TablePager(
-                    total: rows.length,
+                    total: data.total,
                     page: widget.page,
-                    pageSize: kClientPageSize,
+                    pageSize: kDispositionPageSize,
                     onPageChanged: widget.onPageChanged,
+                    accent: accent,
                   ),
                 ]);
               },
@@ -865,14 +899,18 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
 }
 
 /// Yard dropdown ("All Yards" + every yard) tinted to the appeal accent.
-class _AppealYardFilter extends StatelessWidget {
+/// [value] / the string [onChanged] reports is a [YardFilterOption.value] --
+/// apply it with [matchesYardFilter], not a bare `==` on `yard`.
+class _AppealYardFilter extends ConsumerWidget {
   final Color accent;
   final String? value; // null = all
   final ValueChanged<String?> onChanged;
   const _AppealYardFilter(
       {required this.accent, required this.value, required this.onChanged});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(yardFilterOptionsProvider).valueOrNull ??
+        [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)];
     OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: c, width: w));
@@ -895,13 +933,11 @@ class _AppealYardFilter extends StatelessWidget {
           helperText: null,
           isDense: true,
           menuWidth: 220,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           prefixIcon:
               Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+            for (final o in options) StyledDropdownOption(o.value, o.label),
           ],
           onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
         ),

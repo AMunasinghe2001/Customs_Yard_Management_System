@@ -14,12 +14,17 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/appeal_state_chip.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
+import '../../widgets/table_pager.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/disposal_page_header.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
+import '../../widgets/send_disposal_request_button.dart';
+import '../../widgets/qty_cell.dart';
 
 final detainedPackageSearchProvider = StateProvider<String>((ref) => '');
 final detainedPackageDateRangeProvider =
@@ -78,12 +83,24 @@ class _DetainedPackagesScreenState
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
 
+  /// ⚠️ New: this page had no pager at all. Every filter change resets it, or
+  /// a narrowed result leaves the reader stranded on a page that no longer
+  /// exists.
+  int _page = 0;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tableSearchCtrl.text = ref.read(detainedPackageSearchProvider);
-    });
+    // ⚠️ SYNCHRONOUS, not in a post-frame callback.
+    //
+    // The search box is an Autocomplete, which builds its own controller. The
+    // fieldViewBuilder copies _tableSearchCtrl into it, but a post-frame
+    // callback runs AFTER that first build and calls no setState -- so leaving
+    // the page and coming back left the table filtered by the remembered query
+    // while the box showed nothing. The filter was on and invisible.
+    //
+    // Assigning here means the first build already has the text.
+    _tableSearchCtrl.text = ref.read(detainedPackageSearchProvider);
   }
 
   @override
@@ -120,10 +137,7 @@ class _DetainedPackagesScreenState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.dangerRed,
-          content: Text('Error: $e'),
-        ));
+        showErrorSnack(context, e);
       }
     }
   }
@@ -132,50 +146,66 @@ class _DetainedPackagesScreenState
   ///
   /// [sentKeys] — "pkgId:itemId" keys already sent in a disposal request;
   /// those rows drop off, the same way they do on the other status pages.
-  List<_DetainRow> _buildRows(List<PackageModel> packages,
-      {Set<String> sentKeys = const {}}) {
-    final rows = <_DetainRow>[];
-    for (final package in packages) {
-      for (final item in package.items) {
-        if (sentKeys.contains('${package.id}:${item.id}')) continue;
-        if (!_itemIsDetained(package, item)) continue;
+  /// The view's rows, as this page's widgets already expect them.
+  ///
+  /// ⚠️ Replaces `_buildRows`, which walked every package in the yard. Which
+  /// items count as detained now lives in the view (postgres/25): the status
+  /// is detain/detained/held, and NO warehouse entry carries a settled note.
+  /// Detention is a holding status with no [DETAIN] event of its own, so what
+  /// ends it is the arrival of some other disposition.
+  List<_DetainRow> _rowsFrom(HeldGoodsPage result) {
+    final out = <_DetainRow>[];
+    for (final k in result.keys) {
+      final pkg = result.packages[k.packageId];
+      if (pkg == null) continue;
+      final item = pkg.items.where((i) => i.id == k.itemId).firstOrNull;
+      if (item == null) continue;
 
-        final itemEntries = package.warehouseEntries
-            .where((e) => e.packageItemId == item.id)
-            .toList();
-        // The live holding entry carries the qty, the hold reason and the
-        // officer; fall back to the item itself when there is none.
-        final held = itemEntries.where((e) => !e.isReturned).firstOrNull ??
-            (itemEntries.isNotEmpty ? itemEntries.first : null);
+      final itemEntries =
+          pkg.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+      // The live holding entry carries the qty, the hold reason and the
+      // officer; fall back to the item itself when there is none.
+      final held = itemEntries.where((e) => !e.isReturned).firstOrNull ??
+          (itemEntries.isNotEmpty ? itemEntries.first : null);
 
-        rows.add(_DetainRow(
-          package: package,
-          item: item,
-          entry: held,
-          qty: held?.itemCount ?? item.quantity,
-          date: held?.admittedAt ?? package.entryDate ?? package.createdAt,
-          // The Post Status Activity, which is what `hold_reason` stores —
-          // the filter matches on it, so the fallback must be spelled exactly
-          // as `kDetainActivities` does or it could never be selected.
-          reason: (held?.holdReason.trim().isNotEmpty ?? false)
-              ? held!.holdReason.trim()
-              : ((item.reasons?.trim().isNotEmpty ?? false)
-                  ? item.reasons!.trim()
-                  : 'Pending Inquiry'),
-          officer: held?.admittedByName ?? held?.admittedByBadge ?? '—',
-        ));
-      }
+      out.add(_DetainRow(
+        package: pkg,
+        item: item,
+        entry: held,
+        qty: held?.itemCount ?? item.quantity,
+        date: held?.admittedAt ?? pkg.entryDate ?? pkg.createdAt,
+        // ⚠️ The Post Status Activity, which is what `hold_reason` stores --
+        // the filter matches on it, so the fallback must be spelled exactly
+        // as kDetainActivities does or it could never be selected.
+        reason: (held?.holdReason.trim().isNotEmpty ?? false)
+            ? held!.holdReason.trim()
+            : ((item.reasons?.trim().isNotEmpty ?? false)
+                ? item.reasons!.trim()
+                : 'Pending Inquiry'),
+        officer: held?.admittedByName ?? held?.admittedByBadge ?? '—',
+      ));
     }
-    rows.sort((a, b) => b.date.compareTo(a.date));
-    return rows;
+    return out;
   }
 
   @override
   Widget build(BuildContext context) {
-    final packages = ref.watch(livePackagesProvider);
+    // ⚠️ This page had NO pager at all: it fetched every package in the yard
+    // and handed the whole list to DataTable2. Every row-selection rule now
+    // lives in the `held_goods_rows` view (postgres/25, kind DETAINED), so a
+    // page can be asked for by number.
+    final query = HeldGoodsQuery(
+      kind: 'DETAINED',
+      page: _page,
+      search: ref.watch(detainedPackageSearchProvider),
+      dateStart: ref.watch(detainedPackageDateRangeProvider)?.start,
+      dateEnd: ref.watch(detainedPackageDateRangeProvider)?.end,
+      year: _yearFilter,
+      activity: ref.watch(detainedPackageActivityProvider),
+    );
+    final packages = ref.watch(heldGoodsPageProvider(query));
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    final search = ref.watch(detainedPackageSearchProvider);
     // Appeal rulings, keyed by item id. A decision releases the goods early;
     // a hold keeps them frozen past the deadline.
     final appealOutcomes =
@@ -183,8 +213,8 @@ class _DetainedPackagesScreenState
             const <String, ItemAppealOutcome>{};
     final dateRange = ref.watch(detainedPackageDateRangeProvider);
     final activity = ref.watch(detainedPackageActivityProvider);
-    final sentKeys =
-        ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
+    // ⚠️ Items already sent to Central Disposal are excluded by the QUERY
+    // now (`sent = false` on the view), not by a set held here.
 
     return AppShell(
       currentRoute: '/detained-packages',
@@ -196,119 +226,47 @@ class _DetainedPackagesScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Header ──
-              SizedBox(
-                width: double.infinity,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  runSpacing: 16,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Detained Goods',
-                            style: Theme.of(context).textTheme.headlineLarge),
-                        Text(
-                            'Goods held under inquiry — decide their outcome or '
-                            'send them for sale or destruction',
-                            style:
-                                TextStyle(color: context.colors.textSecondary)),
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final pkgs = ref.watch(livePackagesProvider);
-                            final sk = ref
-                                    .watch(sentAbandonedOtherFpKeysProvider)
-                                    .valueOrNull ??
-                                {};
-                            final outcomes = ref
-                                    .watch(allItemAppealOutcomesProvider)
-                                    .valueOrNull ??
-                                const <String, ItemAppealOutcome>{};
-                            return pkgs.when(
-                              data: (list) {
-                                // Count the SAME rows the table renders, so the
-                                // header always agrees with the list below.
-                                final rows = _buildRows(list, sentKeys: sk);
-                                final actionable = rows
-                                    .where((r) =>
-                                        _isActionable(r, outcomes[r.item.id]))
-                                    .length;
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _DetainStatChip(
-                                        label: 'Total',
-                                        value: '${rows.length}',
-                                        color: context.colors.accentLightBlue),
-                                    const Gap(8),
-                                    _DetainStatChip(
-                                        label: 'In Appeal',
-                                        value: '${rows.length - actionable}',
-                                        color: context.colors.warningAmber),
-                                    const Gap(8),
-                                    _DetainStatChip(
-                                        label: 'Actionable',
-                                        value: '$actionable',
-                                        color: context.colors.successGreen),
-                                    const Gap(16),
-                                    // Enabled once ANY row is actionable: the
-                                    // window passed, or an appeal decision is
-                                    // in. Opens the same bulk dialog the
-                                    // Forfeited page uses — detained goods now
-                                    // appear in it as `source='detain'` rows.
-                                    ElevatedButton.icon(
-                                      icon: const Icon(
-                                          Icons.local_shipping_rounded,
-                                          size: 16),
-                                      label:
-                                          const Text('Send Disposal Request'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: actionable > 0
-                                            ? context.colors.primaryGold
-                                            : context.colors.textMuted
-                                                .withOpacity(0.2),
-                                        foregroundColor: actionable > 0
-                                            ? Colors.white
-                                            : context.colors.textMuted,
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 20, vertical: 14),
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(8)),
-                                        elevation: actionable > 0 ? 2 : 0,
-                                      ),
-                                      onPressed: actionable > 0
-                                          ? () => showDialog(
-                                                context: context,
-                                                builder: (ctx) =>
-                                                    DisposalRequestDialog(
-                                                  onSubmitted: () {
-                                                    ref.invalidate(
-                                                        livePackagesProvider);
-                                                    ref.invalidate(
-                                                        requestableForfeitedPackagesProvider);
-                                                  },
-                                                ),
-                                              )
-                                          : null,
-                                    ),
-                                  ],
-                                );
-                              },
-                              loading: () => const SizedBox(),
-                              error: (_, __) => const SizedBox(),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              Consumer(
+                builder: (context, ref, child) {
+                  // ⚠️ Counted in SQL, by their own query. Derived from one
+                  // page they would contradict the header they sit in;
+                  // derived from the whole list they would undo the paging.
+                  final counts =
+                      ref.watch(heldGoodsCountsProvider('DETAINED')).valueOrNull ??
+                          (total: 0, inAppeal: 0, actionable: 0);
+                  final actionable = counts.actionable;
+                  return DisposalPageHeader(
+                    title: 'Detained Goods',
+                    subtitle: 'Goods held under inquiry — decide their outcome '
+                        'or send them for sale or destruction',
+                    trailing: [
+                      _DetainStatChip(
+                          label: 'Total',
+                          value: '${counts.total}',
+                          color: context.colors.accentLightBlue),
+                      _DetainStatChip(
+                          label: 'In Appeal',
+                          value: '${counts.inAppeal}',
+                          color: context.colors.warningAmber),
+                      _DetainStatChip(
+                          label: 'Actionable',
+                          value: '$actionable',
+                          color: context.colors.successGreen),
+                      // Enabled once ANY row is actionable: the window passed,
+                      // or an appeal decision is in. Opens the same bulk
+                      // dialog the Forfeited page uses — detained goods appear
+                      // in it as `source='detain'` rows.
+                      SendDisposalRequestButton(
+                        actionable: actionable,
+                        onSubmitted: () {
+                          ref.invalidate(livePackagesProvider);
+                          ref.invalidate(
+                              requestableForfeitedPackagesProvider);
+                        },
+                      ),
+                    ],
+                  );
+                },
               ).animate().fadeIn(),
               const Gap(20),
 
@@ -465,60 +423,25 @@ class _DetainedPackagesScreenState
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<DateTimeRange>(
-                              context: context,
-                              builder: (_) => custom.DateRangePickerDialog(
-                                  initialRange: dateRange),
-                            );
-                            if (picked != null) {
-                              ref
-                                  .read(
-                                      detainedPackageDateRangeProvider.notifier)
-                                  .state = picked;
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: dateRange != null
-                                  ? context.colors.primaryGold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            dateRange == null
-                                ? 'Date Range'
-                                : '${DateFormat('yyyy-MM-dd').format(dateRange.start)}'
-                                    ' → '
-                                    '${DateFormat('yyyy-MM-dd').format(dateRange.end)}',
-                            style: TextStyle(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.textSecondary,
-                                fontWeight: dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => ref
+                        DateFilterButton(
+                          dateRange: dateRange,
+                          year: _yearFilter,
+                          // ⚠️ Its own query: one page of twenty rows would
+                          // offer only the years currently visible.
+                          years: srYears(ref
+                                  .watch(heldGoodsYearsProvider('DETAINED'))
+                                  .valueOrNull ??
+                              const <String>[]),
+                          onChanged: (range, year) {
+                            ref
                                 .read(detainedPackageDateRangeProvider.notifier)
-                                .state = null,
-                          ),
+                                .state = range;
+                            setState(() {
+                              _yearFilter = year;
+                              _page = 0;
+                            });
+                          },
+                        ),
                         const SizedBox(width: 8),
                         StyledDropdownButton<String>(
                           value: activity == 'all' ? null : activity,
@@ -535,16 +458,7 @@ class _DetainedPackagesScreenState
                               .read(detainedPackageActivityProvider.notifier)
                               .state = v ?? 'all',
                         ),
-                        const SizedBox(width: 8),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          years: srYears(_buildRows(
-                                  packages.valueOrNull ??
-                                      const <PackageModel>[],
-                                  sentKeys: sentKeys)
-                              .map((r) => r.package.srNumber)),
-                          onChanged: (v) => setState(() => _yearFilter = v),
-                        ),
+
                       ],
                     ),
                   ],
@@ -562,40 +476,24 @@ class _DetainedPackagesScreenState
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final rows =
-                        _buildRows(list, sentKeys: sentKeys).where((row) {
-                      if (search.isNotEmpty) {
-                        final s = search.toLowerCase();
-                        if (!row.package.srNumber.toLowerCase().contains(s) &&
-                            !row.package.consigneeName
-                                .toLowerCase()
-                                .contains(s) &&
-                            !row.itemName.toLowerCase().contains(s)) {
-                          return false;
-                        }
-                      }
-                      if (dateRange != null) {
-                        final startOfDay = DateTime(dateRange.start.year,
-                            dateRange.start.month, dateRange.start.day);
-                        final endOfDay = DateTime(dateRange.end.year,
-                            dateRange.end.month, dateRange.end.day, 23, 59, 59);
-                        if (row.date.isBefore(startOfDay) ||
-                            row.date.isAfter(endOfDay)) {
-                          return false;
-                        }
-                      }
-                      if (activity != 'all' && row.reason != activity) {
-                        return false;
-                      }
-                      if (!srYearMatches(row.package.srNumber, _yearFilter)) {
-                        return false;
-                      }
-                      return true;
-                    }).toList();
+                      onRetry: () =>
+                          ref.refresh(heldGoodsPageProvider(query))),
+                  data: (result) {
+                    // Filtered, sorted and paged by the database. Nothing left
+                    // to narrow here.
+                    final rows = _rowsFrom(result);
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
 
-                    return Container(
+                    return Column(children: [
+                      Expanded(
+                        child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
                           color: context.colors.cardDark,
@@ -625,9 +523,9 @@ class _DetainedPackagesScreenState
                                 size: ColumnSize.S,
                                 fixedWidth: 110),
                             DataColumn2(
-                                label: Text('Qty'),
+                                label: Center(child: Text('No. of Goods')),
                                 size: ColumnSize.S,
-                                fixedWidth: 70),
+                                fixedWidth: 100),
                             DataColumn2(
                                 label: Text('Post Status Activity'),
                                 size: ColumnSize.M),
@@ -663,13 +561,8 @@ class _DetainedPackagesScreenState
                                       : '—',
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12))),
-                              DataCell(Center(child: Text('${row.qty}'))),
-                              DataCell(TooltipText(row.reason,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.colors.textSecondary,
-                                      fontSize: 12,
-                                      fontStyle: FontStyle.italic))),
+                              DataCell(QtyCell(item: row.item, overrideQty: row.qty)),
+                              DataCell(_PostStatusActivityChip(label: row.reason)),
                               DataCell(TooltipText(
                                   DateFormat('yyyy-MM-dd').format(row.date))),
                               DataCell(TooltipText(
@@ -687,7 +580,7 @@ class _DetainedPackagesScreenState
                                   icon: Icon(Icons.info_outline_rounded,
                                       color: context.colors.accentLightBlue,
                                       size: 18),
-                                  onPressed: () => showDialog(
+                                  onPressed: () => showAppDialog(
                                     context: context,
                                     builder: (_) => PackageDetailsDialog(
                                       package: row.package,
@@ -722,9 +615,19 @@ class _DetainedPackagesScreenState
                         ),
                       ),
                     )
-                        .animate()
-                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
-                        .fadeIn();
+                            .animate()
+                            .slideY(
+                                begin: 0.1, duration: 400.ms, delay: 300.ms)
+                            .fadeIn(),
+                      ),
+                      TablePager(
+                        // The database's count for this filter.
+                        total: result.total,
+                        page: _page.clamp(0, maxPage),
+                        pageSize: kDispositionPageSize,
+                        onPageChanged: (p) => setState(() => _page = p),
+                      ),
+                    ]);
                   },
                 ),
               ),
@@ -798,6 +701,40 @@ class _DetainStatChip extends StatelessWidget {
               style:
                   TextStyle(color: context.colors.textSecondary, fontSize: 12)),
         ],
+      ),
+    );
+  }
+}
+
+class _PostStatusActivityChip extends StatelessWidget {
+  final String label;
+  const _PostStatusActivityChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty || label.trim() == '—') {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final color = context.colors.warningAmber;
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }

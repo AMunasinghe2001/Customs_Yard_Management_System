@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import '../core/theme.dart';
+import 'dialog_close_button.dart';
 import '../core/providers.dart';
 import '../models/models.dart';
 
@@ -53,16 +54,7 @@ class _WarehouseSelectionDialogState
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: Icon(
-                  Icons.close_rounded,
-                  color: context.colors.textMuted,
-                  size: 20,
-                ),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
+              const DialogCloseButton(),
             ],
           ),
           const Gap(4),

@@ -23,7 +23,10 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/warehouse_selection_dialog.dart';
 import '../../widgets/print_barcode_dialog.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
+import '../../core/app_log.dart';
+import '../../core/idle_lock.dart';
+import '../../widgets/app_dialog.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
   const InspectionScreen({super.key});
@@ -32,9 +35,14 @@ class InspectionScreen extends ConsumerStatefulWidget {
 }
 
 class _InspectionScreenState extends ConsumerState<InspectionScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, LockRestorableForm<InspectionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _srNumberCtrl = TextEditingController();
+  // ⚠️ So picking a Register (SR/OA) can hand focus straight to the number
+  // field afterwards. Without this the officer chose SR or OA, then had to
+  // click into the number box separately before they could type or fix it —
+  // two clicks to do one thing.
+  final _srNumberFocus = FocusNode();
   // Registration mode: 'new' = a fresh SR entry (default), 'old' = migrating a
   // legacy package — captures its previous SR number in [_oldSrNumberCtrl].
   String _entryMode = 'new';
@@ -43,6 +51,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   // yard; the prefix of the generated SR number follows this selection.
   // Normalised through yardByCode so it always matches a dropdown item.
   String _selectedYard = yardByCode(AppSession.currentYard).code;
+
+  /// Which register this number is minted from -- SR or OA. Both share the
+  /// yard's single running serial, so switching this keeps the serial already
+  /// on screen and only rewrites the register segment.
+  String _srDocType = kDefaultSrDocType;
   final _caseNumberCtrl = TextEditingController();
   final _originCtrl = TextEditingController();
   final _valueCtrl = TextEditingController();
@@ -64,6 +77,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   final _descCtrl = TextEditingController();
   final _reasonCtrlMain = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _formScrollController = ScrollController();
 
   final _dateMask = MaskTextInputFormatter(
     mask: '####-##-##',
@@ -104,6 +118,146 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   List<PackageItem>? _tempPackageItems;
   Key _resultPanelKey = UniqueKey();
 
+  // ── Surviving the idle lock ────────────────────────────────────────────
+  //
+  // ⚠️ This is the longest form in the app -- a dozen package fields plus a
+  // row of controllers per goods item -- so it is the one where losing the
+  // typing to a five-minute lock actually costs an officer their afternoon.
+
+  @override
+  String get formStateId => '/inspection';
+
+  @override
+  Map<String, dynamic> readFormState() => {
+        'sr': _srNumberCtrl.text,
+        'oldSr': _oldSrNumberCtrl.text,
+        'entryMode': _entryMode,
+        'yard': _selectedYard,
+        'docType': _srDocType,
+        'case': _caseNumberCtrl.text,
+        'origin': _originCtrl.text,
+        'value': _valueCtrl.text,
+        'weight': _weightCtrl.text,
+        'consignee': _consigneeCtrl.text,
+        'consigneeNic': _consigneeNicCtrl.text,
+        'consigneePhone': _consigneePhoneCtrl.text,
+        'declarant': _declarantCtrl.text,
+        'cusdec': _cusdecCtrl.text,
+        'cusdecDate': _cusdecDateCtrl.text,
+        'entryDate': _entryDateCtrl.text,
+        'container': _containerNumberCtrl.text,
+        'deposit': _destroyingDepositCtrl.text,
+        'desc': _descCtrl.text,
+        'reason': _reasonCtrlMain.text,
+        'notes': _notesCtrl.text,
+        'isUpdate': _isUpdate,
+        'loadedSr': _loadedSrNumber,
+        'items': [
+          for (final r in _items)
+            {
+              'itemId': r.itemId,
+              'name': r.nameCtrl.text,
+              'goodsDesc': r.goodsDescriptionCtrl.text,
+              'qty': r.qtyCtrl.text,
+              'unit': r.unitOfMeasureCtrl.text,
+              'unitOther': r.unitOtherCtrl.text,
+              'innerUnit': r.innerUnitCtrl.text,
+              'innerQty': r.innerQtyCtrl.text,
+              'value': r.valueCtrl.text,
+              'hs': r.hsCodeCtrl.text,
+              'category': r.categoryCtrl.text,
+              'status': r.status,
+              'nature': r.nature,
+              'otherStatus': r.otherStatusCtrl.text,
+              'reasons': r.selectedReasons,
+            }
+        ],
+      };
+
+  @override
+  void writeFormState(Map<String, dynamic> saved) {
+    String str(Object? v) => v?.toString() ?? '';
+    setState(() {
+      _srNumberCtrl.text = str(saved['sr']);
+      _oldSrNumberCtrl.text = str(saved['oldSr']);
+      _entryMode = str(saved['entryMode']).isEmpty ? 'new' : str(saved['entryMode']);
+      _selectedYard = str(saved['yard']).isEmpty ? _selectedYard : str(saved['yard']);
+      _srDocType =
+          str(saved['docType']).isEmpty ? kDefaultSrDocType : str(saved['docType']);
+      _caseNumberCtrl.text = str(saved['case']);
+      _originCtrl.text = str(saved['origin']);
+      _valueCtrl.text = str(saved['value']);
+      _weightCtrl.text = str(saved['weight']);
+      _consigneeCtrl.text = str(saved['consignee']);
+      _consigneeNicCtrl.text = str(saved['consigneeNic']);
+      _consigneePhoneCtrl.text = str(saved['consigneePhone']);
+      _declarantCtrl.text = str(saved['declarant']);
+      _cusdecCtrl.text = str(saved['cusdec']);
+      _cusdecDateCtrl.text = str(saved['cusdecDate']);
+      if (str(saved['entryDate']).isNotEmpty) {
+        _entryDateCtrl.text = str(saved['entryDate']);
+      }
+      _containerNumberCtrl.text = str(saved['container']);
+      _destroyingDepositCtrl.text = str(saved['deposit']);
+      _descCtrl.text = str(saved['desc']);
+      _reasonCtrlMain.text = str(saved['reason']);
+      _notesCtrl.text = str(saved['notes']);
+      _isUpdate = saved['isUpdate'] == true;
+      _loadedSrNumber = saved['loadedSr'] as String?;
+
+      final rows = (saved['items'] as List?) ?? const [];
+      if (rows.isNotEmpty) {
+        // ⚠️ Rebuilt from scratch, not merged: the officer may have added or
+        // removed goods rows before the lock, so the saved list is the truth
+        // about how many there were.
+        for (final r in _items) {
+          r.nameCtrl.dispose();
+          r.goodsDescriptionCtrl.dispose();
+          r.qtyCtrl.dispose();
+          r.unitOfMeasureCtrl.dispose();
+          r.unitOtherCtrl.dispose();
+          r.innerUnitCtrl.dispose();
+          r.innerQtyCtrl.dispose();
+          r.valueCtrl.dispose();
+          r.hsCodeCtrl.dispose();
+          r.categoryCtrl.dispose();
+          r.otherStatusCtrl.dispose();
+        }
+        _items
+          ..clear()
+          ..addAll([
+            for (final raw in rows)
+              () {
+                final m = (raw as Map).cast<String, dynamic>();
+                final row = _ItemRow();
+                row.itemId = m['itemId'] as String?;
+                row.nameCtrl.text = str(m['name']);
+                row.goodsDescriptionCtrl.text = str(m['goodsDesc']);
+                row.qtyCtrl.text = str(m['qty']);
+                row.unitOfMeasureCtrl.text = str(m['unit']);
+                row.unitOtherCtrl.text = str(m['unitOther']);
+                row.innerUnitCtrl.text = str(m['innerUnit']);
+                row.innerQtyCtrl.text = str(m['innerQty']);
+                row.valueCtrl.text = str(m['value']);
+                row.hsCodeCtrl.text = str(m['hs']);
+                row.categoryCtrl.text = str(m['category']);
+                row.status = str(m['status']).isEmpty ? 'Detain' : str(m['status']);
+                row.nature =
+                    str(m['nature']).isEmpty ? kNatureNormal : str(m['nature']);
+                row.otherStatusCtrl.text = str(m['otherStatus']);
+                final rs = (m['reasons'] as List?) ?? const [];
+                row.selectedReasons
+                  ..clear()
+                  ..addAll(rs.isEmpty
+                      ? <String?>[null]
+                      : rs.map((e) => e as String?));
+                return row;
+              }()
+          ]);
+      }
+    });
+  }
+
   /// Fetch an existing package by SR number and populate the form
   Future<void> _loadBySrNumber() async {
     final sr = _srNumberCtrl.text.trim();
@@ -117,10 +271,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           _isUpdate = false;
           _loadedSrNumber = null;
         });
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('SR "$sr" not found – filling as new entry.'),
-              backgroundColor: context.colors.customsBlue));
+        if (mounted) {
+          context.showInfo('SR "$sr" not found – filling as new entry.');
+        }
         return;
       }
       _originCtrl.text = pkg.originCountry ?? '';
@@ -142,6 +295,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _notesCtrl.text = pkg.notes ?? '';
       _oldSrNumberCtrl.text = pkg.oldSrNumber ?? '';
       setState(() {
+        // Follow the loaded number's own register, so editing an OA package
+        // does not show "SR" beside an OA number.
+        _srDocType = docTypeOfSrNumber(pkg.srNumber) ?? _srDocType;
         _entryMode = (pkg.oldSrNumber != null && pkg.oldSrNumber!.isNotEmpty)
             ? 'old'
             : 'new';
@@ -150,6 +306,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             : pkg.status;
         _isUpdate = true;
         _loadedSrNumber = sr;
+        _savedPackageId = pkg.id;
         _items.clear();
         if (pkg.items != null && pkg.items!.isNotEmpty) {
           for (final item in pkg.items!) {
@@ -164,7 +321,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               row.unitOfMeasureCtrl.text = 'Cartons';
               row.qtyCtrl.text = (item.innerQuantity ?? 1).toString();
               row.innerUnitCtrl.text = item.unitOfMeasure;
-              row.innerQtyCtrl.text = item.quantity.toString();
+              // ⚠️ Back OUT of the total, since `quantity` now holds
+              // cartons × per-carton. Showing the total here would make the
+              // form read "20 Cartons of 1176 Pieces each" and, on the next
+              // save, multiply it again.
+              final cartons = item.innerQuantity ?? 1;
+              row.innerQtyCtrl.text =
+                  (cartons > 0 ? (item.quantity ~/ cartons) : item.quantity)
+                      .toString();
             } else {
               row.qtyCtrl.text = item.quantity.toString();
               row.unitOfMeasureCtrl.text = item.unitOfMeasure;
@@ -210,15 +374,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           _items.add(_ItemRow());
         }
       });
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('SR "$sr" loaded – you can edit and save.'),
-            backgroundColor: context.colors.successGreen));
+      if (mounted) context.showSuccess('SR "$sr" loaded – you can edit and save.');
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Lookup error: $e'),
-            backgroundColor: context.colors.dangerRed));
+      if (mounted) context.showError('Lookup error: $e');
     } finally {
       setState(() => _isLookingUp = false);
     }
@@ -230,7 +388,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (lastDate != null && initial.isAfter(lastDate)) {
       initial = lastDate;
     }
-    final DateTime? picked = await showDialog<DateTime>(
+    final DateTime? picked = await showAppDialog<DateTime>(
       context: context,
       builder: (_) =>
           OneTapDatePicker(initialDate: initial, lastDate: lastDate),
@@ -323,13 +481,44 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     try {
       final sr = await ref
           .read(packageServiceProvider)
-          .getNextSrNumber(yard: _selectedYard);
+          .getNextSrNumber(yard: _selectedYard, docType: _srDocType);
       setState(() {
         _srNumberCtrl.text = sr;
       });
     } catch (e) {
-      print('Error generating SR: $e');
+      AppLog.warn('SR generation failed', error: e, tag: 'inspection');
     }
+  }
+
+  /// Fills a starting point for "Old SR Number" when Old Entry is chosen.
+  ///
+  /// ⚠️ NOT a real serial the way [_generateNextSr] mints one. The old number
+  /// belongs to a PAST register this app has no record of, so there is
+  /// nothing to count against — only the yard and the current year are known
+  /// for certain. This fills in `<YARD PREFIX>/SR/01/<CURRENT YEAR>` as a
+  /// template the officer edits down to the real number, using the signed-in
+  /// yard so the prefix is never typed by hand.
+  ///
+  /// The field stays fully editable and this never runs over something the
+  /// officer already typed — switching modes back and forth, or loading an
+  /// existing package, must not erase a real old number in favour of a guess.
+  void _prefillOldSrTemplate() {
+    if (_oldSrNumberCtrl.text.trim().isNotEmpty) return;
+    final prefix = yardSrPrefix(_selectedYard ?? AppSession.currentYard);
+    if (prefix.isEmpty) return;
+    // ⚠️ composeSrNumber, the SAME builder the New Entry number comes from —
+    // not a hand-assembled string. The first version left the directorate
+    // segment off (`GL1/SR/01/2026` instead of `CED/GL1/SR/01/2026`), so the
+    // template did not match the shape the officer sees everywhere else on
+    // this form, or the shape `_loadBySrNumber` and the duplicate-SR check
+    // actually expect. Reusing the builder means the two can never drift
+    // apart again.
+    _oldSrNumberCtrl.text = composeSrNumber(
+      yardPrefix: prefix,
+      serial: 1,
+      year: DateTime.now().year,
+      directorateCode: AppSession.currentDirectorate,
+    );
   }
 
   @override
@@ -337,6 +526,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
     _srNumberCtrl.dispose();
+    _srNumberFocus.dispose();
     _oldSrNumberCtrl.dispose();
     _originCtrl.dispose();
     _valueCtrl.dispose();
@@ -353,6 +543,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _descCtrl.dispose();
     _reasonCtrlMain.dispose();
     _notesCtrl.dispose();
+    _formScrollController.dispose();
     super.dispose();
   }
 
@@ -361,7 +552,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
     if (!_formKey.currentState!.validate()) {
-      _scheduleValidationHide();
+      _formScrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
+      if (mounted) {
+        context.showError(
+            'Please fill all required fields highlighted in red above.');
+      }
       return;
     }
     // Duplicate-SR guard: reject an SR that already exists UNLESS we're editing
@@ -406,11 +605,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 goodsDescription: r.goodsDescriptionCtrl.text.trim().isEmpty
                     ? null
                     : r.goodsDescriptionCtrl.text.trim(),
+                nature: r.nature,
                 // Cartons are stored "inverted": the operational quantity/unit
                 // become the INNER contents (e.g. 1176 Pieces), and the outer
                 // packaging (20 Cartons) is kept in innerUnit/innerQuantity.
+                //
+                // ⚠️ CARTONS × PER-CARTON, not the per-carton figure alone.
+                // `innerQtyCtrl` is "how many in ONE carton" -- the form's own
+                // label says so -- so storing it raw recorded 20 cartons of 60
+                // pieces as 60 pieces. Every count downstream reads `quantity`:
+                // the warehouse charge, the zone capacity, the Qty column on
+                // every table. They were all short by the carton count.
                 quantity: r.unitOfMeasureCtrl.text == 'Cartons'
-                    ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                    ? ((int.tryParse(r.qtyCtrl.text) ?? 1) *
+                        (int.tryParse(r.innerQtyCtrl.text) ?? 1))
                     : (int.tryParse(r.qtyCtrl.text) ?? 1),
                 unitOfMeasure: r.unitOfMeasureCtrl.text == 'Cartons'
                     ? r.innerUnitCtrl.text
@@ -441,8 +649,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               ))
           .toList();
 
+      final pkgId = (_isUpdate && _loadedSrNumber == _srNumberCtrl.text.trim())
+          ? (_savedPackageId ?? '')
+          : '';
+
       final pkg = PackageModel(
-        id: '',
+        id: pkgId,
         srNumber: _srNumberCtrl.text.trim(),
         // Old Entry mode: keep the legacy SR number; NULL for new entries.
         oldSrNumber:
@@ -486,14 +698,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _violations = [];
         _resultPanelKey = UniqueKey();
         _suggestedWarehouseId = null;
-        _savedPackageId = null;
       });
       _tabController.animateTo(1);
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: context.colors.dangerRed));
+      if (mounted) showErrorSnack(context, e);
     } finally {
       setState(() => _isChecking = false);
     }
@@ -503,6 +711,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _formKey.currentState?.reset();
     _srNumberCtrl.clear();
     _oldSrNumberCtrl.clear();
+    _srDocType = kDefaultSrDocType;
     _entryMode = 'new';
     _originCtrl.clear();
     _valueCtrl.clear();
@@ -535,6 +744,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // Fresh form — don't show validation errors until the user tries to
       // submit again (they linger as red "Required" from the previous entry).
       _showValidationErrors = false;
+      _isUpdate = false;
+      _loadedSrNumber = null;
     });
     _generateNextSr();
   }
@@ -605,11 +816,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     if (idx == 1 && !canGoToWarehouse) {
                       _checkPackage();
                     } else if (idx == 2 && !canGoToQr) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: const Text(
-                            'Please complete warehouse confirmation first'),
-                        backgroundColor: context.colors.heldOrange,
-                      ));
+                      context.showWarning(
+                          'Please complete warehouse confirmation first');
                     }
                   },
                   tabs: [
@@ -693,6 +901,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 controller: _tabController,
                 children: [
                   SingleChildScrollView(
+                    controller: _formScrollController,
                     padding: const EdgeInsets.all(28),
                     child: Form(
                       key: _formKey,
@@ -710,48 +919,97 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 StyledDropdownFormField<String>(
                                   label: 'Registration Type',
                                   menuWidth: 260,
-                                  // Match the roomier (non-dense) section
-                                  // fields below (Old SR Number / SR Number).
-                                  isDense: false,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 16),
-                                  valueStyle: TextStyle(
-                                      fontSize: 16,
-                                      color: context.colors.textPrimary),
-                                  labelStyle: const TextStyle(fontSize: 14),
+                                  // ⚠️ No isDense/valueStyle override. These
+                                  // made this dropdown taller and its text
+                                  // bigger than every field below it, so one
+                                  // form showed three different control
+                                  // sizes. The theme sets the height once.
                                   value: _entryMode,
                                   options: const [
                                     StyledDropdownOption('new', 'New Entry'),
                                     StyledDropdownOption('old', 'Old Entry'),
                                   ],
-                                  onChanged: (v) =>
-                                      setState(() => _entryMode = v ?? 'new'),
+                                  onChanged: (v) {
+                                    setState(() => _entryMode = v ?? 'new');
+                                    // Give the officer a starting point rather
+                                    // than a blank required field — see
+                                    // _prefillOldSrTemplate for why this is a
+                                    // template, not a generated serial.
+                                    if (_entryMode == 'old') {
+                                      _prefillOldSrTemplate();
+                                    }
+                                  },
                                 ),
                                 const Gap(12),
                                 if (_isUpdate)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 8),
+                                        horizontal: 14, vertical: 8),
                                     margin: const EdgeInsets.only(bottom: 12),
                                     decoration: BoxDecoration(
                                       color: context.colors.primaryGold
-                                          .withOpacity(0.1),
+                                          .withOpacity(0.12),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                           color: context.colors.primaryGold
                                               .withOpacity(0.4)),
                                     ),
-                                    child: Row(children: [
-                                      Icon(Icons.edit_rounded,
-                                          color: context.colors.primaryGold,
-                                          size: 16),
-                                      const Gap(8),
-                                      Text(
-                                          'Editing existing SR entry – changes will update the record.',
-                                          style: TextStyle(
-                                              color: context.colors.primaryGold,
-                                              fontSize: 13)),
-                                    ]),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit_rounded,
+                                            color: context.colors.primaryGold,
+                                            size: 16),
+                                        const Gap(8),
+                                        Expanded(
+                                          child: Text(
+                                              'Editing existing SR (${_loadedSrNumber ?? ''}) – changes will update the record.',
+                                              style: TextStyle(
+                                                  color: context
+                                                      .colors.primaryGold,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500)),
+                                        ),
+                                        const Gap(8),
+                                        InkWell(
+                                          onTap: _reset,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: context.colors.dangerRed
+                                                  .withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                  color: context.colors.dangerRed
+                                                      .withOpacity(0.4)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.close_rounded,
+                                                    size: 14,
+                                                    color: context
+                                                        .colors.dangerRed),
+                                                const Gap(4),
+                                                Text(
+                                                  'Cancel Edit',
+                                                  style: TextStyle(
+                                                    color: context
+                                                        .colors.dangerRed,
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -777,20 +1035,75 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                           // yard under two directorates would
                                           // otherwise give no clue which one
                                           // this account writes under.
-                                          labelText:
-                                              AppSession.currentDirectorate ==
-                                                      null
-                                                  ? 'Yard'
-                                                  : 'Yard · '
-                                                      '${directorateSrPrefix(AppSession.currentDirectorate)}',
-                                        ).copyWith(
-                                          fillColor:
-                                              Theme.of(context).brightness ==
-                                                      Brightness.dark
-                                                  ? Colors.grey.shade900
-                                                  : Colors.grey.shade100,
-                                          filled: true,
+                                          labelText: AppSession
+                                                      .currentDirectorate ==
+                                                  null
+                                              ? 'Yard'
+                                              : 'Yard · '
+                                                  '${directorateSrPrefix(AppSession.currentDirectorate)}',
                                         ),
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    // Which register the number comes from.
+                                    // SR and OA run INDEPENDENT serials, so
+                                    // changing this re-mints the number from
+                                    // that register's own count instead of
+                                    // continuing the other one's.
+                                    SizedBox(
+                                      width: 108,
+                                      child: StyledDropdownFormField<String>(
+                                        label: 'Register',
+                                        menuWidth: 140,
+                                        value: _srDocType,
+                                        options: [
+                                          for (final t in kSrDocTypes)
+                                            StyledDropdownOption(t, t),
+                                        ],
+                                        onChanged: (v) {
+                                          // Editing an existing package must
+                                          // not re-mint its number.
+                                          if (_isUpdate ||
+                                              v == null ||
+                                              v == _srDocType) {
+                                            return;
+                                          }
+                                          setState(() => _srDocType = v);
+                                          // Keep the serial the officer is
+                                          // already looking at: this is a
+                                          // correction to the number's
+                                          // REGISTER, not a request for a
+                                          // different number. Only when there
+                                          // is nothing to rewrite do we mint
+                                          // one from the new register's count.
+                                          final swapped = withSrDocType(
+                                              _srNumberCtrl.text, v);
+                                          if (swapped != null) {
+                                            setState(() =>
+                                                _srNumberCtrl.text = swapped);
+                                          } else {
+                                            _generateNextSr();
+                                          }
+                                          // ⚠️ Hand focus to the number field
+                                          // right after the pick, so the
+                                          // officer can start typing without
+                                          // an extra click into the box.
+                                          // Selects the current text too, so
+                                          // typing replaces the generated
+                                          // number rather than landing in the
+                                          // middle of it.
+                                          WidgetsBinding.instance
+                                              .addPostFrameCallback((_) {
+                                            if (!mounted) return;
+                                            _srNumberFocus.requestFocus();
+                                            _srNumberCtrl.selection =
+                                                TextSelection(
+                                              baseOffset: 0,
+                                              extentOffset:
+                                                  _srNumberCtrl.text.length,
+                                            );
+                                          });
+                                        },
                                       ),
                                     ),
                                     const Gap(12),
@@ -798,6 +1111,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                       flex: 2,
                                       child: TextFormField(
                                         controller: _srNumberCtrl,
+                                        focusNode: _srNumberFocus,
                                         inputFormatters: [
                                           FilteringTextInputFormatter.allow(
                                               RegExp(r'[a-zA-Z0-9/ ]')),
@@ -806,33 +1120,54 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                         decoration: _fieldDecoration(
                                           labelText: 'SR Number *',
                                           hintText:
-                                              'e.g. GL1/SR/01/2025 or GL1/MISC/187/2025',
-                                          suffixIcon: Tooltip(
-                                            message: isOfficer
-                                                ? 'Loading existing SR entries is restricted to administrators only'
-                                                : '',
-                                            child: IconButton(
-                                              icon: _isLookingUp
-                                                  ? SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                              strokeWidth: 2,
-                                                              color: context
-                                                                  .colors
-                                                                  .primaryGold))
-                                                  : Icon(Icons.search_rounded,
-                                                      color: isOfficer
-                                                          ? context
-                                                              .colors.textMuted
-                                                          : context.colors
-                                                              .primaryGold),
-                                              onPressed:
-                                                  (isOfficer || _isLookingUp)
+                                              'e.g. GL1/SR/01/2025 or GL1/OA/01/2025',
+                                          suffixIcon: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (_isUpdate)
+                                                Tooltip(
+                                                  message:
+                                                      'Cancel edit and reset to new entry',
+                                                  child: IconButton(
+                                                    icon: Icon(
+                                                        Icons.close_rounded,
+                                                        size: 18,
+                                                        color: context.colors
+                                                            .dangerRed),
+                                                    onPressed: _reset,
+                                                  ),
+                                                ),
+                                              Tooltip(
+                                                message: isOfficer
+                                                    ? 'Loading existing SR entries is restricted to administrators only'
+                                                    : 'Search and load SR entry',
+                                                child: IconButton(
+                                                  icon: _isLookingUp
+                                                      ? SizedBox(
+                                                          width: 16,
+                                                          height: 16,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                                  strokeWidth:
+                                                                      2,
+                                                                  color: context
+                                                                      .colors
+                                                                      .primaryGold))
+                                                      : Icon(
+                                                          Icons.search_rounded,
+                                                          color: isOfficer
+                                                              ? context.colors
+                                                                  .textMuted
+                                                                  : context
+                                                                      .colors
+                                                                      .primaryGold),
+                                                  onPressed: (isOfficer ||
+                                                          _isLookingUp)
                                                       ? null
                                                       : _loadBySrNumber,
-                                            ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         validator: _requiredValidator,
@@ -848,19 +1183,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 const Gap(16),
                                 Row(children: [
                                   Expanded(
-                                      child: _CusdecAutocompleteField(
+                                      child: TextFormField(
                                           controller: _cusdecCtrl,
                                           decoration: _fieldDecoration(
                                               labelText: 'Cusdec No *'),
-                                          validator: _requiredValidator)),
+                                          validator: _requiredValidator,
+                                          textCapitalization:
+                                              TextCapitalization.characters)),
                                   const Gap(12),
                                   Expanded(
                                       child: TextFormField(
                                           controller: _cusdecDateCtrl,
-                                          readOnly: true,
-                                          onTap: () => _selectDate(
-                                              _cusdecDateCtrl,
-                                              lastDate: DateTime.now()),
                                           inputFormatters: [
                                             MaskTextInputFormatter(
                                               mask: '####-##-##',
@@ -894,10 +1227,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   Expanded(
                                       child: TextFormField(
                                           controller: _entryDateCtrl,
-                                          readOnly: true,
-                                          onTap: () => _selectDate(
-                                              _entryDateCtrl,
-                                              lastDate: DateTime.now()),
                                           inputFormatters: [
                                             MaskTextInputFormatter(
                                               mask: '####-##-##',
@@ -1114,38 +1443,65 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               .slideY(
                                   begin: 0.1, duration: 400.ms, delay: 350.ms)
                               .fadeIn(),
-                          const Gap(24),
+                          const Gap(16),
+                          // ⚠️ The two actions read as a PAIR now.
+                          //
+                          // "Next" was a full-width 52px slab and "Reset" a
+                          // small default OutlinedButton beside it, so the
+                          // row looked like one button plus an afterthought.
+                          // Both are 44 high, both sized to their content,
+                          // and they sit at the end of the form the way the
+                          // dialogs' Cancel/Save pair does.
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Expanded(
-                                child: SizedBox(
-                                  height: 52,
-                                  child: Tooltip(
-                                    message: isOfficer
-                                        ? 'Package entry/updates are restricted to administrators only'
-                                        : '',
-                                    child: ElevatedButton.icon(
-                                      icon: _isChecking
-                                          ? SizedBox(
-                                              width: 18,
-                                              height: 18,
-                                              child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  color: Colors.white))
-                                          : const Icon(Icons.flash_on_rounded),
-                                      label: Text(_isChecking
-                                          ? 'Processing...'
-                                          : 'Next'),
-                                      onPressed:
-                                          _isChecking ? null : _checkPackage,
-                                    ),
+                              SizedBox(
+                                height: 44,
+                                child: OutlinedButton.icon(
+                                  onPressed: _isChecking ? null : _reset,
+                                  icon: const Icon(Icons.refresh_rounded,
+                                      size: 18),
+                                  label: const Text('Reset'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
                                   ),
                                 ),
                               ),
                               const Gap(12),
-                              OutlinedButton(
-                                  onPressed: _reset,
-                                  child: const Text('Reset')),
+                              SizedBox(
+                                height: 44,
+                                child: Tooltip(
+                                  message: isOfficer
+                                      ? 'Package entry/updates are restricted to administrators only'
+                                      : '',
+                                  child: ElevatedButton.icon(
+                                    icon: _isChecking
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white))
+                                        : const Icon(Icons.flash_on_rounded,
+                                            size: 18),
+                                    label: Text(
+                                        _isChecking ? 'Processing...' : 'Next'),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 28),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10)),
+                                    ),
+                                    onPressed:
+                                        _isChecking ? null : _checkPackage,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -1163,6 +1519,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     onPackageSaved: (pkg) {
                       setState(() {
                         _warehouseConfirmedPackage = pkg;
+                        // ⚠️ The package now EXISTS, so the form is editing it
+                        // rather than creating it. Without this the officer
+                        // could not go back to change a warehouse: Next ran
+                        // the duplicate-SR guard, found the package that this
+                        // very step had just written, and refused with "A
+                        // package with SR ... already exists" — blocking the
+                        // edit on the strength of its own save.
+                        _isUpdate = true;
+                        _loadedSrNumber = pkg.srNumber;
                       });
                       _tabController.animateTo(2);
                     },
@@ -1209,6 +1574,7 @@ class _ResultPanel extends ConsumerStatefulWidget {
 
 class _ResultPanelState extends ConsumerState<_ResultPanel> {
   final Map<int, String?> _itemWarehouseSelections = {};
+  final Map<int, String?> _itemZoneSelections = {};
   bool _isSending = false;
   bool _warehouseSent = false;
   PackageModel? _savedPackage;
@@ -1226,8 +1592,35 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
         final item = widget.tempPackageItems![i];
         final cat = cats?.where((c) => c.name == item.category).firstOrNull;
         _itemWarehouseSelections[i] = cat?.targetWarehouseId;
+        _itemZoneSelections[i] = cat?.targetZone;
       }
+      _loadExistingEntriesIfAny();
     }
+  }
+
+  Future<void> _loadExistingEntriesIfAny() async {
+    final pkgId = widget.tempPackageData?.id;
+    if (pkgId == null || pkgId.isEmpty) return;
+    try {
+      final existingEntries =
+          await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+      final pkgEntries =
+          existingEntries.where((e) => e.packageId == pkgId).toList();
+      if (pkgEntries.isEmpty || !mounted) return;
+
+      setState(() {
+        for (int i = 0; i < (widget.tempPackageItems?.length ?? 0); i++) {
+          final item = widget.tempPackageItems![i];
+          final entry = pkgEntries
+              .where((e) => e.packageItemId == item.id)
+              .firstOrNull;
+          if (entry != null) {
+            _itemWarehouseSelections[i] = entry.warehouseId;
+            _itemZoneSelections[i] = entry.zone;
+          }
+        }
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1250,6 +1643,46 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
   /// Items are grouped by the zone they would land in, because several goods
   /// of one SR can share a zone — checking them one at a time would let a
   /// consignment slip past that its total does not fit.
+  /// Why the SR number's register does not match the chosen warehouses, or
+  /// null when they agree.
+  ///
+  /// Open areas take `OA` numbers, covered warehouses take `SR`. Returns the
+  /// message to show the officer, naming the number it should be.
+  /// Where each item was headed before a capacity override sent it elsewhere,
+  /// keyed by item index. Empty unless the officer accepted an alternative.
+  final Map<int, ({String warehouseId, String? zone, String? reason})>
+      _displaced = {};
+
+  Future<String?> _findRegisterMismatch() async {
+    final data = widget.tempPackageData;
+    final items = widget.tempPackageItems;
+    if (data == null || items == null || items.isEmpty) return null;
+
+    final current = docTypeOfSrNumber(data.srNumber);
+    // A number whose shape names no register is not this check's business.
+    if (current == null) return null;
+
+    final warehouses = await ref.read(warehousesProvider.future);
+    for (int i = 0; i < items.length; i++) {
+      final id = _itemWarehouseSelections[i];
+      if (id == null) continue;
+      final w = warehouses.where((x) => x.id == id).firstOrNull;
+      if (w == null) continue;
+      final needed = docTypeOfWarehouse(code: w.code, name: w.name);
+      if (needed == current) continue;
+
+      final should = withSrDocType(data.srNumber, needed);
+      return needed == 'OA'
+          ? 'Goods ${i + 1} is going to ${w.name}, an open area, so the SR '
+              'number must be an OA number. Change the Register to OA '
+              '(it becomes $should) and try again.'
+          : 'Goods ${i + 1} is going to ${w.name}, a covered warehouse, so '
+              'the SR number must be an SR number. Change the Register to SR '
+              '(it becomes $should) and try again.';
+    }
+    return null;
+  }
+
   Future<List<_CapacityProblem>> _findCapacityProblems() async {
     final items = widget.tempPackageItems;
     if (items == null || items.isEmpty) return const [];
@@ -1265,7 +1698,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       final whId = _itemWarehouseSelections[i];
       if (whId == null) continue;
       final cat = cats?.where((c) => c.name == items[i].category).firstOrNull;
-      final zoneName = (cat?.targetZone ?? '').trim();
+      final zoneName = (_itemZoneSelections[i] ?? cat?.targetZone ?? '').trim();
       if (zoneName.isEmpty) continue; // no zone chosen → nothing to check
       final key = '$whId|${zoneName.toLowerCase()}';
       wanted[key] = (wanted[key] ?? 0) + items[i].quantity;
@@ -1296,10 +1729,11 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
           .where((z) => z.warehouseId == whId && z.id != zone.id)
           .map((z) => (z, occupancy[z.id]?.free ?? z.capacity))
           .where((e) => e.$2 >= entry.value)
-          .map((e) => '${e.$1.name} (${e.$2} free)')
+          .map((e) => 'Zone ${e.$1.name} (${e.$2} free)')
           .toList();
 
       problems.add(_CapacityProblem(
+        warehouseId: whId,
         zoneName: zoneName,
         needed: entry.value,
         free: free,
@@ -1317,16 +1751,32 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     if (widget.tempPackageItems != null) {
       for (int i = 0; i < widget.tempPackageItems!.length; i++) {
         if (_itemWarehouseSelections[i] == null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Please select a warehouse for Goods ${i + 1}')));
+          context.showError('Please select a warehouse for Goods ${i + 1}');
           return;
         }
       }
     }
 
     if (widget.tempPackageData == null || widget.tempPackageItems == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Package data not found')));
+      context.showError('Package data not found');
+      return;
+    }
+
+    // ── Register check ──────────────────────────────────────────────────────
+    // ⚠️ An SR number's register must match where the goods actually go: goods
+    // admitted to an OPEN AREA belong to the OA register, everything else to
+    // SR. The form lets the officer pick the register up front and the
+    // warehouse later, so the two can disagree — and nothing downstream would
+    // ever notice, leaving an `SR/...` number on goods sitting in an open
+    // area. The number is on the paper file and the label; it cannot be
+    // corrected afterwards without reissuing both.
+    //
+    // This REFUSES rather than silently renumbering: the number may already
+    // have been written down, so which one is wrong is the officer's call.
+    final mismatch = await _findRegisterMismatch();
+    if (mismatch != null) {
+      if (!mounted) return;
+      context.showError(mismatch);
       return;
     }
 
@@ -1338,12 +1788,68 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     final blocked = await _findCapacityProblems();
     if (blocked.isNotEmpty) {
       if (!mounted) return;
-      final proceed = await showDialog<bool>(
-            context: context,
-            builder: (_) => _CapacityBlockedDialog(problems: blocked),
-          ) ??
-          false;
-      if (!proceed) return;
+      final warehouses = await ref.read(warehousesProvider.future);
+      final zones = await ref.read(warehouseZonesProvider.future);
+      final occupancy = await ref.read(zoneOccupancyProvider.future);
+      final cats = ref.read(packageCategoriesProvider).valueOrNull ?? [];
+
+      final result = await showAppDialog<
+          ({bool proceed, Map<int, String?> updatedSelections, Map<int, String?> updatedZoneSelections})>(
+        context: context,
+        builder: (_) => _CapacityBlockedDialog(
+          problems: blocked,
+          items: widget.tempPackageItems ?? [],
+          initialSelections: _itemWarehouseSelections,
+          initialZoneSelections: _itemZoneSelections,
+          warehouses: warehouses,
+          categories: cats,
+          zones: zones,
+          occupancy: occupancy,
+        ),
+      );
+
+      if (result == null) return;
+
+      // ⚠️ Captured BEFORE the selections are overwritten below: this is the
+      // only moment the app knows where the goods were MEANT to go. A line
+      // later the intended warehouse is gone, and it cannot be recovered
+      // afterwards by re-reading the category target — targets are editable,
+      // so a later edit would rewrite history either way.
+      for (final entry in result.updatedSelections.entries) {
+        final i = entry.key;
+        final was = _itemWarehouseSelections[i];
+        final now = entry.value;
+        final wasZone = _itemZoneSelections[i];
+        final nowZone = result.updatedZoneSelections[i];
+        if (was == null || (was == now && wasZone == nowZone)) continue;
+        // The problem that displaced THIS item: the one about the zone it
+        // was headed for. Worded from the figures the officer was just shown.
+        final p = blocked
+            .where((b) =>
+                b.warehouseId == was &&
+                (wasZone == null || b.zoneName == wasZone))
+            .firstOrNull;
+        _displaced[i] = (
+          warehouseId: was,
+          zone: wasZone,
+          reason: p == null
+              ? null
+              : '${p.zoneName} was full '
+                  '(${p.free} free of ${p.capacity}, ${p.needed} needed)',
+        );
+      }
+
+      // Update the page state so the warehouse and zone confirmation chips change
+      setState(() {
+        for (final entry in result.updatedSelections.entries) {
+          _itemWarehouseSelections[entry.key] = entry.value;
+        }
+        for (final entry in result.updatedZoneSelections.entries) {
+          _itemZoneSelections[entry.key] = entry.value;
+        }
+      });
+
+      if (!result.proceed) return;
     }
 
     setState(() => _isSending = true);
@@ -1363,7 +1869,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       final cats = ref.read(packageCategoriesProvider).value;
       final warehouseService = ref.read(warehouseServiceProvider);
 
-      // Get existing entries to avoid duplicates on retry
+      // Get existing entries to update or avoid duplicates on retry
       final existingEntries = await warehouseService.getAllWarehouseEntries();
       final pkgExistingEntries =
           existingEntries.where((e) => e.packageId == saved.id).toList();
@@ -1381,33 +1887,64 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                 ? saved.items[i]
                 : (saved.items.isNotEmpty ? saved.items.first : tempItem));
 
-        // CHECK: If this item already has a warehouse entry, skip it to avoid duplicates
-        final alreadySent =
-            pkgExistingEntries.any((e) => e.packageItemId == item.id);
-        if (alreadySent) continue;
-
         final warehouseId = _itemWarehouseSelections[i];
         final cat = cats?.where((c) => c.name == tempItem.category).firstOrNull;
+        final selectedZone = _itemZoneSelections[i] ?? cat?.targetZone;
+        final moved = _displaced[i];
 
-        await warehouseService.addEntry(
-          packageId: saved.id,
-          packageItemId:
-              item.id.isNotEmpty ? item.id : tempItem.id, // Fallback safely
-          warehouseId: warehouseId!,
-          zone: cat?.targetZone,
-          holdReason: (tempItem.reasons != null && tempItem.reasons!.isNotEmpty)
-              ? tempItem.reasons!
-              : 'System Assigned',
-          itemCount: tempItem.quantity,
-        );
+        final existingEntry = pkgExistingEntries
+            .where((e) => e.packageItemId == item.id)
+            .firstOrNull;
+
+        if (existingEntry != null) {
+          // UPDATE existing warehouse entry
+          await warehouseService.updateEntry(
+            entryId: existingEntry.id,
+            warehouseId: warehouseId!,
+            zone: selectedZone,
+            holdReason:
+                (tempItem.reasons != null && tempItem.reasons!.isNotEmpty)
+                    ? tempItem.reasons!
+                    : 'System Assigned',
+            itemCount: tempItem.quantity,
+            admittedAt: saved.entryDate,
+            movedForSpace: moved != null,
+            intendedWarehouseId: moved?.warehouseId,
+            intendedZone: moved?.zone,
+            movedReason: moved?.reason,
+          );
+        } else {
+          // INSERT new warehouse entry
+          await warehouseService.addEntry(
+            packageId: saved.id,
+            packageItemId:
+                item.id.isNotEmpty ? item.id : tempItem.id, // Fallback safely
+            warehouseId: warehouseId!,
+            zone: selectedZone,
+            holdReason:
+                (tempItem.reasons != null && tempItem.reasons!.isNotEmpty)
+                    ? tempItem.reasons!
+                    : 'System Assigned',
+            itemCount: tempItem.quantity,
+            admittedAt: saved.entryDate,
+            movedForSpace: moved != null,
+            intendedWarehouseId: moved?.warehouseId,
+            intendedZone: moved?.zone,
+            movedReason: moved?.reason,
+          );
+        }
       }
+
+      // Trigger refresh so warehouse entries, packages, and zone capacities immediately update across the app
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      ref.invalidate(zoneOccupancyProvider);
+      ref.invalidate(warehousesProvider);
+      ref.invalidate(warehouseZonesProvider);
 
       if (mounted) {
         setState(() => _warehouseSent = true);
         widget.onPackageSaved(saved);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('✅ All items sent to respective warehouses'),
-            backgroundColor: context.colors.successGreen));
+        context.showSuccess('All items sent to respective warehouses');
       }
     } catch (e) {
       String userMessage = 'Error: $e';
@@ -1431,20 +1968,25 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
         userMessage = 'Please ensure all items have a warehouse selected.';
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(userMessage),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'RETRY',
-              textColor: Colors.white,
-              onPressed: _sendToWarehouse,
-            ),
-            backgroundColor: context.colors.dangerRed));
-      }
+      // ⚠️ The SHARED toast, like every other message in the app: floating,
+      // rounded, and gone on its own after 3s. This one was a square
+      // full-width bar that sat there until the officer pressed DISMISS, so a
+      // failure stayed pinned over the page it had just failed on.
+      if (mounted) context.showError(userMessage);
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
+  }
+
+  /// True when every item on this package is perishable, so there is no
+  /// warehouse allocation to make at all.
+  ///
+  /// ⚠️ EVERY item, not any: a mixed package still has normal goods that need
+  /// a warehouse, and hiding the allocation for those would strand them.
+  bool get _allPerishable {
+    final items = widget.tempPackageItems;
+    if (items == null || items.isEmpty) return false;
+    return items.every((i) => i.nature == kNaturePerishable);
   }
 
   @override
@@ -1461,7 +2003,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
           children: [
             Text('Warehouse Confirmation',
                 style: Theme.of(context).textTheme.titleLarge),
-            const Gap(20),
+            const Gap(14),
             if (_warehouseSent)
               Container(
                 width: double.infinity,
@@ -1491,12 +2033,12 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                   )
                       .animate()
                       .slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
-                  const Gap(20),
+                  const Gap(14),
                   if (_savedPackage != null)
                     Column(
                       children: [
                         ElevatedButton.icon(
-                          onPressed: () => showDialog(
+                          onPressed: () => showAppDialog(
                             context: context,
                             builder: (_) => PrintBarcodeDialog(
                               packages: [_savedPackage!],
@@ -1516,6 +2058,50 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                         ),
                       ],
                     ),
+                ]),
+              )
+            // ⚠️ A package of perishables has no allocation to make. Showing
+            // "Assign each item to its destination warehouse" over goods that
+            // will never see one told the officer to do something impossible;
+            // this says what actually happens to them instead.
+            else if (_allPerishable)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: context.colors.successGreen.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: context.colors.successGreen.withOpacity(0.5),
+                    width: 2,
+                  ),
+                ),
+                child: Column(children: [
+                  Icon(Icons.eco_rounded,
+                          color: context.colors.successGreen, size: 56)
+                      .animate()
+                      .scale(duration: 400.ms),
+                  const Gap(12),
+                  Text(
+                    'NO WAREHOUSE NEEDED',
+                    style: TextStyle(
+                      color: context.colors.successGreen,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                    textAlign: TextAlign.center,
+                  )
+                      .animate()
+                      .slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
+                  const Gap(8),
+                  Text(
+                      'These goods spoil, so they are not stored. They go '
+                      'straight to the Perishable Goods list and are sent for '
+                      'a Special Tender Sale without waiting out an appeal '
+                      'window.',
+                      style: TextStyle(
+                          color: context.colors.textSecondary, fontSize: 13),
+                      textAlign: TextAlign.center),
                 ]),
               )
             else
@@ -1554,13 +2140,21 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                       textAlign: TextAlign.center),
                 ]),
               ),
-            const Gap(24),
+            const Gap(14),
             if (widget.tempPackageItems != null && !_warehouseSent) ...[
               Text('Goods Distribution',
                   style: Theme.of(context).textTheme.titleMedium),
               const Gap(12),
               ...List.generate(widget.tempPackageItems!.length, (index) {
                 final item = widget.tempPackageItems![index];
+                final cats = ref.watch(packageCategoriesProvider).valueOrNull ?? [];
+                final zones = ref.watch(warehouseZonesProvider).valueOrNull ?? [];
+                final occupancy = ref.watch(zoneOccupancyProvider).valueOrNull ?? {};
+                final cat = cats.where((c) => c.name == item.category).firstOrNull;
+                final defaultZoneName = (cat?.targetZone ?? '').trim();
+                final currentZoneName = (_itemZoneSelections[index] ?? defaultZoneName).trim();
+                final selectedWarehouseId = _itemWarehouseSelections[index];
+
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Container(
@@ -1614,17 +2208,14 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                               ],
                             ),
                           ),
-                        const Gap(12),
+                        const Gap(10),
                         warehousesAsync.when(
                           loading: () => const LinearProgressIndicator(),
                           error: (e, _) {
-                            // Usually a transient network/DNS hiccup — the app
-                            // reached other data fine. Offer a Retry rather than
-                            // dead-ending the whole SR entry.
                             final isNetwork = e
                                     .toString()
                                     .contains('SocketException') ||
-                                e.toString().contains('Failed host lookup') ||
+                                 e.toString().contains('Failed host lookup') ||
                                 e.toString().contains('ClientException');
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1663,51 +2254,276 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                               ],
                             );
                           },
-                          data: (ws) => Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: ws.map((w) {
-                              final isSelected =
-                                  _itemWarehouseSelections[index] == w.id;
-                              final hasAutoSelection =
-                                  _itemWarehouseSelections[index] != null;
+                          data: (ws) {
+                            // Location summary badge for currently selected warehouse + zone
+                            Widget? locationBadge;
+                            if (selectedWarehouseId != null) {
+                              final selectedWh = ws
+                                  .where((w) => w.id == selectedWarehouseId)
+                                  .firstOrNull;
+                              final whDisplay = selectedWh != null
+                                  ? _formatWarehouseName(selectedWh.name)
+                                  : selectedWarehouseId;
+                              final zoneObj = currentZoneName.isNotEmpty
+                                  ? zones
+                                      .where((z) =>
+                                          z.warehouseId == selectedWarehouseId &&
+                                          z.name.trim().toLowerCase() ==
+                                              currentZoneName.toLowerCase())
+                                      .firstOrNull
+                                  : null;
+                              final occ = zoneObj != null
+                                  ? occupancy[zoneObj.id]
+                                  : null;
+                              final free = occ?.free ?? zoneObj?.capacity ?? 0;
+                              final isFull = zoneObj != null && free <= 0;
 
-                              return InkWell(
-                                onTap: () => setState(() =>
-                                    _itemWarehouseSelections[index] = w.id),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? context.colors.primaryGold
-                                            .withOpacity(0.15)
-                                        : context.colors.surfaceDark,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? context.colors.primaryGold
-                                          : context.colors.borderColor,
-                                      width: isSelected ? 1.5 : 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _formatWarehouseName(w.name)
-                                        .replaceFirst('GL1/SR/', ''),
-                                    style: TextStyle(
-                                      color: isSelected
-                                          ? context.colors.primaryGold
-                                          : context.colors.textSecondary,
-                                      fontSize: 12,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
+                              locationBadge = Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: isFull
+                                      ? context.colors.dangerRed
+                                          .withOpacity(0.12)
+                                      : context.colors.primaryGold
+                                          .withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isFull
+                                        ? context.colors.dangerRed
+                                            .withOpacity(0.4)
+                                        : context.colors.primaryGold
+                                            .withOpacity(0.3),
                                   ),
                                 ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isFull
+                                          ? Icons.warning_amber_rounded
+                                          : Icons.route_rounded,
+                                      size: 14,
+                                      color: isFull
+                                          ? context.colors.dangerRed
+                                          : context.colors.primaryGold,
+                                    ),
+                                    const Gap(6),
+                                    Text(
+                                      whDisplay +
+                                          (currentZoneName.isNotEmpty
+                                              ? ' | Zone $currentZoneName'
+                                              : '') +
+                                          (zoneObj != null
+                                              ? (isFull
+                                                  ? ' (FULL)'
+                                                  : ' ($free free)')
+                                              : ''),
+                                      style: TextStyle(
+                                        color: isFull
+                                            ? context.colors.dangerRed
+                                            : context.colors.primaryGold,
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
-                            }).toList(),
-                          ),
+                            }
+
+                            final selectedWhZones = selectedWarehouseId != null
+                                ? zones
+                                    .where((z) =>
+                                        z.warehouseId == selectedWarehouseId)
+                                    .toList()
+                                : <WarehouseZoneModel>[];
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (locationBadge != null) locationBadge,
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: ws.map((w) {
+                                    final isSelected =
+                                        _itemWarehouseSelections[index] == w.id;
+                                    final whName =
+                                        _formatWarehouseName(w.name)
+                                            .replaceFirst('GL1/SR/', '');
+
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () => setState(() {
+                                        _itemWarehouseSelections[index] = w.id;
+                                        final wZones = zones
+                                            .where((z) => z.warehouseId == w.id)
+                                            .toList();
+                                        if (wZones.isNotEmpty) {
+                                          final curZ = _itemZoneSelections[index] ??
+                                              defaultZoneName;
+                                          final match = wZones
+                                              .where((z) =>
+                                                  z.name.toLowerCase() ==
+                                                  curZ.toLowerCase())
+                                              .firstOrNull;
+                                          if (match != null) {
+                                            _itemZoneSelections[index] =
+                                                match.name;
+                                          } else {
+                                            _itemZoneSelections[index] =
+                                                wZones.first.name;
+                                          }
+                                        }
+                                      }),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? context.colors.primaryGold
+                                                  .withOpacity(0.15)
+                                              : context.colors.surfaceDark,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? context.colors.primaryGold
+                                                : context.colors.borderColor,
+                                            width: isSelected ? 1.5 : 1,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.warehouse_outlined,
+                                              size: 14,
+                                              color: isSelected
+                                                  ? context.colors.primaryGold
+                                                  : context.colors.textMuted,
+                                            ),
+                                            const Gap(6),
+                                            Text(
+                                              whName,
+                                              style: TextStyle(
+                                                color: isSelected
+                                                    ? context.colors.primaryGold
+                                                    : context
+                                                        .colors.textSecondary,
+                                                fontSize: 12,
+                                                fontWeight: isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                                if (selectedWhZones.isNotEmpty) ...[
+                                  const Gap(10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        'Zone:',
+                                        style: TextStyle(
+                                          color: context.colors.textMuted,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      ...selectedWhZones.map((z) {
+                                        final isZoneSelected =
+                                            currentZoneName.toLowerCase() ==
+                                                z.name.trim().toLowerCase();
+                                        final occ = occupancy[z.id];
+                                        final free = occ?.free ?? z.capacity;
+                                        final isFull = free <= 0;
+
+                                        return InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          onTap: () => setState(() =>
+                                              _itemZoneSelections[index] =
+                                                  z.name),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 9, vertical: 5),
+                                            decoration: BoxDecoration(
+                                              color: isZoneSelected
+                                                  ? context.colors.primaryGold
+                                                      .withOpacity(0.18)
+                                                  : context.colors.surfaceDark,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: isZoneSelected
+                                                    ? context.colors.primaryGold
+                                                    : (isFull
+                                                        ? context
+                                                            .colors.dangerRed
+                                                            .withOpacity(0.4)
+                                                        : context
+                                                            .colors.borderColor),
+                                                width: isZoneSelected ? 1.5 : 1,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.grid_view_rounded,
+                                                  size: 11,
+                                                  color: isZoneSelected
+                                                      ? context
+                                                          .colors.primaryGold
+                                                      : (isFull
+                                                          ? context
+                                                              .colors.dangerRed
+                                                          : context
+                                                              .colors.textMuted),
+                                                ),
+                                                const Gap(5),
+                                                Text(
+                                                  'Zone ${z.name}' +
+                                                      (isFull
+                                                          ? ' (FULL)'
+                                                          : ' ($free free)'),
+                                                  style: TextStyle(
+                                                    color: isZoneSelected
+                                                        ? context
+                                                            .colors.primaryGold
+                                                        : (isFull
+                                                            ? context.colors
+                                                                .dangerRed
+                                                            : context.colors
+                                                                .textSecondary),
+                                                    fontSize: 11,
+                                                    fontWeight: isZoneSelected
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -1715,25 +2531,42 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                 );
               }),
             ],
-            const Gap(20),
+            const Gap(16),
             if (!_warehouseSent)
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 48,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: context.colors.heldOrange,
-                      foregroundColor: Colors.white),
+                    backgroundColor: context.colors.primaryGold,
+                    foregroundColor: context.colors.primaryNavy,
+                    elevation: 1,
+                    shadowColor: context.colors.primaryGold.withOpacity(0.3),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                  ),
                   icon: _isSending
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.send_rounded),
-                  label: Text(_isSending
-                      ? 'Saving Entries...'
-                      : 'Complete & Send to Warehouses'),
+                            strokeWidth: 2,
+                            color: context.colors.primaryNavy,
+                          ),
+                        )
+                      : const Icon(Icons.send_rounded, size: 18),
+                  label: Text(
+                    _isSending
+                        ? 'Saving Entries...'
+                        : 'Complete & Send to Warehouses',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                   onPressed: _isSending ? null : _sendToWarehouse,
                 ),
               ),
@@ -1755,184 +2588,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 
 // ─── Helper Widgets ───
 
-/// Cusdec No input with prefix autocomplete. Common Cusdec numbers start with a
-/// fixed prefix (CBHQI / ECC / I) followed by a space and a number. As the user
-/// types, matching prefixes are suggested; picking one fills "<PREFIX> " so they
-/// only type the digits. It's still a free-text field — any other format can be
-/// typed directly (the suggestions just never match, so no menu shows).
-class _CusdecAutocompleteField extends StatefulWidget {
-  final TextEditingController controller;
-  final InputDecoration decoration;
-  final String? Function(String?)? validator;
 
-  const _CusdecAutocompleteField({
-    required this.controller,
-    required this.decoration,
-    this.validator,
-  });
-
-  static const List<String> _prefixes = ['CBHQI', 'CBMVI', 'ECC', 'I'];
-
-  @override
-  State<_CusdecAutocompleteField> createState() =>
-      _CusdecAutocompleteFieldState();
-}
-
-class _CusdecAutocompleteFieldState extends State<_CusdecAutocompleteField> {
-  final FocusNode _focusNode = FocusNode();
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RawAutocomplete<String>(
-      textEditingController: widget.controller,
-      focusNode: _focusNode,
-      optionsBuilder: (TextEditingValue value) {
-        final text = value.text.trimLeft();
-        if (text.isEmpty) return const Iterable<String>.empty();
-        // Once a space (i.e. the number part) is typed, stop suggesting.
-        if (text.contains(' ')) return const Iterable<String>.empty();
-        final upper = text.toUpperCase();
-        final matches = _CusdecAutocompleteField._prefixes
-            .where((p) => p.startsWith(upper) && p != upper)
-            .map((p) => '$p ') // trailing space → caret lands on the number
-            .toList();
-        return matches;
-      },
-      onSelected: (selection) {
-        widget.controller.text = selection;
-        widget.controller.selection =
-            TextSelection.collapsed(offset: selection.length);
-      },
-      fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
-        return TextFormField(
-          controller: textController,
-          focusNode: focusNode,
-          decoration: widget.decoration,
-          validator: widget.validator,
-          textCapitalization: TextCapitalization.characters,
-          onFieldSubmitted: (_) => onFieldSubmitted(),
-        );
-      },
-      optionsViewBuilder: (context, onSelected, options) {
-        final opts = options.toList();
-        // The index RawAutocomplete highlights as the user presses ↑/↓ (Enter
-        // then selects it). We mirror it visually and keep it scrolled into view.
-        final highlighted = AutocompleteHighlightedOption.of(context);
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(10),
-            color: context.colors.surfaceDark,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 320),
-              child: _CusdecOptionsList(
-                options: opts,
-                highlightedIndex: highlighted,
-                onSelected: onSelected,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// The suggestion list for the Cusdec autocomplete. Highlights the option that
-/// RawAutocomplete has selected via ↑/↓ and scrolls it into view, so keyboard
-/// navigation is visible; Enter selects the highlighted one, tap selects any.
-class _CusdecOptionsList extends StatefulWidget {
-  final List<String> options;
-  final int highlightedIndex;
-  final AutocompleteOnSelected<String> onSelected;
-
-  const _CusdecOptionsList({
-    required this.options,
-    required this.highlightedIndex,
-    required this.onSelected,
-  });
-
-  @override
-  State<_CusdecOptionsList> createState() => _CusdecOptionsListState();
-}
-
-class _CusdecOptionsListState extends State<_CusdecOptionsList> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void didUpdateWidget(_CusdecOptionsList old) {
-    super.didUpdateWidget(old);
-    if (old.highlightedIndex != widget.highlightedIndex) {
-      // Keep the highlighted row visible as the user arrows through the list.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollController.hasClients) return;
-        const rowHeight = 48.0;
-        final target = widget.highlightedIndex * rowHeight;
-        _scrollController.animateTo(
-          target.clamp(0.0, _scrollController.position.maxScrollExtent),
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-        );
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.zero,
-      shrinkWrap: true,
-      itemCount: widget.options.length,
-      itemBuilder: (context, i) {
-        final option = widget.options[i];
-        final isHighlighted = i == widget.highlightedIndex;
-        return InkWell(
-          onTap: () => widget.onSelected(option),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: isHighlighted
-                  ? context.colors.primaryGold.withOpacity(0.15)
-                  : null,
-              border: Border(
-                bottom: BorderSide(
-                    color: context.colors.borderColor.withOpacity(0.5)),
-              ),
-            ),
-            child: Row(children: [
-              Icon(Icons.tag_rounded,
-                  size: 16, color: context.colors.primaryGold),
-              const Gap(10),
-              Text(option.trim(),
-                  style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14)),
-              const Gap(8),
-              Text('+ number',
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 12)),
-            ]),
-          ),
-        );
-      },
-    );
-  }
-}
 
 class _QrCodePage extends StatelessWidget {
   final PackageModel? package;
@@ -1952,7 +2608,7 @@ class _QrCodePage extends StatelessWidget {
         children: [
           Text('QR Code Generate',
               style: Theme.of(context).textTheme.titleLarge),
-          const Gap(20),
+          const Gap(14),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(28),
@@ -1986,10 +2642,10 @@ class _QrCodePage extends StatelessWidget {
                       color: context.colors.textSecondary, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
-                const Gap(24),
+                const Gap(14),
                 if (package != null)
                   ElevatedButton.icon(
-                    onPressed: () => showDialog(
+                    onPressed: () => showAppDialog(
                       context: context,
                       builder: (_) => PrintBarcodeDialog(
                         packages: [package!],
@@ -2038,6 +2694,11 @@ class _ItemRow {
   final hsCodeCtrl = TextEditingController();
   final categoryCtrl = TextEditingController();
   String status = 'Detain';
+
+  /// Normal or perishable -- see [kGoodsNatures]. Perishable goods skip the
+  /// warehouse and the appeal window entirely, so this decides the whole path
+  /// the item takes and is asked before anything else about it.
+  String nature = kNatureNormal;
   final otherStatusCtrl = TextEditingController();
   final List<String?> selectedReasons = [null]; // Start with 1 mandatory reason
 }
@@ -2109,11 +2770,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                   controller: widget.row.nameCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Goods Name *',
-                      isDense: true,
-                      helperText: ' ',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                    labelText: 'Goods Name *',
+                    isDense: true,
+                    helperText: ' ',
+                  ),
                   validator: (v) => widget.showValidationErrors &&
                           (v == null || v.trim().isEmpty)
                       ? 'Required'
@@ -2172,11 +2832,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 child: TextFormField(
                   controller: widget.row.unitOtherCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Name *',
-                      isDense: true,
-                      helperText: ' ',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                    labelText: 'Name *',
+                    isDense: true,
+                    helperText: ' ',
+                  ),
                   validator: (v) => widget.showValidationErrors &&
                           widget.row.unitOfMeasureCtrl.text == 'Other' &&
                           (v == null || v.trim().isEmpty)
@@ -2193,11 +2852,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                 controller: widget.row.qtyCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'Quantity *',
-                    isDense: true,
-                    helperText: ' ',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                  labelText: 'Quantity *',
+                  isDense: true,
+                  helperText: ' ',
+                ),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 validator: (v) {
@@ -2258,11 +2916,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 child: TextFormField(
                   controller: widget.row.innerQtyCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Inner Qty *',
-                      isDense: true,
-                      helperText: ' ',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                    labelText: 'Inner Qty *',
+                    isDense: true,
+                    helperText: ' ',
+                  ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (v) {
@@ -2276,26 +2933,33 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               ),
             ],
             const Gap(10),
+            // Asked before the status, because it decides whether a status is
+            // asked at all: a perishable item never reaches a warehouse and
+            // never sits out an appeal window, so Detain / Forfeit describe
+            // nothing that will happen to it.
             Expanded(
               flex: 2,
               child: StyledDropdownFormField<String>(
-                label: 'Status *',
-                menuWidth: 200,
-                value: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
-                        .contains(widget.row.status)
-                    ? widget.row.status
-                    : 'Other',
-                options: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
-                    .map((s) => StyledDropdownOption(s, s))
-                    .toList(),
+                label: 'Nature *',
+                menuWidth: 220,
+                value: widget.row.nature,
+                options: [
+                  for (final e in kGoodsNatures.entries)
+                    StyledDropdownOption(e.key, e.value),
+                ],
                 onChanged: (v) {
                   setState(() {
-                    final previous = widget.row.status;
-                    widget.row.status = v!;
-                    // Detain and the disposal statuses offer different
-                    // activities — drop selections that no longer apply.
-                    if (postStatusActivitiesFor(previous) !=
-                        postStatusActivitiesFor(widget.row.status)) {
+                    widget.row.nature = v ?? kNatureNormal;
+                    if (widget.row.nature == kNaturePerishable) {
+                      // Its own status, so every screen that groups by status
+                      // has somewhere to put it, and none of the disposition
+                      // pages claim it by mistake.
+                      widget.row.status = 'Perishable';
+                      widget.row.selectedReasons
+                        ..clear()
+                        ..add(null);
+                    } else if (widget.row.status == 'Perishable') {
+                      widget.row.status = 'Detain';
                       widget.row.selectedReasons
                         ..clear()
                         ..add(null);
@@ -2305,77 +2969,122 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 },
               ),
             ),
-            if (widget.row.status == 'Other') ...[
+            if (widget.row.nature != kNaturePerishable) ...[
               const Gap(10),
               Expanded(
                 flex: 2,
-                child: TextFormField(
-                  controller: widget.row.otherStatusCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Other Status *',
-                    isDense: true,
-                    helperText: ' ',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: StyledDropdownFormField<String>(
+                  label: 'Status *',
+                  menuWidth: 200,
+                  value: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                          .contains(widget.row.status)
+                      ? widget.row.status
+                      : 'Other',
+                  options: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                      .map((s) => StyledDropdownOption(s, s))
+                      .toList(),
+                  onChanged: (v) {
+                    setState(() {
+                      widget.row.status = v!;
+                      // ⚠️ Drop any activity the NEW status does not offer.
+                      //
+                      // Detain and the disposal statuses have different lists,
+                      // so a choice made under one can be invalid under the
+                      // other. Left in place it would stay on screen but not be
+                      // in the dropdown's options -- the field renders empty
+                      // while the row still holds the old value, and that value
+                      // is what gets saved. Anything the new list DOES contain
+                      // is kept, so switching Forfeit to Abandoned costs the
+                      // officer nothing.
+                      final allowed =
+                          postStatusActivitiesFor(widget.row.status);
+                      for (var i = 0;
+                          i < widget.row.selectedReasons.length;
+                          i++) {
+                        if (!allowed.contains(widget.row.selectedReasons[i])) {
+                          widget.row.selectedReasons[i] = null;
+                        }
+                      }
+                    });
+                    widget.onChanged();
+                  },
+                ),
+              ),
+              if (widget.row.status == 'Other') ...[
+                const Gap(10),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: widget.row.otherStatusCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Other Status *',
+                      isDense: true,
+                      helperText: ' ',
+                    ),
+                    validator: (v) => widget.showValidationErrors &&
+                            widget.row.status == 'Other' &&
+                            (v == null || v.trim().isEmpty)
+                        ? 'Required'
+                        : null,
+                    onChanged: (_) => widget.onChanged(),
                   ),
-                  validator: (v) => widget.showValidationErrors &&
-                          widget.row.status == 'Other' &&
-                          (v == null || v.trim().isEmpty)
-                      ? 'Required'
-                      : null,
-                  onChanged: (_) => widget.onChanged(),
+                ),
+              ],
+            ],
+            // ⚠️ Category exists to route goods to a WAREHOUSE ZONE. A
+            // perishable never reaches a warehouse, so the field has nothing
+            // to decide -- and the zone-capacity hint below it would report
+            // space the goods will never occupy.
+            if (widget.row.nature != kNaturePerishable) ...[
+              const Gap(10),
+              Expanded(
+                flex: 2,
+                child: categories.when(
+                  loading: () => const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  error: (e, _) => IconButton(
+                      icon: const Icon(Icons.refresh,
+                          size: 16, color: Colors.orange),
+                      onPressed: () => ref.refresh(packageCategoriesProvider),
+                      tooltip: 'Error loading categories'),
+                  data: (list) {
+                    final selectedCategory = list
+                        .where((c) => c.name == widget.row.categoryCtrl.text)
+                        .firstOrNull;
+                    return StyledDropdownFormField<String>(
+                      label: 'Category',
+                      menuWidth: 280,
+                      value: selectedCategory?.name,
+                      options: list.map((c) {
+                        final zn = c.targetZone?.trim();
+                        final zone = (zn != null && zn.isNotEmpty)
+                            ? zones
+                                .where((z) =>
+                                    z.warehouseId == c.targetWarehouseId &&
+                                    z.name.trim().toLowerCase() ==
+                                        zn.toLowerCase())
+                                .firstOrNull
+                            : null;
+                        final occ = zone != null ? occupancy[zone.id] : null;
+                        final free = occ?.free ?? zone?.capacity ?? 0;
+                        final isFull = zone != null && free <= 0;
+
+                        final label =
+                            isFull ? '${c.name} [Zone $zn FULL 🔴]' : c.name;
+                        return StyledDropdownOption(c.name, label);
+                      }).toList(),
+                      onChanged: (v) {
+                        widget.row.categoryCtrl.text = v ?? '';
+                        setState(() {});
+                        widget.onChanged();
+                      },
+                    );
+                  },
                 ),
               ),
             ],
-            const Gap(10),
-            Expanded(
-              flex: 2,
-              child: categories.when(
-                loading: () => const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
-                error: (e, _) => IconButton(
-                    icon: const Icon(Icons.refresh,
-                        size: 16, color: Colors.orange),
-                    onPressed: () => ref.refresh(packageCategoriesProvider),
-                    tooltip: 'Error loading categories'),
-                data: (list) {
-                  final selectedCategory = list
-                      .where((c) => c.name == widget.row.categoryCtrl.text)
-                      .firstOrNull;
-                  return StyledDropdownFormField<String>(
-                    label: 'Category',
-                    menuWidth: 280,
-                    value: selectedCategory?.name,
-                    options: list.map((c) {
-                      final zn = c.targetZone?.trim();
-                      final zone = (zn != null && zn.isNotEmpty)
-                          ? zones
-                              .where((z) =>
-                                  z.warehouseId == c.targetWarehouseId &&
-                                  z.name.trim().toLowerCase() ==
-                                      zn.toLowerCase())
-                              .firstOrNull
-                          : null;
-                      final occ = zone != null ? occupancy[zone.id] : null;
-                      final free = occ?.free ?? zone?.capacity ?? 0;
-                      final isFull = zone != null && free <= 0;
-
-                      final label = isFull
-                          ? '${c.name} [Zone $zn FULL 🔴]'
-                          : c.name;
-                      return StyledDropdownOption(c.name, label);
-                    }).toList(),
-                    onChanged: (v) {
-                      widget.row.categoryCtrl.text = v ?? '';
-                      setState(() {});
-                      widget.onChanged();
-                    },
-                  );
-                },
-              ),
-            ),
           ],
         ),
         const Gap(12),
@@ -2400,7 +3109,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                 controller: widget.row.valueCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'Value *',
+                    labelText: 'Value',
                     isDense: true,
                     helperText: ' ',
                     prefixText: 'LKR '),
@@ -2411,9 +3120,11 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 ],
                 validator: (v) {
                   if (!widget.showValidationErrors) return null;
-                  if (v == null || v.trim().isEmpty) return 'Required';
-                  final parsed = double.tryParse(v.trim());
-                  if (parsed == null || parsed <= 0) return 'Enter a value';
+                  final t = (v ?? '').trim();
+                  if (t.isEmpty) return null; // defaults to 0
+                  final parsed = double.tryParse(t);
+                  if (parsed == null) return 'Enter a valid number';
+                  if (parsed < 0) return 'Cannot be negative';
                   return null;
                 },
                 onChanged: (_) => widget.onChanged(),
@@ -2422,84 +3133,86 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
           ],
         ),
         const Gap(12),
-        Row(children: [
-          categories.when(
-              data: (list) {
-                final cat = list
-                    .where((c) => c.name == widget.row.categoryCtrl.text)
-                    .firstOrNull;
-                if (cat != null && cat.targetWarehouseId != null) {
-                  final zn = (cat.targetZone ?? '').trim();
-                  final zone = zn.isNotEmpty
-                      ? zones
-                          .where((z) =>
-                              z.warehouseId == cat.targetWarehouseId &&
-                              z.name.trim().toLowerCase() ==
-                                  zn.toLowerCase())
-                          .firstOrNull
-                      : null;
-                  final occ = zone != null ? occupancy[zone.id] : null;
-                  final free = occ?.free ?? zone?.capacity ?? 0;
-                  final isFull = zone != null && free <= 0;
+        // The zone-capacity hint follows the Category field, so it goes with
+        // it: there is no zone to report on for goods that never enter one.
+        if (widget.row.nature != kNaturePerishable)
+          Row(children: [
+            categories.when(
+                data: (list) {
+                  final cat = list
+                      .where((c) => c.name == widget.row.categoryCtrl.text)
+                      .firstOrNull;
+                  if (cat != null && cat.targetWarehouseId != null) {
+                    final zn = (cat.targetZone ?? '').trim();
+                    final zone = zn.isNotEmpty
+                        ? zones
+                            .where((z) =>
+                                z.warehouseId == cat.targetWarehouseId &&
+                                z.name.trim().toLowerCase() == zn.toLowerCase())
+                            .firstOrNull
+                        : null;
+                    final occ = zone != null ? occupancy[zone.id] : null;
+                    final free = occ?.free ?? zone?.capacity ?? 0;
+                    final isFull = zone != null && free <= 0;
 
-                  if (isFull) {
+                    if (isFull) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                            color: context.colors.dangerRed.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color:
+                                    context.colors.dangerRed.withOpacity(0.4),
+                                width: 1)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 15, color: context.colors.dangerRed),
+                          const Gap(6),
+                          Text(
+                              '${_formatWarehouseName(cat.targetWarehouseName ?? cat.targetWarehouseId ?? '')} | Zone ${cat.targetZone ?? '—'} (FULL - No space available)',
+                              style: TextStyle(
+                                  color: context.colors.dangerRed,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700))
+                        ]),
+                      );
+                    }
+
                     return Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                          color: context.colors.dangerRed.withOpacity(0.12),
+                          color: context.colors.primaryGold.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                              color: context.colors.dangerRed
-                                  .withOpacity(0.4),
-                              width: 1)),
+                              color:
+                                  context.colors.primaryGold.withOpacity(0.3))),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.warning_amber_rounded,
-                            size: 15, color: context.colors.dangerRed),
+                        Icon(Icons.route_rounded,
+                            size: 14, color: context.colors.primaryGold),
                         const Gap(6),
                         Text(
-                            '${_formatWarehouseName(cat.targetWarehouseName ?? cat.targetWarehouseId ?? '')} | Zone ${cat.targetZone ?? '—'} (FULL - No space available)',
+                            _formatWarehouseName(cat.targetWarehouseName ??
+                                    cat.targetWarehouseId ??
+                                    '') +
+                                (cat.targetZone != null
+                                    ? ' | Zone ${cat.targetZone}'
+                                    : '') +
+                                (zone != null ? ' ($free free)' : ''),
                             style: TextStyle(
-                                color: context.colors.dangerRed,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700))
+                                color: context.colors.primaryGold,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600))
                       ]),
                     );
                   }
-
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                        color: context.colors.primaryGold.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                            color:
-                                context.colors.primaryGold.withOpacity(0.3))),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.route_rounded,
-                          size: 14, color: context.colors.primaryGold),
-                      const Gap(6),
-                      Text(
-                          _formatWarehouseName(cat.targetWarehouseName ??
-                                  cat.targetWarehouseId ??
-                                  '') +
-                              (cat.targetZone != null
-                                  ? ' | Zone ${cat.targetZone}'
-                                  : '') +
-                              (zone != null ? ' ($free free)' : ''),
-                          style: TextStyle(
-                              color: context.colors.primaryGold,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600))
-                    ]),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink()),
-        ]),
+                  return const SizedBox.shrink();
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink()),
+          ]),
         const Gap(16),
         // ── Post Status Activity Section ──
         // Options are driven by the item's Status: `Detain` gets the pending
@@ -2541,7 +3254,24 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
           spacing: 12,
           runSpacing: 10,
           children: List.generate(widget.row.selectedReasons.length, (rIdx) {
-            final activities = postStatusActivitiesFor(widget.row.status);
+            // ⚠️ The status decides the list — EXCEPT for a perishable.
+            //
+            // A Detain item is waiting on something (a licence, a valuation,
+            // an inquiry); a Forfeit / Abandoned / Other item is on its way to
+            // being disposed of. Those are different questions with different
+            // answers, and offering all of them under every status is how an
+            // officer ends up recording "Pending Licence" against goods that
+            // have already been forfeited.
+            //
+            // A PERISHABLE is the exception, and the reason the filter was
+            // removed wholesale in the first place: it has no status of its
+            // own to choose from ('Perishable' is not in either group), so a
+            // filtered list left it with nothing to pick. It gets the whole
+            // list instead — which is also what the perishable pages filter
+            // against, see kAllPostStatusActivities there.
+            final activities = widget.row.nature == kNaturePerishable
+                ? kAllPostStatusActivities
+                : postStatusActivitiesFor(widget.row.status);
             return SizedBox(
               width: 380,
               child: Row(
@@ -2550,7 +3280,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     child: StyledDropdownFormField<String>(
                       label: 'Activity ${rIdx + 1} *',
                       menuWidth: 300,
-                      fillColor: context.colors.cardDark,
+                      fillColor: context.colors.fieldFill,
                       value:
                           activities.contains(widget.row.selectedReasons[rIdx])
                               ? widget.row.selectedReasons[rIdx]
@@ -2663,6 +3393,7 @@ class _SectionCard extends StatelessWidget {
 
 /// One zone this consignment would overfill.
 class _CapacityProblem {
+  final String warehouseId;
   final String zoneName;
 
   /// Items this consignment wants to put in the zone.
@@ -2676,6 +3407,7 @@ class _CapacityProblem {
   final List<String> alternatives;
 
   const _CapacityProblem({
+    required this.warehouseId,
     required this.zoneName,
     required this.needed,
     required this.free,
@@ -2684,107 +3416,386 @@ class _CapacityProblem {
   });
 }
 
-/// Stops a consignment that does not fit, and says where it would.
-///
-/// Not a hard block: the officer can still admit the goods (physical reality
-/// sometimes runs ahead of the record, and refusing outright would leave them
-/// nowhere to log it). But it can no longer happen by accident — the overflow
-/// is stated, and the alternatives are offered first.
-class _CapacityBlockedDialog extends StatelessWidget {
+/// Stops a consignment that does not fit, and allows allocating goods directly
+/// to alternative warehouses/zones with real-time capacity reduction.
+class _CapacityBlockedDialog extends StatefulWidget {
   final List<_CapacityProblem> problems;
-  const _CapacityBlockedDialog({required this.problems});
+  final List<PackageItem> items;
+  final Map<int, String?> initialSelections;
+  final Map<int, String?> initialZoneSelections;
+  final List<WarehouseModel> warehouses;
+  final List<PackageCategory> categories;
+  final List<WarehouseZoneModel> zones;
+  final Map<String, ZoneOccupancy> occupancy;
+
+  const _CapacityBlockedDialog({
+    super.key,
+    required this.problems,
+    required this.items,
+    required this.initialSelections,
+    required this.initialZoneSelections,
+    required this.warehouses,
+    required this.categories,
+    required this.zones,
+    required this.occupancy,
+  });
+
+  @override
+  State<_CapacityBlockedDialog> createState() => _CapacityBlockedDialogState();
+}
+
+class _CapacityBlockedDialogState extends State<_CapacityBlockedDialog> {
+  late Map<int, String?> _warehouseSelections;
+  late Map<int, String?> _zoneSelections;
+
+  @override
+  void initState() {
+    super.initState();
+    _warehouseSelections = Map<int, String?>.from(widget.initialSelections);
+    _zoneSelections = Map<int, String?>.from(widget.initialZoneSelections);
+  }
+
+  String _cleanWhName(String name) {
+    if (name.contains('GL1/SR/')) return name;
+    String cleanName =
+        name.replaceAll(RegExp(r'^SR\s+', caseSensitive: false), '');
+    return 'GL1/SR/$cleanName';
+  }
 
   @override
   Widget build(BuildContext context) {
     final red = context.colors.dangerRed;
+    final green = context.colors.successGreen;
+
+    // Precompute dropdown options of all warehouse + zone combinations
+    final List<StyledDropdownOption<String>> dropdownOptions = [];
+    for (final w in widget.warehouses) {
+      final whZones =
+          widget.zones.where((z) => z.warehouseId == w.id).toList();
+      final cleanName = _cleanWhName(w.name);
+      if (whZones.isEmpty) {
+        dropdownOptions.add(StyledDropdownOption('${w.id}|', cleanName));
+      } else {
+        for (final z in whZones) {
+          final occ = widget.occupancy[z.id];
+          final freeSpace = occ?.free ?? z.capacity;
+          final label = '$cleanName • Zone ${z.name} ($freeSpace free)';
+          dropdownOptions.add(StyledDropdownOption('${w.id}|${z.name}', label));
+        }
+      }
+    }
 
     return StyledFormDialog(
+      yard: true,
       label: 'WAREHOUSE CAPACITY',
-      title: problems.length == 1
-          ? 'Zone ${problems.first.zoneName} is full'
-          : '${problems.length} zones are full',
+      title: widget.problems.length == 1
+          ? 'Zone ${widget.problems.first.zoneName} Capacity Allocation'
+          : 'Warehouse Capacity Allocation',
       icon: Icons.warehouse_rounded,
-      headerAccentColor: red,
-      width: 560,
+      headerAccentColor: context.colors.primaryGold,
+      width: 680,
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Change warehouse'),
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text('Cancel'),
+        ),
+        const Gap(8),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: red,
+            side: BorderSide(color: red.withOpacity(0.6)),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+          icon: const Icon(Icons.warning_amber_rounded, size: 16),
+          label: const Text('Admit anyway'),
+          onPressed: () => Navigator.pop(
+            context,
+            (
+              proceed: true,
+              updatedSelections: _warehouseSelections,
+              updatedZoneSelections: _zoneSelections
+            ),
+          ),
         ),
         const Gap(8),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-              backgroundColor: red, foregroundColor: Colors.white),
-          icon: const Icon(Icons.warning_amber_rounded, size: 18),
-          label: const Text('Admit anyway'),
-          onPressed: () => Navigator.pop(context, true),
+            backgroundColor: context.colors.primaryGold,
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          ),
+          icon: const Icon(Icons.check_circle_rounded, size: 16),
+          label: const Text('Apply Changes & Proceed'),
+          onPressed: () => Navigator.pop(
+            context,
+            (
+              proceed: true,
+              updatedSelections: _warehouseSelections,
+              updatedZoneSelections: _zoneSelections
+            ),
+          ),
         ),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final p in problems) ...[
-            StyledFormSection(
-              title: 'Zone ${p.zoneName}',
-              icon: Icons.grid_view_rounded,
-              children: [
-                _CapacityLine(
-                    label: 'These goods need', value: '${p.needed} items'),
-                _CapacityLine(
-                    label: 'Room left',
-                    value: '${p.free} of ${p.capacity}',
-                    colour: red),
-                _CapacityLine(
-                    label: 'Over by',
-                    value: '${p.needed - p.free} items',
-                    colour: red,
-                    emphasise: true),
-                if (p.alternatives.isNotEmpty) ...[
-                  const Gap(10),
-                  Text('Zones in this warehouse with room:',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: context.colors.textSecondary)),
-                  const Gap(6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final a in p.alternatives)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 9, vertical: 4),
-                          decoration: BoxDecoration(
-                            color:
-                                context.colors.successGreen.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: context.colors.successGreen
-                                    .withOpacity(0.4)),
-                          ),
-                          child: Text('Zone $a',
-                              style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: context.colors.successGreen)),
-                        ),
-                    ],
+          for (final p in widget.problems) ...[
+            Builder(builder: (context) {
+              // Find items contributing to this problem zone
+              final contributingIndices = <int>[];
+              int currentNeeded = 0;
+
+              for (int i = 0; i < widget.items.length; i++) {
+                final item = widget.items[i];
+                final itemCategory = item.category?.trim().toLowerCase() ?? '';
+                final cat = widget.categories
+                    .where((c) => c.name.trim().toLowerCase() == itemCategory)
+                    .firstOrNull;
+                final defaultTargetZone = (cat?.targetZone ?? '').trim();
+
+                final curWh = _warehouseSelections[i];
+                final curZone =
+                    (_zoneSelections[i] ?? defaultTargetZone).trim();
+
+                final initWh = widget.initialSelections[i];
+                final initZone =
+                    (widget.initialZoneSelections[i] ?? defaultTargetZone).trim();
+
+                final wasInProblem = initWh == p.warehouseId &&
+                    initZone.toLowerCase() == p.zoneName.toLowerCase();
+                final isCurrentlyInProblem = curWh == p.warehouseId &&
+                    curZone.toLowerCase() == p.zoneName.toLowerCase();
+
+                if (wasInProblem || isCurrentlyInProblem) {
+                  contributingIndices.add(i);
+                }
+
+                if (isCurrentlyInProblem) {
+                  currentNeeded += item.quantity;
+                }
+              }
+
+              final overBy = currentNeeded - p.free;
+              final isOver = overBy > 0;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: context.colors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isOver
+                        ? red.withOpacity(0.4)
+                        : green.withOpacity(0.4),
+                    width: 1.2,
                   ),
-                ] else ...[
-                  const Gap(10),
-                  Text(
-                      'No other zone in this warehouse has room for them — '
-                      'try a different warehouse.',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
-                          color: context.colors.textMuted)),
-                ],
-              ],
-            ),
-            const Gap(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Zone Header Banner
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isOver
+                            ? red.withOpacity(0.12)
+                            : green.withOpacity(0.12),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(11)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isOver
+                                ? Icons.warning_amber_rounded
+                                : Icons.check_circle_rounded,
+                            color: isOver ? red : green,
+                            size: 20,
+                          ),
+                          const Gap(10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Zone ${p.zoneName}',
+                                  style: TextStyle(
+                                    color: context.colors.textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Room left: ${p.free} of ${p.capacity} items | Currently assigned: $currentNeeded items',
+                                  style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: isOver
+                                  ? red.withOpacity(0.2)
+                                  : green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isOver
+                                  ? 'Over by $overBy items'
+                                  : 'Fits (${p.free - currentNeeded} room left)',
+                              style: TextStyle(
+                                color: isOver ? red : green,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Goods rows
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Assign goods to alternative warehouses or zones to reduce zone overflow:',
+                            style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Gap(10),
+                          for (final idx in contributingIndices) ...[
+                            Builder(builder: (context) {
+                              final item = widget.items[idx];
+                              final selectedWh = _warehouseSelections[idx];
+                              final itemCategory =
+                                  item.category?.trim().toLowerCase() ?? '';
+                              final cat = widget.categories
+                                  .where((c) =>
+                                      c.name.trim().toLowerCase() ==
+                                      itemCategory)
+                                  .firstOrNull;
+                              final defaultTargetZone =
+                                  (cat?.targetZone ?? '').trim();
+                              final curZone =
+                                  (_zoneSelections[idx] ?? defaultTargetZone)
+                                      .trim();
+                              final currentKey =
+                                  '${selectedWh ?? ""}|$curZone';
+                              final hasMatch = dropdownOptions
+                                  .any((opt) => opt.value == currentKey);
+                              final effectiveValue = hasMatch
+                                  ? currentKey
+                                  : (dropdownOptions.any((opt) => opt.value
+                                          .startsWith('${selectedWh ?? ""}|'))
+                                      ? dropdownOptions
+                                          .firstWhere((opt) => opt.value
+                                              .startsWith(
+                                                  '${selectedWh ?? ""}|'))
+                                          .value
+                                      : (dropdownOptions.isNotEmpty
+                                          ? dropdownOptions.first.value
+                                          : null));
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: context.colors.surfaceDark,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: context.colors.borderColor),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Goods ${idx + 1}: ${item.itemName}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          const Gap(2),
+                                          Text(
+                                            '${item.quantity} ${item.unitOfMeasure} • ${item.category ?? "General"}',
+                                            style: TextStyle(
+                                              color: context.colors.textMuted,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    Expanded(
+                                      flex: 4,
+                                      child: StyledDropdownFormField<String>(
+                                        value: effectiveValue,
+                                        label: 'Warehouse & Zone',
+                                        floatingLabelBehavior:
+                                            FloatingLabelBehavior.never,
+                                        menuWidth: 320,
+                                        options: dropdownOptions,
+                                        onChanged: (newKey) {
+                                          if (newKey != null) {
+                                            final parts = newKey.split('|');
+                                            final newWhId = parts[0];
+                                            final newZoneName =
+                                                parts.length > 1 ? parts[1] : '';
+                                            setState(() {
+                                              _warehouseSelections[idx] =
+                                                  newWhId;
+                                              _zoneSelections[idx] =
+                                                  newZoneName.isNotEmpty
+                                                      ? newZoneName
+                                                      : null;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                          if (p.alternatives.isNotEmpty && isOver) ...[
+                            const Gap(8),
+                            Text(
+                              'Other zones in this warehouse with room: ${p.alternatives.join(", ")}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontStyle: FontStyle.italic,
+                                color: context.colors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ],
       ),

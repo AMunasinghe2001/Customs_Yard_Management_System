@@ -7,7 +7,6 @@ import '../../core/theme.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/appeal_state_chip.dart';
 import '../../widgets/package_details_dialog.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../core/providers.dart';
 import '../../core/post_status_activities.dart';
@@ -19,9 +18,13 @@ import '../../widgets/empty_state_card.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
 import '../../widgets/tooltip_text.dart';
-import '../../widgets/year_filter.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
+import '../../widgets/storage_charge_note.dart';
+import '../../widgets/qty_cell.dart';
+import '../../widgets/displaced_badge.dart';
 
 /// Item statuses whose goods have permanently left the yard — these must not
 /// appear in (or be counted by) the Warehouses view. Forfeit / Abandoned /
@@ -43,17 +46,18 @@ bool _itemLeftYard(String? s) =>
 class WarehousesScreen extends ConsumerWidget {
   const WarehousesScreen({super.key});
 
+  /// Tidies a stored warehouse name for display.
+  ///
+  /// This used to pull the first number out of the name and rebuild it as
+  /// "Warehouse N" -- so "Open Area 01" came back as "Warehouse 1", and two
+  /// differently named places showed the same label. A facility is not always
+  /// a warehouse; the name it was given is the name it keeps.
+  ///
+  /// Only a legacy "SR " prefix is dropped, which is what the rewrite was
+  /// really there for.
   String _formatWarehouseName(String name) {
-    // Extract warehouse number from names like "SR Warehouse 03" -> "Warehouse 3"
-    final regex = RegExp(r'(\d+)');
-    final match = regex.firstMatch(name);
-    if (match != null) {
-      final number = int.tryParse(match.group(1)!);
-      if (number != null) {
-        return 'Warehouse $number';
-      }
-    }
-    return name;
+    final trimmed = name.trim();
+    return trimmed.startsWith('SR ') ? trimmed.substring(3) : trimmed;
   }
 
   @override
@@ -226,106 +230,84 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
   WarehouseModel get warehouse => widget.warehouse;
 
   String _formatWarehouseName(String name) {
-    final regex = RegExp(r'(\d+)');
-    final match = regex.firstMatch(name);
-    if (match != null) {
-      final number = int.tryParse(match.group(1)!);
-      if (number != null) {
-        return 'Warehouse $number';
-      }
-    }
-    return name;
+    // See the copy on WarehousesScreen: the name is shown as stored.
+    final trimmed = name.trim();
+    return trimmed.startsWith('SR ') ? trimmed.substring(3) : trimmed;
   }
 
   @override
   Widget build(BuildContext context) {
-    final entries = ref.watch(liveWarehouseEntriesProvider(warehouse.id));
     // Appeal rulings, keyed by item id. A decision releases the goods early;
     // a hold keeps them frozen past the deadline.
     final appealOutcomes =
         ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
             const <String, ItemAppealOutcome>{};
-    return entries.when(
+    final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
+    final appealFilter =
+        ref.watch(warehouseAppealFilterProvider(warehouse.id));
+    final reasonFilter =
+        ref.watch(warehouseReasonFilterProvider(warehouse.id));
+    final search =
+        ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
+    final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
+        {DateTime(2020, 1, 1): 50.0};
+    final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
+    final yearFilter = ref.watch(warehouseYearFilterProvider(warehouse.id));
+
+    // ⚠️ The membership, all six filters and the page are SQL now.
+    //
+    // This page fetched every live entry in the facility -- with its
+    // warehouse, its package and both officers' profiles -- built a
+    // `filteredList` by walking it, reading a package per row to test one of
+    // the filters, and then cut a page out with `pageSlice`, which still
+    // loads everything and only renders less. `warehouse_rows` (postgres/48)
+    // carries the same rules, checked entry-for-entry against that code on
+    // all four facilities.
+    final query = WarehouseQuery(
+      warehouseId: warehouse.id,
+      page: _page,
+      status: filter,
+      reason: reasonFilter,
+      search: search.trim().isEmpty ? null : search.trim(),
+      dateStart: dateRange?.start,
+      dateEnd: dateRange?.end,
+      year: yearFilter,
+      appeal: appealFilter,
+    );
+    final pageAsync = ref.watch(warehousePageProvider(query));
+    // ⚠️ ONE query for the page's packages, not one per row.
+    //
+    // The row builder needs the package behind an entry and used to read
+    // `packageDataProvider(...)` for each -- a getPackageById per row, each
+    // pulling the package with its items, its warehouse entries, those
+    // entries' warehouses and the returning officer's profile. Measured on
+    // Warehouse 01: 52 packages, 249ms as separate calls against 46ms as one.
+    //
+    // The same mistake the Destroyed Goods tab was fixed for: paging a table
+    // does not page what its CELLS fetch.
+    final packagesById =
+        ref.watch(warehousePackagesProvider(query)).valueOrNull ??
+            const <String, PackageModel>{};
+    // Goods that reached a Top Management ruling after every sale route
+    // failed. Keyed by forfeited-package id, which is what an unsold
+    // proposal is filed against.
+    final unsoldByFp = ref.watch(unsoldProposalsProvider).valueOrNull ??
+        const <String, UnsoldProposalModel>{};
+
+    return pageAsync.when(
       loading: () => Center(
           child: CircularProgressIndicator(color: context.colors.primaryGold)),
       error: (e, _) => ErrorView(
           error: e,
-          onRetry: () =>
-              ref.refresh(liveWarehouseEntriesProvider(warehouse.id))),
-      data: (list) {
-        final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
-        final reasonFilter =
-            ref.watch(warehouseReasonFilterProvider(warehouse.id));
-        final search =
-            ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
-        final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
-            {DateTime(2020, 1, 1): 50.0};
-
-        final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
-        final yearFilter = ref.watch(warehouseYearFilterProvider(warehouse.id));
-        final showReturned = ref.watch(warehouseEntryFilterProvider);
-        final filteredList = list.where((e) {
-          if (e.isReturned) return false;
-          // Goods with a final disposition (Released / Sold / Re-exported /
-          // Destroyed / Other) have left the yard — never show them here.
-          final pkgForStatus =
-              ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-          if (pkgForStatus != null && e.packageItemId != null) {
-            final it = pkgForStatus.items
-                .where((i) => i.id == e.packageItemId)
-                .firstOrNull;
-            if (_itemLeftYard(it?.status)) return false;
-          }
-          if (filter != 'all') {
-            if (filter == 'confiscated') {
-              if (!e.isPackageConfiscated) return false;
-            } else {
-              // ref.watch so the filter reacts when package data loads in any warehouse tab
-              final pkg =
-                  ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-              if (pkg != null) {
-                final item = e.packageItemId != null
-                    ? pkg.items
-                        .where((i) => i.id == e.packageItemId)
-                        .firstOrNull
-                    : null;
-                final rawStatus = item?.status ?? '';
-                // Normalise: treat 'Forfiet' (typo) same as 'Forfeit'
-                final normStatus = rawStatus.toLowerCase() == 'forfiet'
-                    ? 'Forfeit'
-                    : rawStatus;
-                if (normStatus != filter) return false;
-              }
-              // If pkg not cached yet, include entry (will re-filter on next build)
-            }
-          }
-          if (reasonFilter != 'all' && e.holdReason != reasonFilter)
-            return false;
-          if (dateRange != null) {
-            final date = e.admittedAt;
-            final startOfDay = DateTime(dateRange.start.year,
-                dateRange.start.month, dateRange.start.day);
-            final endOfDay = DateTime(dateRange.end.year, dateRange.end.month,
-                dateRange.end.day, 23, 59, 59);
-            if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
-              return false;
-          }
-          if (yearFilter != null) {
-            final sr = e.srNumber ?? '';
-            final srMatches = srYearMatches(sr, yearFilter);
-            final admittedMatches = e.admittedAt.year.toString() == yearFilter;
-            if (!srMatches && !admittedMatches) return false;
-          }
-          if (search.isNotEmpty) {
-            final matchesSr =
-                (e.srNumber?.toLowerCase() ?? '').contains(search);
-            final matchesConsignee =
-                (e.consigneeName?.toLowerCase() ?? '').contains(search);
-            final matchesReason = e.holdReason.toLowerCase().contains(search);
-            if (!matchesSr && !matchesConsignee && !matchesReason) return false;
-          }
-          return true;
-        }).toList();
+          onRetry: () => ref.refresh(warehousePageProvider(query))),
+      data: (page) {
+        final pageRows = page.rows;
+        // ⚠️ The whole `filteredList` walk is gone. It tested six
+        // conditions over the facility's entire entry list -- one of them by
+        // reading a package per row -- and every one of them is now a SQL
+        // predicate on `warehouse_rows`. Filtering a page here instead would
+        // narrow the twenty rows on screen while the pager went on counting
+        // the entries it had just removed.
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
@@ -369,13 +351,34 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                     runSpacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      // ⚠️ "Other" belongs beside the three: it is a
+                      // registration disposition like the rest, and goods
+                      // carrying it sit in these warehouses exactly as
+                      // detained and forfeited ones do. Leaving it out
+                      // made a whole category unreachable from the page
+                      // that holds it.
                       ...[
                         'all',
                         'Detain',
                         'Forfeit',
-                        'Abandoned'
+                        'Abandoned',
+                        'Other',
                       ].map((s) => FilterChip(
-                            label: Text(s == 'all' ? 'ALL' : s.toUpperCase()),
+                            // ⚠️ "OTHER" is a catch-all, and the label has
+                            // to say so. Named the same way as the three
+                            // chips beside it, a reader takes it for a
+                            // status called "Other" and then cannot
+                            // explain why the rows all read "supposed to
+                            // be destroyed".
+                            label: Text(s == 'all'
+                                ? 'ALL'
+                                : s == 'Other'
+                                    ? 'OTHER STATUSES'
+                                    : s.toUpperCase()),
+                            tooltip: s == 'Other'
+                                ? 'Everything that is not Detain, Forfeit '
+                                    'or Abandoned'
+                                : null,
                             selected: filter == s,
                             onSelected: (_) {
                               ref
@@ -397,84 +400,70 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     ? FontWeight.w700
                                     : FontWeight.w400),
                           )),
+                      // ⚠️ Appeal state is not a package STATUS, so it
+                      // cannot join the chips above — a detained item can
+                      // be inside its window, on hold or decided, and the
+                      // two questions narrow independently. A dropdown
+                      // keeps them visibly separate.
+                      //
+                      // ⚠️ "Appeal enabled" was WRONG for the `enabled`
+                      // state and said the opposite of what it means. An
+                      // appeal can only be lodged INSIDE the first 30 days;
+                      // the green "Enabled" chip marks goods whose window
+                      // has CLOSED — nobody can appeal them any more, and
+                      // what is enabled is the yard's own action: a final
+                      // disposition, or sending them for sale.
+                      StyledDropdownButton<String>(
+                        value: appealFilter == 'all' ? null : appealFilter,
+                        allLabel: 'Appeal',
+                        icon: Icons.gavel_rounded,
+                        menuWidth: 260,
+                        options: const [
+                          StyledDropdownOption(
+                              'appealing', 'In appeal window'),
+                          StyledDropdownOption('hold', 'On appeal hold'),
+                          StyledDropdownOption('decided', 'Decision received'),
+                          StyledDropdownOption(
+                              'enabled', 'Window closed — actionable'),
+                        ],
+                        onChanged: (v) {
+                          ref
+                              .read(warehouseAppealFilterProvider(warehouse.id)
+                                  .notifier)
+                              .state = v ?? 'all';
+                          setState(() => _page = 0);
+                        },
+                      ),
+                      // One control for both "when" questions.
+                      //
+                      // ⚠️ The year list is BOTH years the filter can match,
+                      // from the whole facility: this filter matches the SR
+                      // year OR the admission year, so listing only the SR
+                      // ones hid a year an officer could genuinely pick.
                       Consumer(builder: (context, ref, _) {
-                        final dateRange =
-                            ref.watch(warehouseDateRangeProvider(warehouse.id));
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final picked = await showDialog<dynamic>(
-                                  context: context,
-                                  builder: (context) =>
-                                      custom.DateRangePickerDialog(
-                                          initialRange: dateRange),
-                                );
-                                if (picked is DateTimeRange) {
-                                  ref
-                                      .read(warehouseDateRangeProvider(
-                                              warehouse.id)
-                                          .notifier)
-                                      .state = picked;
-                                  setState(() => _page = 0);
-                                } else if (picked == false) {
-                                  ref
-                                      .read(warehouseDateRangeProvider(
-                                              warehouse.id)
-                                          .notifier)
-                                      .state = null;
-                                  setState(() => _page = 0);
-                                }
-                              },
-                              icon: Icon(Icons.date_range_rounded,
-                                  size: 16,
-                                  color: dateRange != null
-                                      ? context.colors.primaryGold
-                                      : context.colors.textSecondary),
-                              label: Text(
-                                dateRange != null
-                                    ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                                    : 'Date Range',
-                                style: TextStyle(
-                                    color: dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: dateRange != null
-                                        ? FontWeight.bold
-                                        : FontWeight.normal),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                    color: dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.borderColor),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                            if (dateRange != null) ...[
-                              const Gap(8),
-                              IconButton(
-                                icon: Icon(Icons.clear_rounded,
-                                    size: 16, color: context.colors.dangerRed),
-                                onPressed: () {
-                                  ref
-                                      .read(warehouseDateRangeProvider(
-                                              warehouse.id)
-                                          .notifier)
-                                      .state = null;
-                                  setState(() => _page = 0);
-                                },
-                                tooltip: 'Clear Date Filter',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ],
+                        final years = ref
+                                .watch(warehouseFilterOptionsProvider(
+                                    warehouse.id))
+                                .valueOrNull
+                                ?.years ??
+                            const <String>[];
+                        return DateFilterButton(
+                          dateRange: ref
+                              .watch(warehouseDateRangeProvider(warehouse.id)),
+                          year: ref
+                              .watch(warehouseYearFilterProvider(warehouse.id)),
+                          years: years,
+                          onChanged: (range, year) {
+                            ref
+                                .read(warehouseDateRangeProvider(warehouse.id)
+                                    .notifier)
+                                .state = range;
+                            ref
+                                .read(warehouseYearFilterProvider(warehouse.id)
+                                    .notifier)
+                                .state = year;
+                            setState(() => _page = 0);
+                          },
                         );
                       }),
                       Consumer(builder: (context, ref, _) {
@@ -497,23 +486,6 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     warehouseReasonFilterProvider(warehouse.id)
                                         .notifier)
                                 .state = v ?? 'all';
-                            setState(() => _page = 0);
-                          },
-                        );
-                      }),
-                      Consumer(builder: (context, ref, _) {
-                        final yFilter = ref
-                            .watch(warehouseYearFilterProvider(warehouse.id));
-                        final years =
-                            srYears(list.map((e) => e.srNumber ?? ''));
-                        return YearFilterButton(
-                          value: yFilter,
-                          years: years,
-                          onChanged: (v) {
-                            ref
-                                .read(warehouseYearFilterProvider(warehouse.id)
-                                    .notifier)
-                                .state = v;
                             setState(() => _page = 0);
                           },
                         );
@@ -542,6 +514,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                         columnSpacing: 10,
                         horizontalMargin: 12,
                         fixedTopRows: 1,
+                        dataRowHeight: 64,
                         empty: EmptyTableState(
                           icon: Icons.warehouse_rounded,
                           message:
@@ -559,11 +532,11 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               size: ColumnSize.S,
                               fixedWidth: 110),
                           DataColumn2(
-                              label: Text('No. of Goods'),
+                              label: Center(child: Text('No. of Goods')),
                               size: ColumnSize.S,
                               fixedWidth: 100),
                           DataColumn2(
-                              label: Center(child: Text('Charge')),
+                              label: Center(child: Text('Warehouse Charge')),
                               size: ColumnSize.M),
                           DataColumn2(
                               label: Center(child: Text('Status')),
@@ -583,35 +556,63 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               size: ColumnSize.S,
                               fixedWidth: 60),
                         ],
-                        rows: pageSlice(filteredList, _page, kClientPageSize)
+                        rows: pageRows
                             .map((e) {
-                          final pkg = ref
-                              .watch(packageDataProvider(e.packageId))
-                              .valueOrNull;
+                          final pkg = packagesById[e.packageId];
                           String status = e.isReturned
                               ? 'returned'
                               : (e.isPackageConfiscated
                                   ? 'confiscated'
                                   : 'held');
-                          if (pkg != null && e.packageItemId != null) {
-                            final item = pkg.items
-                                    .where((i) => i.id == e.packageItemId)
-                                    .firstOrNull ??
-                                (pkg.items.length == 1
-                                    ? pkg.items.first
-                                    : null);
-                            if (item != null && !e.isReturned) {
-                              status = item.status;
-                            }
+                          // ⚠️ Hoisted out of the `if` below: the Qty cell
+                          // needs it too, to say what packaging the count
+                          // arrived in.
+                          final rowItem =
+                              (pkg != null && e.packageItemId != null)
+                                  ? (pkg.items
+                                          .where((i) => i.id == e.packageItemId)
+                                          .firstOrNull ??
+                                      (pkg.items.length == 1
+                                          ? pkg.items.first
+                                          : null))
+                                  : null;
+                          if (rowItem != null && !e.isReturned) {
+                            status = rowItem.status;
                           }
                           final isItemConfiscated =
                               WarehouseEntryModel.isNoChargeStatus(
                                   status.toLowerCase());
 
-                          final charge = pkg == null
+                          // ⚠️ calculatePackageCharge returns ZERO for
+                          // forfeited, confiscated, abandoned and destroyed
+                          // goods — that is a BILLING rule, not a statement
+                          // that the space was free. Showing "—" for all of
+                          // them hid the cost of 100-odd rows in this very
+                          // table. The figure is what the days cost; only
+                          // goods that reached an Unsold ruling carry none.
+                          final billed = pkg == null
                               ? 0.0
                               : e.calculatePackageCharge(
                                   pkg.items, storageRateHistory);
+                          final spaceCost = spaceCostFor(
+                            from: e.admittedAt,
+                            units: e.itemCount,
+                            rates: storageRateHistory,
+                            until: e.returnedAt,
+                          );
+                          // Top Management has ruled on these after every
+                          // sale route failed: nobody is billed and nobody
+                          // is pricing them against the days any more.
+                          final unsoldRuling = unsoldByFp.isNotEmpty &&
+                              (ref
+                                      .watch(forfeitedByItemProvider(
+                                          e.packageId))
+                                      .valueOrNull
+                                      ?.values
+                                      .any((f) =>
+                                          unsoldByFp.containsKey(f.id)) ??
+                                  false);
+                          final charge = billed > 0 ? billed : spaceCost;
                           final isFree = charge <= 0;
 
                           return DataRow(
@@ -679,7 +680,16 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                                 ? context.colors.textMuted
                                                 : null),
                                         overflow: TextOverflow.ellipsis)
-                                  ]
+                                  ],
+                                  // ⚠️ Under the goods name, not in a column
+                                  // of its own: almost no row carries it, and
+                                  // a column that is blank for 99 rows out of
+                                  // 100 costs width every row pays for.
+                                  DisplacedBadge(
+                                      entry: e,
+                                      warehouses: ref
+                                          .watch(warehousesProvider)
+                                          .valueOrNull),
                                 ],
                               )),
                               DataCell(Builder(builder: (_) {
@@ -707,22 +717,25 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                   overflow: TextOverflow.ellipsis,
                                 );
                               })),
-                              DataCell(TooltipText('${e.itemCount}',
-                                  style: TextStyle(
-                                      color: isItemConfiscated
-                                          ? context.colors.textMuted
-                                          : null))),
+                              DataCell(QtyCell(
+                                  item: rowItem, overrideQty: e.itemCount)),
                               DataCell(Center(
                                   child: Text(
-                                pkg == null
-                                    ? '—'
-                                    : (isFree
+                                unsoldRuling
+                                    ? 'Not charged'
+                                    : pkg == null || isFree
                                         ? '—'
-                                        : 'LKR ${NumberFormat('#,##0.00').format(charge)}'),
+                                        : 'LKR ${NumberFormat('#,##0.00').format(charge)}',
+                                textAlign: TextAlign.center,
                                 style: TextStyle(
-                                    color: isFree
+                                    color: unsoldRuling || isFree
                                         ? context.colors.textMuted
-                                        : context.colors.primaryGold,
+                                        // Gold is the money colour; a cost
+                                        // nobody is billed for does not
+                                        // borrow it.
+                                        : billed > 0
+                                            ? context.colors.primaryGold
+                                            : context.colors.textSecondary,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13),
                               ))),
@@ -739,17 +752,18 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               DataCell(Center(
                                   child: Text(
                                       DateFormat('dd/MM/yy')
-                                          .format(e.admittedAt),
+                                          .format(pkg?.entryDate ?? e.admittedAt),
                                       style: TextStyle(
                                           color: isItemConfiscated
                                               ? context.colors.textMuted
                                               : null)))),
-                              // The 30-day appeal window runs from the date
-                              // the goods were admitted, which is exactly
-                              // this row's date.
+                              // The 30-day appeal window runs from the
+                              // package's entry date (which the admin may
+                              // have corrected), falling back to the
+                              // warehouse admission timestamp.
                               DataCell(Center(
                                   child: AppealStateChip(
-                                      entryDate: e.admittedAt,
+                                      entryDate: pkg?.entryDate ?? e.admittedAt,
                                       // A recorded appeal decision releases
                                       // the goods early; a hold keeps them
                                       // frozen past the deadline.
@@ -765,7 +779,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                   final pkgFull = await ref.read(
                                       packageDataProvider(e.packageId).future);
                                   if (pkgFull != null && context.mounted) {
-                                    showDialog(
+                                    showAppDialog(
                                       context: context,
                                       // View only. Goods are actioned on their
                                       // own status page (Detained / Abandoned /
@@ -792,9 +806,11 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                           .slideY(begin: 0.1, duration: 400.ms, delay: 100.ms)
                           .fadeIn()),
                   TablePager(
-                    total: filteredList.length,
+                    // ⚠️ The SERVER's count: `pageRows.length` is the page
+                    // size now and would pin the pager to page 1.
+                    total: page?.total ?? 0,
                     page: _page,
-                    pageSize: kClientPageSize,
+                    pageSize: kDispositionPageSize,
                     onPageChanged: (p) => setState(() => _page = p),
                   ),
                 ],
@@ -812,7 +828,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
     final storageRateHistory = ref.read(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => Consumer(builder: (context, ref, _) {
         final pkg = ref.watch(packageDataProvider(entry.packageId)).valueOrNull;
@@ -894,9 +910,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                         backgroundColor: context.colors.successGreen));
                 } catch (e) {
                   if (context.mounted)
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: context.colors.dangerRed));
+                    showErrorSnack(context, e);
                 }
               },
               child: const Text('Confirm Release'),
@@ -983,44 +997,21 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
         builder: (context, _) {
           final activeTab = tabController.index;
           final warehouse = warehouses[activeTab];
-          final entries = ref
-                  .watch(liveWarehouseEntriesProvider(warehouse.id))
-                  .valueOrNull ??
-              [];
-
-          // In-yard entries only: drop returned and final-disposition (gone) items.
-          // ref.watch so header stats rebuild when package data loads for any warehouse
-          final inYard = entries.where((e) {
-            if (e.isReturned) return false;
-            if (e.packageItemId != null) {
-              final pkg =
-                  ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-              final item =
-                  pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-              if (_itemLeftYard(item?.status)) return false;
-            }
-            return true;
-          }).toList();
-
-          // Count in-yard entries by their item status, matching the filter
-          // chips below (All / Detain / Forfeit / Abandoned).
-          int statusCount(String target) => inYard.where((e) {
-                if (e.packageItemId == null) return false;
-                final pkg =
-                    ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                final item = pkg?.items
-                    .where((i) => i.id == e.packageItemId)
-                    .firstOrNull;
-                final raw = item?.status ?? '';
-                // Normalise the 'Forfiet' typo to 'Forfeit'
-                final norm = raw.toLowerCase() == 'forfiet' ? 'Forfeit' : raw;
-                return norm == target;
-              }).length;
-
-          final int total = inYard.length;
-          final int detain = statusCount('Detain');
-          final int forfeit = statusCount('Forfeit');
-          final int abandoned = statusCount('Abandoned');
+          // ⚠️ Counted in SQL, over the whole facility.
+          //
+          // These four figures were folded from a fetch of every live entry,
+          // and each fold read `packageDataProvider(...)` per entry -- once to
+          // drop the goods that have left the yard, then again inside every
+          // status chip, so a facility of 75 entries fired the same per-package
+          // fetch four times over. `warehouse_rows` already excludes the
+          // departed goods and carries the normalised status.
+          final counts = ref
+              .watch(warehouseStatusCountsProvider(warehouse.id))
+              .valueOrNull;
+          final int total = counts?.total ?? 0;
+          final int detain = counts?.detain ?? 0;
+          final int forfeit = counts?.forfeit ?? 0;
+          final int abandoned = counts?.abandoned ?? 0;
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),

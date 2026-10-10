@@ -1,3 +1,5 @@
+import 'app_env.dart';
+
 // ============================================================================
 //  OTP e-mail (Gmail SMTP) configuration
 // ----------------------------------------------------------------------------
@@ -9,32 +11,55 @@
 //   1. The sender Gmail account must have 2-Step Verification ON.
 //   2. Google Account → Security → App passwords → generate a 16-char password
 //      (this is NOT the normal Gmail password).
-//   3. Fill in the two values below (or override at build time with
-//      --dart-define=GMAIL_USER=... --dart-define=GMAIL_APP_PASSWORD=...).
+//   3. Put them in `.env` beside the app (copy `.env.example` to start):
+//          GMAIL_USER=...
+//          GMAIL_APP_PASSWORD=...
+//      or override at build time with --dart-define=GMAIL_USER=... etc.
 //
-//  ⚠️ These credentials are compiled into the app binary. Fine for an internal
-//     desktop tool, but anyone with the binary can extract them — use a
-//     dedicated Gmail account, not a personal one. Free Gmail sends ~500
-//     e-mails/day.
+//  ⚠️ Whichever route you pick, the credentials reach the user's machine —
+//     in the binary, or in a file next to it — so anyone running the app can
+//     recover them. Use a DEDICATED Gmail account, never a personal one.
+//     Free Gmail sends ~500 e-mails/day.
+//
+//  ⚠️ There are no longer any default values here. Until `.env` is filled in,
+//     kGmailConfigured is false and the app reports that e-mail is not set up
+//     rather than silently using someone's old account.
 // ============================================================================
 
-/// The Gmail address that sends the OTP e-mails.
-const String kGmailUser = String.fromEnvironment(
-  'GMAIL_USER',
-  defaultValue: 'otpproject3@gmail.com',
-);
+const String _gmailUserDefine = String.fromEnvironment('GMAIL_USER');
+const String _gmailPassDefine = String.fromEnvironment('GMAIL_APP_PASSWORD');
+const String _gmailNameDefine = String.fromEnvironment('GMAIL_FROM_NAME');
 
-/// A 16-character Google App Password for [kGmailUser] (spaces removed).
-const String kGmailAppPassword = String.fromEnvironment(
-  'GMAIL_APP_PASSWORD',
-  defaultValue: 'ugtidrtwitbdtcha',
-);
+/// The Gmail address that sends the OTP e-mails.
+String get kGmailUser =>
+    AppEnv.read('GMAIL_USER', dartDefine: _gmailUserDefine, fallback: '');
+
+/// A 16-character Google App Password for [kGmailUser].
+///
+/// ⚠️ SPACES ARE STRIPPED, because Google shows the password WITH them.
+/// The account page presents it as four groups — `abcd efgh ijkl mnop` —
+/// and that is what anyone copying it pastes into `.env`. SMTP wants the
+/// 16 characters with no spaces, so a verbatim paste authenticates as the
+/// wrong password and the app reports
+///
+///     Could not send the verification e-mail. Please check your
+///     connection and the Gmail configuration
+///
+/// which points at the network and the config rather than at four
+/// invisible characters. Stripping them here means both forms work.
+///
+/// ⚠️ There is deliberately NO default. An earlier version hard-coded a real
+/// App Password here, and it is still in the git history (commit 875e445) —
+/// anyone with the repo can read it. That password should be REVOKED in the
+/// Google account and a fresh one put in `.env`.
+String get kGmailAppPassword =>
+    AppEnv.read('GMAIL_APP_PASSWORD', dartDefine: _gmailPassDefine,
+            fallback: '')
+        .replaceAll(' ', '');
 
 /// Display name shown as the sender.
-const String kGmailFromName = String.fromEnvironment(
-  'GMAIL_FROM_NAME',
-  defaultValue: 'SL Customs',
-);
+String get kGmailFromName => AppEnv.read('GMAIL_FROM_NAME',
+    dartDefine: _gmailNameDefine, fallback: 'SL Customs');
 
 /// True once the Gmail credentials have been provided.
 bool get kGmailConfigured =>

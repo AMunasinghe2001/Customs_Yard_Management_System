@@ -98,7 +98,12 @@ int compareSrNewestFirst(String a, String b) {
 
   final byYear = pb.$1.compareTo(pa.$1);
   if (byYear != 0) return byYear;
-  return pb.$2.compareTo(pa.$2);
+  final bySerial = pb.$2.compareTo(pa.$2);
+  if (bySerial != 0) return bySerial;
+  // SR and OA run INDEPENDENT serials, so the same year+serial legitimately
+  // occurs in both registers. Fall back to the whole number so the order is
+  // stable rather than dependent on the input order.
+  return a.compareTo(b);
 }
 
 /// The yard an SR number belongs to, read from its prefix.

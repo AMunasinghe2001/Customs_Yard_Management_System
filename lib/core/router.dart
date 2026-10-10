@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'session_reset.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/home/yard_access_screen.dart';
 import '../screens/login/login_screen.dart';
@@ -29,6 +30,7 @@ import '../screens/packages/returned_packages_screen.dart';
 import '../screens/packages/abandoned_packages_screen.dart';
 import '../screens/packages/detained_packages_screen.dart';
 import '../screens/packages/other_packages_screen.dart';
+import '../screens/packages/perishable_goods_screen.dart';
 import '../screens/packages/old_entries_screen.dart';
 import '../screens/packages/disposition_category_screen.dart';
 import '../screens/packages/unsold_packages_screen.dart';
@@ -40,20 +42,31 @@ import '../screens/forfeited_packages/forfeited_packages_screen.dart';
 import '../screens/forfeited_packages/tender_disposal_screen.dart';
 import '../screens/forfeited_packages/destruction_disposal_screen.dart';
 import '../widgets/app_shell.dart';
-import '../core/supabase_client.dart';
+import '../core/db_client.dart';
 import '../core/providers.dart';
 import '../services/services.dart';
+import 'app_log.dart';
+
+/// Global key to access root navigator context for dialogs, overlays and snackbars
+/// when invoked from outside the route tree (e.g. root banner overlays).
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: '/',
+    navigatorKey: rootNavigatorKey,
+    // ⚠️ Not always '/'. A session reset rebuilds this router, and a
+    // password change wants to land back on the portal's own sign-in page
+    // rather than the portal picker. takeLandingRoute() returns '/' unless
+    // something deliberately asked otherwise, and clears itself so the next
+    // reset starts from the default again.
+    initialLocation: takeLandingRoute(),
     redirect: (context, state) async {
       final user = supabase.auth.currentUser;
       final isLoggedIn = user != null;
-      // ignore: avoid_print
-      print(
-          '[ROUTER] redirect matched=${state.matchedLocation} loggedIn=$isLoggedIn '
-          'profileAdmin=${ref.read(currentProfileProvider)?.isAdmin}');
+      AppLog.debug(
+          'redirect matched=${state.matchedLocation} loggedIn=$isLoggedIn '
+          'profileAdmin=${ref.read(currentProfileProvider)?.isAdmin}',
+          tag: 'router');
       final publicRoutes = [
         '/',
         '/yard-access',
@@ -74,18 +87,68 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
 
       if (isLoggedIn) {
-        // Run deep verification (email confirmed, active status)
+        // Run deep verification (profile exists, active status)
         try {
-          await ref.read(authServiceProvider).verifyUserSession();
+          final profile =
+              await ref.read(authServiceProvider).verifyUserSession();
+          if (profile != null && ref.read(currentProfileProvider) == null) {
+            ref.read(currentProfileProvider.notifier).state = profile;
+          }
         } catch (e) {
-          // ignore: avoid_print
-          print('[ROUTER] verifyUserSession FAILED: $e → redirect /');
-          // If verification fails (e.g. email not confirmed), redirect to home/login
-          return '/';
+          AppLog.warn('session verification failed; redirecting to /',
+              error: e, tag: 'router');
+          // Every deliberate rejection (deactivated, expired, no profile)
+          // signs the user out first, so the next pass sees loggedIn=false
+          // and settles on a public page. An UNEXPECTED failure — the
+          // database down, or a bad RLS policy — leaves the session alive,
+          // and then redirecting to '/' re-runs this same failing check on
+          // arrival: the redirect never settles, no page is ever built, and
+          // the window freezes with no way back. So end the session before
+          // bouncing, and never bounce a route that is already public.
+          if (supabase.auth.currentUser != null) {
+            try {
+              await ref.read(authServiceProvider).signOut();
+            } catch (signOutError) {
+              AppLog.warn('sign-out after failed verification also failed',
+                  error: signOutError, tag: 'router');
+            }
+          }
+          return isPublicPage ? null : '/';
         }
       }
 
       if (!isLoggedIn && !isPublicPage) return '/';
+
+      // ⚠️ An expired password may not reach ANY page of the app.
+      //
+      // The change is collected inside a live session — `signInWithPassword`
+      // has already succeeded by then — so abandoning that step left a real
+      // session behind. Walking back to a portal page, or any other route,
+      // then satisfied "is logged in" and the redirect below delivered the
+      // dashboard with no password ever entered. A Disposal account landed
+      // in a YARD dashboard with no profile at all.
+      //
+      // Checked HERE rather than in verifyUserSession, which deliberately
+      // tolerates an expired password (that is what lets the change happen).
+      // The router is the layer that knows whether the destination is a
+      // sign-in page — the one place such a session is allowed to be.
+      if (isLoggedIn) {
+        final profile = ref.read(currentProfileProvider);
+        if (profile != null && profile.isPasswordExpired) {
+          if (isPublicPage) {
+            // OTP verification has already created a session when its login
+            // screen discovers an expired password and switches to the
+            // mandatory password-change stage.  Signing out here races that
+            // stage, rebuilds the ProviderScope and drops the user on '/'
+            // before they can set the new password.  Stay on this public
+            // portal route; its Back control explicitly abandons the live
+            // sign-in, and protected routes below remain blocked.
+            return null;
+          }
+          return '/';
+        }
+      }
+
       if (isLoggedIn &&
           (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
         final profile = ref.read(currentProfileProvider);
@@ -108,10 +171,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
       GoRoute(
           path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),
-      GoRoute(
-          path: '/ict/login', builder: (_, __) => const IctLoginScreen()),
-      GoRoute(
-          path: '/ict/signup', builder: (_, __) => const IctSignupScreen()),
+      GoRoute(path: '/ict/login', builder: (_, __) => const IctLoginScreen()),
+      GoRoute(path: '/ict/signup', builder: (_, __) => const IctSignupScreen()),
       GoRoute(
           path: '/ict',
           pageBuilder: (_, state) => NoTransitionPage(
@@ -199,6 +260,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey, child: const DetainedPackagesScreen())),
       GoRoute(
+          path: '/perishable-goods',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const PerishableGoodsScreen())),
+      GoRoute(
           path: '/other-packages',
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey, child: const OtherPackagesScreen())),
@@ -229,16 +294,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                   countLabel: 'For Government Use',
                   proposalFilter: 'government_use'))),
       GoRoute(
-          path: '/remanded-packages',
-          pageBuilder: (_, state) => NoTransitionPage(
-              key: state.pageKey,
-              child: const UnsoldPackagesScreen(
-                  route: '/remanded-packages',
-                  title: 'Remanded Goods',
-                  subtitle: 'Unsold goods remanded for further action',
-                  countLabel: 'Remanded',
-                  proposalFilter: 'remand'))),
-      GoRoute(
           path: '/auction-packages',
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey,
@@ -248,6 +303,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                   subtitle: 'Unsold goods sent to public auction',
                   countLabel: 'For Auction',
                   proposalFilter: 'auction'))),
+      // ⚠️ There is NO '/re-export-packages'. Top Management's re-export
+      // ruling had its own page here, listing the 2 goods the DG sent back
+      // -- and every one of them already appears on Re-exported Goods,
+      // which lists all 19 that left the country by any route and marks
+      // each row Yard or Top Management in its Decided By column.
+      //
+      // Two pages for one population, one a strict subset of the other,
+      // meant a reader had to know which of the two answered their
+      // question. The split that matters is between ROWS on one page, and
+      // that is where it lives.
       GoRoute(
           path: '/converted-packages',
           pageBuilder: (_, state) => NoTransitionPage(
@@ -294,8 +359,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               key: state.pageKey, child: const TenderDisposalScreen())),
       GoRoute(
           path: '/destruction-disposals',
-          pageBuilder: (_, state) => NoTransitionPage(
-              key: state.pageKey, child: const DestructionDisposalScreen())),
+          redirect: (_, __) => '/destroyed-packages'),
       GoRoute(
           path: '/admin',
           pageBuilder: (_, state) => NoTransitionPage(

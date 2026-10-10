@@ -1,0 +1,14 @@
+# Tests tagged `integration` talk to a real PostgreSQL database and sign in as
+# real users, so a plain `flutter test` must not run them: the accounts on a
+# live database do not have the test password, and pointing them at the live
+# database would be wrong even if they did.
+#
+# Run them deliberately, against a scratch COPY:
+#
+#   flutter test test/yard_leak_integration_test.dart \
+#     --dart-define=PG_DATABASE=<copy> --run-skipped
+#
+# See the header of test/yard_leak_integration_test.dart for making the copy.
+tags:
+  integration:
+    skip: "needs a scratch database; run with --run-skipped"

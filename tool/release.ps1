@@ -1,0 +1,196 @@
+<#
+.SYNOPSIS
+  Cut a release: bump the version everywhere, build, and package the installer.
+
+.DESCRIPTION
+  The version number lives in THREE places, and the update notice only works
+  when all three agree:
+
+    pubspec.yaml            version: 1.2.0+3      (what Flutter stamps)
+    installer/setup.iss     AppVersion "1.2.0"    (what Windows records)
+    lib/core/update_check.dart  kAppVersion       (what the running app
+                                                   compares against GitHub)
+
+  Bumping them by hand is how they drift, and a drift here is invisible
+  until it misbehaves in the worst way: if kAppVersion is left BEHIND the
+  published tag, every branch is told to install an update they already have,
+  forever. If it is left AHEAD, no branch is ever told about anything.
+
+  This script writes all three from one argument, so they cannot disagree.
+
+.PARAMETER Patch
+  A small fix.   4.2.1 -> 4.2.2
+
+.PARAMETER Minor
+  A new feature. 4.2.2 -> 4.3.0
+
+.PARAMETER Major
+  A big release. 4.3.0 -> 5.0.0
+
+.PARAMETER Version
+  An exact version, when none of the three fits.
+
+.EXAMPLE
+  .\tool\release.ps1 -Patch -BumpOnly
+  .\tool\release.ps1 -Minor -BumpOnly
+  .\tool\release.ps1 -Version 2.0.0 -BumpOnly
+#>
+param(
+  # ⚠️ THREE PARTS, ALWAYS. Not a style preference: pubspec.yaml
+  # takes `x.y.z+n`, and Flutter writes that into the binary as
+  # Windows' four-number FILEVERSION with the BUILD number in the
+  # fourth slot. A four-part version like 4.2.2.1 would leave nowhere
+  # for it to go.
+  #
+  # 4.2.2 is a patch of 4.2, which is what a "small update" needs.
+  [ValidatePattern('^\d+\.\d+\.\d+$')]
+  [string]$Version,
+
+  # Raise one part of the CURRENT version instead of naming a new one.
+  # Exactly one of these, or -Version.
+  [switch]$Patch,
+  [switch]$Minor,
+  [switch]$Major,
+
+  # Write the three version strings and STOP.
+  #
+  # ⚠️ Use this, then tool\publish_release.ps1. The build below passes
+  # no --dart-define, so it produces a binary with NO database credentials
+  # and NO update feed URL -- fine when this script was the whole release
+  # process, useless now. publish_release.ps1 passes both.
+  [switch]$BumpOnly
+)
+
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
+
+# --- Work out the new version ---------------------------------------
+#
+# ⚠️ Exactly one way of saying it. Passing both -Minor and an
+# explicit -Version is a contradiction, and silently preferring one
+# would ship a release numbered differently from what was typed.
+$bumps = @($Patch, $Minor, $Major) | Where-Object { $_ }
+if ($Version -and $bumps.Count -gt 0) {
+  throw 'Give -Version OR one of -Patch/-Minor/-Major, not both.'
+}
+if (-not $Version -and $bumps.Count -eq 0) {
+  throw 'Give one of -Patch, -Minor, -Major, or -Version <x.y.z>.'
+}
+if ($bumps.Count -gt 1) {
+  throw 'Give only one of -Patch, -Minor, -Major.'
+}
+
+if (-not $Version) {
+  $cur = Get-Content 'pubspec.yaml' -Raw -Encoding UTF8
+  if ($cur -notmatch '(?m)^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$') {
+    throw 'Could not read the current version from pubspec.yaml'
+  }
+  $ma = [int]$Matches[1]; $mi = [int]$Matches[2]; $pa = [int]$Matches[3]
+  $was = "$ma.$mi.$pa"
+
+  # ⚠️ A minor bump RESETS the patch, and a major resets both.
+  # 4.2.2 followed by -Minor is 4.3.0, never 4.3.2 -- otherwise the
+  # numbers stop meaning anything and an officer cannot tell which
+  # release is newer.
+  if     ($Major) { $ma++; $mi = 0; $pa = 0 }
+  elseif ($Minor) { $mi++; $pa = 0 }
+  else            { $pa++ }
+
+  $Version = "$ma.$mi.$pa"
+  Write-Host ("Bumping {0} -> {1}" -f $was, $Version) -ForegroundColor DarkGray
+}
+
+Write-Host "Releasing $Version" -ForegroundColor Cyan
+
+# ── Writing files without wrecking them ─────────────────────────────────────
+#
+# ⚠️ NOT Set-Content -Encoding utf8. In Windows PowerShell 5.1 that writes a
+# BOM and re-encodes the file, which mangles every non-ASCII character already
+# in it — the ⚠️ markers and box-drawing rules throughout setup.iss and the
+# Dart sources came back as "â€”" mojibake the first time this ran, turning a
+# version bump into a diff across the whole file.
+#
+# UTF8Encoding($false) writes the bytes as they are, with no BOM.
+$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
+function Write-FileUtf8([string]$Path, [string]$Text) {
+  [System.IO.File]::WriteAllText((Resolve-Path $Path), $Text, $Utf8NoBom)
+}
+
+
+# ── 1. pubspec.yaml ─────────────────────────────────────────────────────────
+# The build number after '+' must also rise: Windows compares the file version
+# and two builds sharing one number are indistinguishable to the installer.
+$pubspec = Get-Content 'pubspec.yaml' -Raw -Encoding UTF8
+if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$') {
+  throw 'Could not find a "version: x.y.z+n" line in pubspec.yaml'
+}
+$build = [int]$Matches[2] + 1
+# ⚠️ `[ \t]*` and not `\s*`. Under (?m), `\s` matches the newline too, so
+# `\s*$` swallowed the blank line after the version and the bump showed up as
+# a two-line diff instead of one.
+$pubspec = $pubspec -replace '(?m)^version:[ \t]*\d+\.\d+\.\d+\+\d+[ \t]*$', "version: $Version+$build"
+Write-FileUtf8 'pubspec.yaml' $pubspec
+Write-Host "  pubspec.yaml      -> $Version+$build"
+
+# ── 2. installer/setup.iss ──────────────────────────────────────────────────
+$iss = Get-Content 'installer/setup.iss' -Raw -Encoding UTF8
+if ($iss -notmatch '#define AppVersion\s+"[^"]+"') {
+  throw 'Could not find #define AppVersion in installer/setup.iss'
+}
+$iss = $iss -replace '#define AppVersion\s+"[^"]+"', "#define AppVersion     `"$Version`""
+Write-FileUtf8 'installer/setup.iss' $iss
+Write-Host "  setup.iss         -> $Version"
+
+# ── 3. lib/core/update_check.dart ───────────────────────────────────────────
+$dart = Get-Content 'lib/core/update_check.dart' -Raw -Encoding UTF8
+if ($dart -notmatch "defaultValue: '\d+\.\d+\.\d+'") {
+  throw 'Could not find the kAppVersion default in lib/core/update_check.dart'
+}
+$dart = $dart -replace "defaultValue: '\d+\.\d+\.\d+'", "defaultValue: '$Version'"
+Write-FileUtf8 'lib/core/update_check.dart' $dart
+Write-Host "  update_check.dart -> $Version"
+
+if ($BumpOnly) {
+  Write-Host ""
+  Write-Host "Version strings written. Now build and publish:" -ForegroundColor Green
+  Write-Host "    .\tool\publish_release.ps1 -DbPassword '<...>' -Notes '<what changed>'"
+  Write-Host ""
+  exit 0
+}
+
+# -- 4. Build ----------------------------------------------------------------
+Write-Host "`nBuilding..." -ForegroundColor Cyan
+$BucketBase = 'https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates'
+& flutter build windows --release --dart-define=UPDATE_MANIFEST_URL=$BucketBase/latest.json --dart-define=UPDATE_FEED_URL=$BucketBase/appcast.xml
+if ($LASTEXITCODE -ne 0) { throw 'flutter build failed' }
+
+# -- 5. Package --------------------------------------------------------------
+$iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+if (-not (Test-Path $iscc)) {
+  Write-Warning "Inno Setup not found at $iscc - skipping the installer."
+  Write-Host "Install it, then run: & `"$iscc`" installer\setup.iss"
+  exit 0
+}
+& $iscc 'installer\setup.iss'
+if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
+
+# -- 6. Feeds ----------------------------------------------------------------
+$python = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $python) { $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
+if ($python) {
+  & $python tools\generate_appcast.py --notes "Improvements and bug fixes in Version $Version"
+}
+
+$exe = Join-Path $root "installer\output\SLCustoms-SR-Setup-$Version.exe"
+Write-Host "`nDone." -ForegroundColor Green
+if (Test-Path $exe) {
+  $fileLen = (Get-Item $exe).Length
+  $mb = [math]::Round($fileLen / 1048576, 1)
+  Write-Host "  $exe  ($mb MB)" -ForegroundColor Green
+}
+
+Write-Host "`nUpload to Supabase Storage updates bucket:" -ForegroundColor Yellow
+Write-Host "  1. SLCustoms-SR-Setup-$Version.exe" -ForegroundColor Yellow
+Write-Host "  2. latest.json" -ForegroundColor Yellow
+Write-Host "  3. appcast.xml" -ForegroundColor Yellow

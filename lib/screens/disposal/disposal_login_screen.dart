@@ -1,17 +1,24 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
-import '../../core/supabase_client.dart';
+import '../../widgets/password_strength_field.dart';
+import '../../core/db_client.dart';
+import '../../core/abandon_sign_in.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
-import '../../services/services.dart';
+import '../../services/otp_service.dart';
+import '../../widgets/brand_panel.dart';
+import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
+import '../../core/session_reset.dart';
+import '../../core/idle_lock.dart';
+import '../../widgets/portal_field_theme.dart';
 
 /// Two-step login for the Disposal Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in.
@@ -29,6 +36,11 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   final _otpCtrl = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+
+  /// Resending is its OWN action. It used to share `_isLoading`, so
+  /// tapping "Resend code" put the Verify button into "Verifying..."
+  /// while nothing was being verified.
+  bool _isResending = false;
   bool _rememberMe = false;
   bool _otpStage = false;
   String _resolvedEmail = '';
@@ -45,7 +57,7 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   final _confirmPassCtrl = TextEditingController();
   bool _obscureNew = true, _obscureConfirm = true;
 
-  static const int _otpWindowSeconds = 120;
+  static int get _otpWindowSeconds => GmailOtpService.codeLifetime.inSeconds;
   static const int _maxResends = 2;
   Timer? _countdownTimer;
   Timer? _lockTimer;
@@ -60,25 +72,21 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
+    final creds = await SecureCredentialStore.load('disposal_saved');
     setState(() {
-      _idCtrl.text = prefs.getString('disposal_saved_id') ?? '';
-      _passwordCtrl.text = prefs.getString('disposal_saved_password') ?? '';
-      _rememberMe = prefs.getBool('disposal_remember_me') ?? false;
+      _idCtrl.text = creds['email'] as String? ?? '';
+      _passwordCtrl.text = creds['password'] as String? ?? '';
+      _rememberMe = creds['remember_me'] as bool? ?? false;
     });
   }
 
   Future<void> _saveCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setString('disposal_saved_id', _idCtrl.text.trim());
-      await prefs.setString('disposal_saved_password', _passwordCtrl.text);
-      await prefs.setBool('disposal_remember_me', true);
-    } else {
-      await prefs.remove('disposal_saved_id');
-      await prefs.remove('disposal_saved_password');
-      await prefs.setBool('disposal_remember_me', false);
-    }
+    await SecureCredentialStore.save(
+      'disposal_saved',
+      emailOrId: _idCtrl.text.trim(),
+      password: _passwordCtrl.text,
+      rememberMe: _rememberMe,
+    );
   }
 
   @override
@@ -135,7 +143,11 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
       if (!_formKey.currentState!.validate()) return;
     }
     setState(() {
-      _isLoading = true;
+      if (isResend) {
+        _isResending = true;
+      } else {
+        _isLoading = true;
+      }
       _error = null;
       _success = null;
     });
@@ -172,7 +184,10 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
       }
       final email = await ref
           .read(authServiceProvider)
-          .startOtpLogin(_idCtrl.text.trim(), _passwordCtrl.text);
+          .startOtpLogin(_idCtrl.text.trim(), _passwordCtrl.text,
+              // Reject a wrong-portal account HERE, before a code
+              // is sent, instead of after it has been spent.
+              requireRole: 'disposal');
       if (isResend) {
         _resendCount++;
         if (_resendCount >= _maxResends) {
@@ -197,7 +212,15 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     } catch (e) {
       setState(() => _error = _friendlyError(e.toString()));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      // BOTH flags: a resend sets _isResending, and leaving it true left
+      // the Verify button stuck on "Verifying..." beside a "Code
+      // expired" notice, with no verification actually running.
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isResending = false;
+        });
+      }
     }
   }
 
@@ -212,10 +235,8 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
       _error = null;
     });
     try {
-      final profile = await ref
-          .read(authServiceProvider)
-          .finishOtpLogin(_resolvedEmail, _otpCtrl.text.trim(),
-              _passwordCtrl.text);
+      final profile = await ref.read(authServiceProvider).finishOtpLogin(
+          _resolvedEmail, _otpCtrl.text.trim(), _passwordCtrl.text);
       if (profile == null) {
         setState(() => _error = 'Verification failed. Please try again.');
         return;
@@ -253,17 +274,20 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     ref.read(currentProfileProvider.notifier).state = profile;
     if (mounted) {
       context.showSuccess('Logged in as ${profile.fullName}');
-      context.go('/disposal');
+      context.go(resumeRouteAfterSignIn(uid: profile.id, home: '/disposal'));
     }
   }
 
-  // Apply the new password, then continue into the dashboard. The auth.users
+  // Apply the new password, then continue into the dashboard. The sr_auth.users
   // trigger resets password_updated_at, so the next login starts a fresh
   // 90-day window.
   Future<void> _submitNewPassword() async {
     final newPass = _newPassCtrl.text;
-    if (newPass.length < 8) {
-      setState(() => _error = 'Password must be at least 8 characters.');
+    // The database enforces this too (password_policy_violation); checking
+    // here just tells the user before a round trip.
+    final policyError = PasswordPolicy.violation(newPass);
+    if (policyError != null) {
+      setState(() => _error = policyError);
       return;
     }
     if (newPass != _confirmPassCtrl.text) {
@@ -276,13 +300,34 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     });
     try {
       await ref.read(authServiceProvider).changePassword(newPass);
-      // Re-read the profile so the refreshed password_updated_at is in hand.
-      final refreshed =
-          await ref.read(authServiceProvider).getCurrentProfile();
-      final profile = refreshed ?? _pendingProfile!;
-      // If "remember me" is on, keep the saved password in step with the new one.
-      _passwordCtrl.text = newPass;
-      await _finishLogin(profile);
+      // ⚠️ Back to the sign-in form rather than straight into the app. The
+      // session that collected the change is ended here, so the officer
+      // signs in with the new password the ordinary way -- which is what a
+      // password change should feel like, and proves the new password works
+      // while the form that can correct it is still on screen.
+      // ⚠️ Set BEFORE signing out: signOut() schedules the ProviderScope
+      // rebuild, and the NEW router reads this as its starting route. Without
+      // it the officer lands on the portal picker having just set a password.
+      pendingLandingRoute = '/disposal/login';
+      try {
+        await ref.read(authServiceProvider).signOut();
+      } catch (_) {
+        // The provider is cleared either way.
+      }
+      if (!mounted) return;
+      ref.read(currentProfileProvider.notifier).state = null;
+      _countdownTimer?.cancel();
+      setState(() {
+        _passwordStage = false;
+        _passwordExpired = false;
+        _pendingProfile = null;
+        _otpStage = false;
+        _passwordCtrl.text = '';
+        _newPassCtrl.text = '';
+        _confirmPassCtrl.text = '';
+        _error = null;
+        _success = 'Password updated. Sign in with your new password.';
+      });
     } catch (e) {
       setState(() => _error = _friendlyError(e.toString()));
     } finally {
@@ -294,6 +339,19 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   Future<void> _skipPasswordChange() async {
     final profile = _pendingProfile;
     if (profile == null) return;
+    // ⚠️ Re-checked HERE, not only where the button is drawn.
+    //
+    // Hiding a control is a hint, not a rule: this same method is what the
+    // button calls, and the expiry can also cross while the form sits open.
+    // An expired password is the one case where signing in without changing
+    // it is not allowed, so the refusal belongs on the action.
+    if (profile.isPasswordExpired) {
+      setState(() {
+        _passwordExpired = true;
+        _error = 'Your password has expired. Set a new one to sign in.';
+      });
+      return;
+    }
     setState(() => _isLoading = true);
     try {
       await _finishLogin(profile);
@@ -328,9 +386,15 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
         low.contains('over_email_send_rate_limit')) {
       return 'Too many email requests. Please wait a few minutes before trying again.';
     }
-    if (raw.contains('Invalid login credentials') ||
-        raw.contains('invalid_credentials')) {
+    if (low.contains('invalid login credentials') ||
+        low.contains('invalid_credentials')) {
       return 'Incorrect username/email or password. Please try again.';
+    }
+    if (low.contains('not approved') ||
+        low.contains('approved machine') ||
+        low.contains('device')) {
+      return 'This computer is not approved for the SR Management System. '
+          'Ask the ICT Directorate to approve it.';
     }
     if (low.contains('expired')) {
       return 'This code has expired. Tap "Resend code" for a new one, then enter it within 2 minutes.';
@@ -342,6 +406,21 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     }
     if (raw.contains('account_expired')) {
       return 'Your account has expired. Please contact an administrator.';
+    }
+    // The code is CONSUMED the moment it verifies, so a second tap of
+    // "Verify & Sign In" finds nothing left. Without this the user saw the
+    // generic "Sign in failed", which told them to retry something that can
+    // never succeed and hid the real reason the FIRST attempt was rejected.
+    // Raised by startOtpLogin BEFORE any code is sent, so the user is
+    // told on the first screen rather than after spending a code.
+    if (raw.contains('wrong_portal')) {
+      return 'This account is not a Disposal Directorate account. Use the correct portal.';
+    }
+    if (low.contains('no verification code')) {
+      return 'That code has already been used. Tap "Resend code" for a new one.';
+    }
+    if (low.contains('too many attempts')) {
+      return 'Too many incorrect attempts. Tap "Resend code" for a new one.';
     }
     if (raw.contains('account_deactivated')) {
       return 'Your account has been deactivated. Please contact an administrator.';
@@ -369,8 +448,14 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           minimumSize: const Size(0, 0),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      // Its OWN progress text, so a resend in flight is visible HERE rather
+      // than on the Verify button, which is not doing the work.
       child: Text(
-        _secondsLeft > 0 ? 'Resend code' : 'Resend code ($remaining left)',
+        _isResending
+            ? 'Sending...'
+            : (_secondsLeft > 0
+                ? 'Resend code'
+                : 'Resend code ($remaining left)'),
         style: TextStyle(
           color: _canResend ? green : context.colors.textMuted,
           fontWeight: FontWeight.w700,
@@ -389,299 +474,283 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
         Row(children: [
           Expanded(
             flex: 5,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF051A0F),
-                    context.colors.primaryNavy,
-                    context.colors.successGreen
-                  ],
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                          width: 200,
-                          height: 200,
-                          theme: SvgTheme(currentColor: green))
-                      .animate()
-                      .scale(duration: 700.ms, curve: Curves.easeOutBack)
-                      .fadeIn(),
-                  const Gap(36),
-                  Text('Sri Lanka Customs',
-                      style: TextStyle(
-                          color: green,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2)),
-                  const Text('SR Management System',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
-                  const Gap(28),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 28, vertical: 10),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: green.withOpacity(0.3)),
-                      borderRadius: BorderRadius.circular(24),
-                      color: green.withOpacity(0.06),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.gavel_rounded, color: green, size: 16),
-                      const Gap(8),
-                      Text('Central Disposal Directorate',
-                          style: TextStyle(
-                              color: green,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
-                ],
-              ),
+            child: BrandPanel(
+              accent: green,
+              badgeLabel: 'Central Disposal Directorate',
+              badgeIcon: Icons.gavel_rounded,
             ),
           ),
           Expanded(
             flex: 4,
-            child: Center(
-              child: SingleChildScrollView(
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 460),
-                  padding: const EdgeInsets.all(52),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(children: [
-                          IconButton(
-                            icon: Icon(Icons.arrow_back_rounded,
-                                color: context.colors.textSecondary),
-                            onPressed: () => context.go('/'),
-                          ),
-                          const Gap(8),
+            child: PortalFieldTheme(
+              accent: green,
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    padding: const EdgeInsets.all(52),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                           Text('Disposal Sign In',
-                              style:
-                                  Theme.of(context).textTheme.headlineMedium),
-                        ]),
-                        const Gap(8),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 48),
-                          child: Text(
-                              _passwordStage
-                                  ? (_passwordExpired
-                                      ? 'Your password has expired'
-                                      : 'Update your password')
-                                  : _otpStage
-                                      ? 'Two-step verification'
-                                      : 'Central Disposal Directorate access',
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 14)),
-                        ),
-                        const Gap(36),
-                        if (_success != null && _otpStage) ...[
-                          _banner(context, _success!, green,
-                              Icons.check_circle_outline),
-                          const Gap(16),
-                        ],
-                        if (_error != null) ...[
-                          _banner(context, _error!, context.colors.dangerRed,
-                              Icons.error_outline),
-                          const Gap(16),
-                        ],
-                        if (!_otpStage && !_passwordStage) ...[
-                          TextFormField(
-                            controller: _idCtrl,
-                            decoration: InputDecoration(
-                              labelText: 'Username or Email',
-                              prefixIcon: Icon(Icons.person_outline,
-                                  color: context.colors.textMuted),
-                            ),
-                            validator: (v) => v == null || v.isEmpty
-                                ? 'Username or email required'
-                                : null,
-                          ),
-                          const Gap(16),
-                          TextFormField(
-                            controller: _passwordCtrl,
-                            obscureText: _obscurePassword,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: Icon(Icons.lock_outline,
-                                  color: context.colors.textMuted),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_off
-                                        : Icons.visibility,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium)
+                              .animate()
+                              .fadeIn(duration: 400.ms),
+                          const Gap(8),
+                          Text(
+                                  _passwordStage
+                                      ? (_passwordExpired
+                                          ? 'Your password has expired'
+                                          : 'Update your password')
+                                      : _otpStage
+                                          ? 'Two-step verification'
+                                          : 'Central Disposal Directorate access',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 14))
+                              .animate()
+                              .fadeIn(delay: 100.ms),
+                          const Gap(36),
+                          if (_success != null && _otpStage) ...[
+                            // Green, not the portal accent: this is a
+                            // confirmation that the code went out, and it has to
+                            // read as one on every portal alike.
+                            _banner(
+                                context,
+                                _success!,
+                                context.colors.successGreen,
+                                Icons.check_circle_outline),
+                            const Gap(16),
+                          ],
+                          if (_error != null) ...[
+                            _banner(context, _error!, context.colors.dangerRed,
+                                Icons.error_outline),
+                            const Gap(16),
+                          ],
+                          if (!_otpStage && !_passwordStage) ...[
+                            TextFormField(
+                              controller: _idCtrl,
+                              // Enter submits, so the form can be completed from the
+                              // keyboard without reaching for the mouse.
+                              onFieldSubmitted: (_) =>
+                                  _isLoading ? null : _continue(),
+                              decoration: InputDecoration(
+                                labelText: 'Username or Email',
+                                prefixIcon: Icon(Icons.person_outline,
                                     color: context.colors.textMuted),
-                                onPressed: () => setState(() =>
-                                    _obscurePassword = !_obscurePassword),
                               ),
-                            ),
-                            validator: (v) => v == null || v.isEmpty
-                                ? 'Password required'
-                                : null,
-                            onFieldSubmitted: (_) => _continue(),
-                          ),
-                          const Gap(12),
-                          Row(children: [
+                              validator: (v) => v == null || v.isEmpty
+                                  ? 'Username or email required'
+                                  : null,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
+                                .fadeIn(),
+                            const Gap(16),
+                            TextFormField(
+                              controller: _passwordCtrl,
+                              obscureText: _obscurePassword,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                prefixIcon: Icon(Icons.lock_outline,
+                                    color: context.colors.textMuted),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
+                                      color: context.colors.textMuted),
+                                  onPressed: () => setState(() =>
+                                      _obscurePassword = !_obscurePassword),
+                                ),
+                              ),
+                              validator: (v) => v == null || v.isEmpty
+                                  ? 'Password required'
+                                  : null,
+                              onFieldSubmitted: (_) => _continue(),
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 300.ms)
+                                .fadeIn(),
+                            const Gap(12),
+                            Row(children: [
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: Checkbox(
+                                  value: _rememberMe,
+                                  activeColor: green,
+                                  onChanged: (v) =>
+                                      setState(() => _rememberMe = v ?? false),
+                                ),
+                              ),
+                              const Gap(8),
+                              Text('Remember me',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 13)),
+                            ]),
+                            const Gap(24),
                             SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: Checkbox(
-                                value: _rememberMe,
-                                activeColor: green,
-                                onChanged: (v) =>
-                                    setState(() => _rememberMe = v ?? false),
+                              height: 54,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: green,
+                                    foregroundColor: Colors.white),
+                                icon: _isLoading
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white))
+                                    : const Icon(Icons.arrow_forward_rounded),
+                                label: Text(
+                                    _isLoading ? 'Please wait...' : 'Continue',
+                                    style: const TextStyle(fontSize: 16)),
+                                onPressed:
+                                    _isLoading ? null : () => _continue(),
                               ),
-                            ),
-                            const Gap(8),
-                            Text('Remember me',
-                                style: TextStyle(
-                                    color: context.colors.textSecondary,
-                                    fontSize: 13)),
-                          ]),
-                          const Gap(24),
-                          SizedBox(
-                            height: 54,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: green,
-                                  foregroundColor: Colors.white),
-                              icon: _isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.arrow_forward_rounded),
-                              label: Text(
-                                  _isLoading ? 'Please wait...' : 'Continue',
-                                  style: const TextStyle(fontSize: 16)),
-                              onPressed: _isLoading ? null : () => _continue(),
-                            ),
-                          ),
-                          const Gap(20),
-                          Divider(
-                              color:
-                                  context.colors.borderColor.withOpacity(0.5)),
-                          Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 400.ms)
+                                .fadeIn(),
+                            const Gap(20),
+                            Divider(
+                                color: context.colors.borderColor
+                                    .withOpacity(0.5)),
+                            Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text("Don't have an account?",
+                                      style: TextStyle(
+                                          color: context.colors.textMuted,
+                                          fontSize: 13)),
+                                  TextButton(
+                                    onPressed: () =>
+                                        context.go('/disposal/signup'),
+                                    child: Text('Create Account',
+                                        style: TextStyle(
+                                            color: green,
+                                            fontWeight: FontWeight.w600)),
+                                  ),
+                                ]),
+                          ],
+                          if (_otpStage) ...[
+                            Row(children: [
+                              Icon(Icons.mark_email_read_rounded,
+                                  color: green, size: 22),
+                              const Gap(10),
+                              Expanded(
+                                child: Text(
+                                  'Enter the 6-digit code sent to\n$_resolvedEmail',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 13),
+                                ),
+                              ),
+                            ]),
+                            const Gap(20),
+                            TextFormField(
+                              controller: _otpCtrl,
+                              autofocus: true,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 22,
+                                  letterSpacing: 8,
+                                  fontWeight: FontWeight.w700),
+                              decoration: const InputDecoration(
+                                  labelText: 'OTP Code *'),
+                              onFieldSubmitted: (_) =>
+                                  _isLoading ? null : _verify(),
+                            )
+                                .animate()
+                                .slideX(
+                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
+                                .fadeIn(),
+                            const Gap(14),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text("Don't have an account?",
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Icon(Icons.timer_outlined,
+                                      size: 16,
+                                      color: _secondsLeft > 0
+                                          ? context.colors.textMuted
+                                          : context.colors.dangerRed),
+                                  const Gap(6),
+                                  Text(
+                                    _secondsLeft > 0
+                                        ? 'Code expires in $_countdownText'
+                                        : 'Code expired',
+                                    style: TextStyle(
+                                      color: _secondsLeft > 0
+                                          ? context.colors.textSecondary
+                                          : context.colors.dangerRed,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ]),
+                                _buildResendControl(context, green),
+                              ],
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed:
+                                    _isLoading ? null : _backToCredentials,
+                                icon: Icon(Icons.arrow_back_rounded,
+                                    size: 15, color: context.colors.textMuted),
+                                label: Text('Back',
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 13)),
-                                TextButton(
-                                  onPressed: () =>
-                                      context.go('/disposal/signup'),
-                                  child: Text('Create Account',
-                                      style: TextStyle(
-                                          color: green,
-                                          fontWeight: FontWeight.w600)),
-                                ),
-                              ]),
-                        ],
-                        if (_otpStage) ...[
-                          Row(children: [
-                            Icon(Icons.mark_email_read_rounded,
-                                color: green, size: 22),
-                            const Gap(10),
-                            Expanded(
-                              child: Text(
-                                'Enter the 6-digit code sent to\n$_resolvedEmail',
-                                style: TextStyle(
-                                    color: context.colors.textSecondary,
-                                    fontSize: 13),
                               ),
                             ),
-                          ]),
-                          const Gap(20),
-                          TextFormField(
-                            controller: _otpCtrl,
-                            autofocus: true,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 22,
-                                letterSpacing: 8,
-                                fontWeight: FontWeight.w700),
-                            decoration:
-                                const InputDecoration(labelText: 'OTP Code *'),
-                            onFieldSubmitted: (_) =>
-                                _isLoading ? null : _verify(),
-                          ),
-                          const Gap(14),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.timer_outlined,
-                                    size: 16,
-                                    color: _secondsLeft > 0
-                                        ? context.colors.textMuted
-                                        : context.colors.dangerRed),
-                                const Gap(6),
-                                Text(
-                                  _secondsLeft > 0
-                                      ? 'Code expires in $_countdownText'
-                                      : 'Code expired',
-                                  style: TextStyle(
-                                    color: _secondsLeft > 0
-                                        ? context.colors.textSecondary
-                                        : context.colors.dangerRed,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ]),
-                              _buildResendControl(context, green),
-                            ],
-                          ),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: _isLoading ? null : _backToCredentials,
-                              icon: Icon(Icons.arrow_back_rounded,
-                                  size: 15, color: context.colors.textMuted),
-                              label: Text('Back',
-                                  style: TextStyle(
-                                      color: context.colors.textMuted,
-                                      fontSize: 13)),
+                            const Gap(10),
+                            SizedBox(
+                              height: 54,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: green,
+                                    foregroundColor: Colors.white),
+                                // A RESEND must not make this read
+                                // "Verifying..." -- nothing is being verified.
+                                // It is still disabled while one is in flight,
+                                // so the code cannot be checked mid-resend.
+                                icon: _isLoading && !_isResending
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white))
+                                    : const Icon(Icons.login_rounded),
+                                label: Text(
+                                    _isLoading && !_isResending
+                                        ? 'Verifying...'
+                                        : 'Verify & Sign In',
+                                    style: const TextStyle(fontSize: 16)),
+                                onPressed: (_isLoading || _isResending)
+                                    ? null
+                                    : _verify,
+                              ),
                             ),
-                          ),
-                          const Gap(10),
-                          SizedBox(
-                            height: 54,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: green,
-                                  foregroundColor: Colors.white),
-                              icon: _isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.login_rounded),
-                              label: Text(
-                                  _isLoading
-                                      ? 'Verifying...'
-                                      : 'Verify & Sign In',
-                                  style: const TextStyle(fontSize: 16)),
-                              onPressed: _isLoading ? null : _verify,
-                            ),
-                          ),
+                          ],
+                          if (_passwordStage)
+                            ..._buildPasswordStage(context, green),
                         ],
-                        if (_passwordStage) ..._buildPasswordStage(context, green),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -704,6 +773,41 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
                   isDark ? ThemeMode.light : ThemeMode.dark;
             },
           ),
+        ),
+        AuthBackButton(
+          tooltip: _otpStage || _passwordStage
+              ? 'Back to sign in'
+              : 'Back to portals',
+          // ⚠️ Step back a STAGE before leaving the screen.
+          //
+          // The OTP and password steps are `setState` stages of this one
+          // route, not routes of their own — so there was nothing for the
+          // arrow to pop and it fell through to the portal chooser. From a
+          // stage, back means back to the credentials form; only from the
+          // form itself does it leave.
+          //
+          // Leaving also ENDS the session: the password stage runs inside a
+          // live one (core/abandon_sign_in.dart).
+          onPressed: () async {
+            if (_passwordStage || _otpStage) {
+              await abandonSignIn(ref);
+              _countdownTimer?.cancel();
+              if (!mounted) return;
+              setState(() {
+                _passwordStage = false;
+                _otpStage = false;
+                _otpCtrl.clear();
+                _newPassCtrl.clear();
+                _confirmPassCtrl.clear();
+                _pendingProfile = null;
+                _error = null;
+                _success = null;
+              });
+              return;
+            }
+            await abandonSignIn(ref);
+            if (context.mounted) context.go('/');
+          },
         ),
       ]),
     );
@@ -748,39 +852,48 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
             : Icons.warning_amber_rounded,
       ),
       const Gap(20),
+      // ⚠️ The rules, above the field, generated from PasswordPolicy. The
+      // helper text here used to read "Minimum 8 characters" while the
+      // validator rejected anything under 12.
+      PasswordRequirements(password: _newPassCtrl.text),
+      const Gap(10),
       TextFormField(
         controller: _newPassCtrl,
+        // Enter submits, so the form can be completed from the
+        // keyboard without reaching for the mouse.
+        onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),
+        onChanged: (_) => setState(() {}),
         obscureText: _obscureNew,
         decoration: InputDecoration(
           labelText: 'New Password',
-          helperText: 'Minimum 8 characters',
           prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
           suffixIcon: IconButton(
-            icon: Icon(
-                _obscureNew ? Icons.visibility_off : Icons.visibility,
+            icon: Icon(_obscureNew ? Icons.visibility_off : Icons.visibility,
                 color: context.colors.textMuted),
             onPressed: () => setState(() => _obscureNew = !_obscureNew),
           ),
         ),
       ),
+      PasswordStrengthBar(password: _newPassCtrl.text),
       const Gap(16),
       TextFormField(
         controller: _confirmPassCtrl,
         obscureText: _obscureConfirm,
+        onChanged: (_) => setState(() {}),
         decoration: InputDecoration(
           labelText: 'Confirm New Password',
-          prefixIcon:
-              Icon(Icons.lock_outline, color: context.colors.textMuted),
+          prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
           suffixIcon: IconButton(
             icon: Icon(
                 _obscureConfirm ? Icons.visibility_off : Icons.visibility,
                 color: context.colors.textMuted),
-            onPressed: () =>
-                setState(() => _obscureConfirm = !_obscureConfirm),
+            onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
           ),
         ),
         onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),
       ),
+      PasswordMatchBar(
+          password: _newPassCtrl.text, confirm: _confirmPassCtrl.text),
       const Gap(24),
       SizedBox(
         height: 54,

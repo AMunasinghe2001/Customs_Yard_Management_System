@@ -16,12 +16,35 @@ import 'package:cus_yard_management/screens/disposal/disposal_dashboard_screen.d
 void main() {
   Widget harness(String title) => ProviderScope(
         overrides: [
-          exhaustedUnsoldProvider
-              .overrideWith((ref) => Future.value(const <ReTenderSaleInfo>[])),
-          unsoldProposalsProvider.overrideWith(
-              (ref) => Future.value(const <String, UnsoldProposalModel>{})),
+          // The tab pages on the server; an empty page is what this layout
+          // test wants anyway.
+          exhaustedUnsoldPageProvider.overrideWith((ref, q) => Future.value(
+              (rows: const <ReTenderSaleInfo>[], total: 0))),
+          // ⚠️ The PAGE-wide provider, which is what the tab reads.
+          // Both were whole-table fetches used as one-`[fpId]`-per-row
+          // lookups; the tab now asks for its page's ids only.
+          pageProposalsProvider.overrideWith(
+              (ref, key) => Future.value(const <String, UnsoldProposalModel>{})),
           storageRateProvider.overrideWith(
               (ref) => Future.value(const <DateTime, double>{})),
+          // Stubbed for the same reason as the others: the Valuation column now
+          // reads the Top Management committee's figure, and without this the
+          // widget opens a real socket to PostgreSQL.
+          pageCommitteesProvider.overrideWith(
+              (ref, key) => Future.value(const <String, TenderCommitteeModel>{})),
+          // The four table cells read the page's bids and re-valuations.
+          pageBidsProvider.overrideWith((ref, key) =>
+              Future.value(const <String, Map<String, List<double>>>{})),
+          pageRevaluationsProvider.overrideWith((ref, key) => Future.value(
+              const <String, Map<String, TenderRevaluationModel>>{})),
+          // The yard filter dropdown is now DB-driven (ICT's Yards &
+          // Directorates table), so rendering it opens a real socket unless
+          // its source providers are stubbed too.
+          yardsProvider.overrideWith((ref) => Future.value(const <YardModel>[])),
+          directoratesProvider
+              .overrideWith((ref) => Future.value(const <DirectorateModel>[])),
+          yardDirectoratesProvider.overrideWith(
+              (ref) => Future.value(const <String, List<String>>{})),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,

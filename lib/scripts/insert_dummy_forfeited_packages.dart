@@ -1,4 +1,4 @@
-import '../core/supabase_client.dart';
+import '../core/db_client.dart';
 
 /// Script to insert dummy forfeited packages data
 /// Run this from main.dart or a test environment

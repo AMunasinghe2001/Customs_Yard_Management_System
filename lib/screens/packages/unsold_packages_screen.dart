@@ -11,10 +11,13 @@ import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
+import '../../widgets/outcome_filter.dart';
 import '../../widgets/year_filter.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/perishable_row.dart';
 import '../executive/unsold_shared.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 /// The yard's own packages that could not be sold by any means.
 ///
@@ -24,7 +27,7 @@ import '../executive/unsold_shared.dart';
 ///
 /// One widget serves SIX pages. With [proposalFilter] null it lists every
 /// unsold package (the Unsold Goods page); set to an outcome code it lists
-/// only the goods decided that way — Government Use, Remand, Convert and
+/// only the goods decided that way — Government Use, Convert and
 /// "Removed from the Premises" each get their own page that way, without
 /// duplicating the header, filters, table and pager five times over.
 ///
@@ -62,15 +65,21 @@ class UnsoldPackagesScreen extends ConsumerStatefulWidget {
 }
 
 class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
-  static const int _pageSize = 20;
-
   final _searchCtrl = TextEditingController();
   String _search = '';
   DateTimeRange? _dateRange;
   String? _yearFilter;
 
-  /// null = all · false = awaiting the Top Management Directorate · true = decided
-  bool? _decidedFilter;
+  /// One of kUnsoldProposals, kOutcomeAwaiting, or null for all.
+  ///
+  /// ⚠️ Replaces a decided/awaiting flag. "Decided" put all six outcomes in
+  /// one bucket, which is not what an officer is looking for -- they want the
+  /// goods going to auction, or back out of the country.
+  String? _outcomeFilter;
+
+  /// Perishable-only narrowing. Null is "all goods" — false would hide every
+  /// perishable row rather than showing them all.
+  bool? _perishableOnly;
   int _page = 0;
 
   @override
@@ -80,60 +89,46 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
   }
 
   /// Status chip, styled exactly like the Sold page's delivery filter.
-  Widget _statusChip(String label, bool? value, IconData icon) {
-    final selected = _decidedFilter == value;
-    final color = context.colors.primaryGold;
-    return OutlinedButton.icon(
-      onPressed: () => setState(() {
-        _decidedFilter = value;
-        _page = 0;
-      }),
-      icon: Icon(icon,
-          size: 16, color: selected ? color : context.colors.textSecondary),
-      label: Text(label,
-          style: TextStyle(
-              color: selected ? color : context.colors.textSecondary,
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: selected ? color : context.colors.borderColor),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
 
-  /// The rows for this yard, before search/date/year/status filtering.
-  List<ReTenderSaleInfo> _yardRows(List<ReTenderSaleInfo> all, String? myYard) {
-    // RLS already scopes reads, but the shared provider is cross-yard.
-    if (myYard == null) return all;
-    return all.where((i) => i.forfeited.yard == myYard).toList();
-  }
-
-  /// This yard's rows, narrowed to the outcome this page is for.
-  ///
-  /// The header count and the table must agree, so both go through here — an
-  /// outcome page that counted every unsold package would contradict its own
-  /// list.
-  List<ReTenderSaleInfo> _visibleRows(List<ReTenderSaleInfo> all,
-      String? myYard, Map<String, UnsoldProposalModel> proposals) {
-    final mine = _yardRows(all, myYard);
-    final want = widget.proposalFilter;
-    if (want == null) return mine;
-    return mine
-        .where((i) => proposals[i.forfeited.id]?.proposal == want)
-        .toList();
-  }
+  // ⚠️ `_yardRows` and `_visibleRows` moved into the query. The yard scope and
+  // the outcome filter are both columns on the `exhausted_unsold` view now
+  // (postgres/23), so the header count and the table read the SAME narrowed
+  // set by construction rather than by both remembering to call one helper.
 
   @override
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
-    final async = ref.watch(exhaustedUnsoldProvider);
+    final myYardForQuery = ref.watch(currentProfileProvider)?.yard;
+    // ⚠️ Everything this page narrows on is in the key, so the DATABASE
+    // decides which packages have run out of tenders (see postgres/23) and
+    // which page of them to return. Loading every tender sale in the yard to
+    // find eight packages is what this replaces.
+    final query = ExhaustedUnsoldQuery(
+      page: _page,
+      search: _search,
+      yard: myYardForQuery,
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+      outcome: _outcomeFilter,
+      proposal: widget.proposalFilter,
+      // ⚠️ Both unsold routes. A perishable reaches this list after ONE
+      // failed Special Tender Sale, with no committee — conditions
+      // `exhausted_unsold` can never satisfy, so without this the page that
+      // lists unsold goods silently omitted every perishable, decided ones
+      // included. See migration 017.
+      includeAllRoutes: true,
+      perishableOnly: _perishableOnly,
+    );
+    final async = ref.watch(exhaustedUnsoldPageProvider(query));
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    final myYard = ref.watch(currentProfileProvider)?.yard;
+    // The Top Management tender committees, keyed by forfeited_package_id.
+    // Their valuation supersedes the original for an unsold package.
+    final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
+        const <String, TenderCommitteeModel>{};
 
     return AppShell(
       currentRoute: widget.route,
@@ -162,10 +157,10 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
+                    // The database's count for this filter.
                     async.when(
-                      data: (list) => Text(
-                          '${_visibleRows(list, myYard, proposals).length} '
-                          '${widget.countLabel}',
+                      data: (p) => Text(
+                          '${p.total} ${widget.countLabel}',
                           style: TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 13,
@@ -222,87 +217,55 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<dynamic>(
-                              context: context,
-                              builder: (context) =>
-                                  custom.DateRangePickerDialog(
-                                      initialRange: _dateRange),
-                            );
-                            if (picked is DateTimeRange) {
-                              setState(() {
-                                _dateRange = picked;
-                                _page = 0;
-                              });
-                            } else if (picked == false) {
-                              setState(() {
-                                _dateRange = null;
-                                _page = 0;
-                              });
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: _dateRange != null
-                                  ? gold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            _dateRange != null
-                                ? '${DateFormat('MMM d').format(_dateRange!.start)} - ${DateFormat('MMM d').format(_dateRange!.end)}'
-                                : 'Date Range',
-                            style: TextStyle(
-                                color: _dateRange != null
-                                    ? gold
-                                    : context.colors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: _dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: _dateRange != null
-                                    ? gold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (_dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            onPressed: () => setState(() {
-                              _dateRange = null;
-                              _page = 0;
-                            }),
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          years: srYears(async.valueOrNull == null
-                              ? const <String>[]
-                              : _yardRows(async.valueOrNull!, myYard)
-                                  .map((r) => r.forfeited.srNumber)),
-                          onChanged: (v) => setState(() {
-                            _yearFilter = v;
+                        DateFilterButton(
+                          dateRange: _dateRange,
+                          year: _yearFilter,
+                          years: srYears(
+                              ref.watch(exhaustedUnsoldYearsProvider)
+                                      .valueOrNull ??
+                                  const <String>[]),
+                          onChanged: (range, year) => setState(() {
+                            _dateRange = range;
+                            _yearFilter = year;
                             _page = 0;
                           }),
                         ),
-                        // Hidden on an outcome page: every row there is
-                        // already decided the same way, so filtering by
-                        // decided/awaiting would offer nothing.
-                        if (widget.proposalFilter == null) ...[
-                          _statusChip('All', null, Icons.all_inbox_rounded),
-                          _statusChip('Awaiting decision', false,
-                              Icons.schedule_rounded),
-                          _statusChip(
-                              'Decided', true, Icons.check_circle_rounded),
-                        ],
+
+                        // ⚠️ Hidden on an outcome page: every row there is
+                        // already that outcome, so the filter could only ever
+                        // return all of them or none.
+                        if (widget.proposalFilter == null)
+                          OutcomeFilter(
+                            value: _outcomeFilter,
+                            // Every outcome the DG can rule, plus awaiting.
+                            outcomes: kUnsoldProposals,
+                            onChanged: (v) => setState(() {
+                              _outcomeFilter = v;
+                              _page = 0;
+                            }),
+                          ),
+                        // ⚠️ Perishables reach this table by a different
+                        // route entirely — one special tender sale, no
+                        // re-valuation, no committee — and nothing else on
+                        // the row says so.
+                        // ⚠️ Only where this page HAS perishables. Each
+                        // Final Outcome page is its own population —
+                        // Converted has one, Auction has none — so the
+                        // chip follows the data rather than the page name.
+                        if (ref
+                                .watch(unsoldHasPerishablesProvider((
+                                  yard: myYardForQuery,
+                                  proposal: widget.proposalFilter,
+                                )))
+                                .valueOrNull ==
+                            true)
+                          PerishableFilterChip(
+                            selected: _perishableOnly == true,
+                            onChanged: (v) => setState(() {
+                              _perishableOnly = v ? true : null;
+                              _page = 0;
+                            }),
+                          ),
                       ],
                     ),
                   ],
@@ -320,50 +283,22 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                       Center(child: CircularProgressIndicator(color: gold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(exhaustedUnsoldProvider)),
-                  data: (list) {
-                    // Same narrowing the header count uses, so the two can
-                    // never disagree.
-                    final rows =
-                        _visibleRows(list, myYard, proposals).where((info) {
-                      final f = info.forfeited;
-                      if (_search.isNotEmpty) {
-                        final s = _search.toLowerCase();
-                        if (!f.srNumber.toLowerCase().contains(s) &&
-                            !f.consigneeName.toLowerCase().contains(s) &&
-                            !unsoldItemName(f).toLowerCase().contains(s)) {
-                          return false;
-                        }
-                      }
-                      if (_dateRange != null) {
-                        final d = f.forfeitedAt;
-                        final start = DateTime(_dateRange!.start.year,
-                            _dateRange!.start.month, _dateRange!.start.day);
-                        final end = DateTime(
-                            _dateRange!.end.year,
-                            _dateRange!.end.month,
-                            _dateRange!.end.day,
-                            23,
-                            59,
-                            59);
-                        if (d.isBefore(start) || d.isAfter(end)) return false;
-                      }
-                      if (_yearFilter != null &&
-                          !f.srNumber.endsWith('/$_yearFilter')) {
-                        return false;
-                      }
-                      if (_decidedFilter != null &&
-                          proposals.containsKey(f.id) != _decidedFilter) {
-                        return false;
-                      }
-                      return true;
-                    }).toList();
-
-                    final maxPage =
-                        rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
+                      onRetry: () =>
+                          ref.refresh(exhaustedUnsoldPageProvider(query))),
+                  data: (result) {
+                    // Which packages have run out of tenders, which of them
+                    // match the filters, and which page of them — all decided
+                    // by the database. Nothing left to narrow here.
+                    final pageRows = result.rows;
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
                     final page = _page.clamp(0, maxPage);
-                    final pageRows =
-                        rows.skip(page * _pageSize).take(_pageSize);
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
 
                     return Column(
                       children: [
@@ -401,11 +336,27 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                   final f = info.forfeited;
                                   final pkg = f.packageDetails;
                                   final qty = unsoldQty(f);
+                                  // Marks WHAT the goods are, at a tenth of
+                                  // the tender card's amber: findable at a
+                                  // glance, ignorable at a distance.
+                                  final isPerishable =
+                                      isPerishableGoods(forfeited: f);
                                   return DataRow(
+                                    color: WidgetStateProperty.resolveWith(
+                                        (_) => perishableRowColor(
+                                            context, isPerishable)),
                                     cells: unsoldCells(
                                       context,
                                       info: info,
                                       srColor: gold,
+                                      // The Top Management committee's figure,
+                                      // when one exists — it supersedes the
+                                      // original valuation for these packages.
+                                      // The SUBMITTED figure: what the
+                                      // package was actually tendered at.
+                                      committeeUnitValue:
+                                          committees[info.forfeited.id]
+                                              ?.submittedValue,
                                       // Plain text on the yard table — the
                                       // green highlight is for the portals
                                       // that act on the money.
@@ -420,9 +371,17 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                             )
                                           : unsoldDecidedOnCell(
                                               context, proposals[f.id]),
+                                      // Only the decided tables carry the
+                                      // column, so only they may pass a cell
+                                      // — the undecided table has nothing to
+                                      // hand over yet.
+                                      delivery: widget.proposalFilter == null
+                                          ? null
+                                          : UnsoldDeliveryCell(
+                                              proposal: proposals[f.id]),
                                       onDetails: pkg == null
                                           ? null
-                                          : () => showDialog(
+                                          : () => showAppDialog(
                                                 context: context,
                                                 builder: (_) =>
                                                     PackageDetailsDialog(
@@ -444,6 +403,12 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                                           : null,
                                                   valuationQty: qty,
                                                   tenderHistoryFor: f,
+                                                  // Sealed while the newest
+                                                  // round is still open.
+                                                  valuationSealedUntilSale: info
+                                                          .latestSale
+                                                          ?.saleEnded ==
+                                                      false,
                                                 ),
                                               ),
                                     ),
@@ -454,9 +419,10 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                           ),
                         ),
                         TablePager(
-                          total: rows.length,
+                          // The database's count for this filter.
+                          total: result.total,
                           page: page,
-                          pageSize: _pageSize,
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],

@@ -1,0 +1,137 @@
+SRI LANKA CUSTOMS — SR MANAGEMENT SYSTEM
+After installing: connect this machine to the database
+
+
+0. WHAT THIS PC NEEDS
+
+Nothing but Windows.
+
+  * 64-bit Windows 10 or 11
+  * administrator rights, once, to run the installer
+  * a network route to the database server
+
+There is NO separate download and NO other software to install first. No
+Flutter, no Visual Studio, no PostgreSQL client, no .NET, no runtime of any
+kind. Everything the app needs is inside the setup file, including the
+Visual C++ runtime libraries it links against (msvcp140.dll,
+vcruntime140.dll, vcruntime140_1.dll) -- those are placed beside the
+program, and only if the machine does not already have them.
+
+An ordinary office PC used for day-to-day work is enough.
+
+
+1. NORMALLY THERE IS NOTHING TO DO HERE
+
+The installer writes the database settings for you, on a first install, and
+the app connects to the Department's Supabase database over a verified TLS
+connection. Install it, start it, sign in.
+
+The file it writes is
+
+    .env
+
+beside cus_yard_management.exe. ⚠️ An UPGRADE NEVER OVERWRITES IT, so a
+PC that has been pointed somewhere else stays there.
+
+Read on only if you need to point this PC at a different database, or if the
+app says "Cannot reach the database".
+
+
+1b. IF THE APP SAYS "Cannot reach the database"
+
+The screen names the server it tried and the exact error. Two common ones:
+
+  "password authentication failed"
+      The password in .env is not the one the server expects. Ask ICT.
+
+  "Network is unreachable" / "host lookup failed"
+      This PC has no route to the internet, or a firewall is blocking
+      outbound port 5432.
+
+If the setup was built WITHOUT credentials, no .env is written and the app
+stops with that message on purpose -- a missing password is better said out
+loud than guessed at. Section 2 explains how to write one by hand.
+
+
+2. WHAT TO DO
+
+Create a file named exactly
+
+    .env
+
+in the folder this app was installed into -- beside cus_yard_management.exe.
+By default that is:
+
+    C:\Program Files\SL Customs\SR Management System\
+
+THE EASY WAY -- a template is already there.
+
+Open the  env-templates  folder inside that same install folder. It holds two
+ready-made files:
+
+    local-server.env.txt   an office wired to the local/office server
+    cloud-server.env.txt   an office reaching the cloud server
+
+Copy the one you need UP ONE LEVEL (beside cus_yard_management.exe), rename it
+to exactly
+
+    .env
+
+and fill in the two blanks it marks -- the server address and the password.
+
+!! Windows hides known file extensions, so "renaming" in Explorer can quietly
+!! leave you with ".env.txt". The app then still says it cannot reach the
+!! database, because to it the file does not exist. Either switch on
+!!     View -> File name extensions
+!! or rename it from a Command Prompt:
+!!     ren local-server.env.txt .env
+
+!! Saving into Program Files needs administrator rights. If Notepad refuses,
+!! open Notepad as administrator, or save the file to the Desktop and move it
+!! in.
+
+Then start the app from the Start Menu or the desktop shortcut.
+
+
+3. NOTES ON EACH SETTING
+
+PG_HOST      The database server. Ask the ICT Directorate.
+
+PG_USER      Must be yard_app. The app refuses to run as the postgres
+             administrator: that account can read past every yard boundary,
+             and the whole point of yard_app is that it cannot.
+
+PG_PASSWORD  Never the postgres administrator password. If this is left as
+             the built-in default the app still starts but prints a security
+             warning, because that password is guessable.
+
+PG_SSL       true wherever the server offers TLS — always, for anything
+             reached over the internet or between buildings.
+
+
+4. IF WINDOWS WARNS ABOUT THE INSTALLER
+
+"Windows protected your PC" appears because this installer is not signed with
+a purchased code-signing certificate. It is not a virus warning.
+
+Choose "More info", then "Run anyway".
+
+To remove the warning permanently the Department must buy a code-signing
+certificate in its own name and the installer must be signed with it.
+
+
+5. UPGRADING
+
+Run the newer setup file over the top. It replaces the program and keeps your
+.env, so the connection settings survive the upgrade.
+
+
+6. UNINSTALLING
+
+Settings > Apps > SR Management System > Uninstall.
+
+This removes the program, the .env and the diagnostic log from this machine.
+It does NOT touch the database — every SR record lives on the server.
+
+
+ICT Directorate, Sri Lanka Customs.

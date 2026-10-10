@@ -6,14 +6,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/password_strength_field.dart';
 import '../../core/providers.dart';
-import '../../core/supabase_client.dart';
+import '../../core/db_client.dart';
+import '../../core/directorates.dart';
+import '../../models/models.dart';
+import '../../widgets/styled_form_dialog.dart';
 import '../../core/yards.dart';
 import '../../core/app_session.dart';
 import '../../services/services.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
-import '../../widgets/styled_dropdown.dart';
+import '../../core/security_policy.dart';
+import '../../widgets/app_dialog.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -71,28 +76,37 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _saveProfile(BuildContext dialogContext) async {
+  String? _dialogError;
+
+  Future<void> _saveProfile(BuildContext dialogContext,
+      [void Function(void Function())? setDlgState]) async {
     if (!_formKey.currentState!.validate()) return;
 
     final profile = ref.read(currentProfileProvider);
     if (profile == null) return;
 
     setState(() => _isLoading = true);
+    if (setDlgState != null) {
+      setDlgState(() => _dialogError = null);
+    }
 
     try {
       await ref.read(adminServiceProvider).updateProfile(
             profile.id,
-          fullName: _nameCtrl!.text.trim(),
-          username: _usernameCtrl!.text.trim(),
-          badgeNumber: _salaryCtrl!.text.trim(),
-          mobileNumber:
-            _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
-          jobRole:
-            _jobRoleCtrl!.text.trim().isEmpty ? null : _jobRoleCtrl!.text.trim(),
-          yard: _selectedYard,
-          profileImageUrl: _profileImageCtrl!.text.trim().isEmpty
-            ? null
-            : _profileImageCtrl!.text.trim(),
+            fullName: _nameCtrl!.text.trim(),
+            username: _usernameCtrl!.text.trim(),
+            // ⚠️ The officer's OWN salary number, not the field's text. The
+            // field is read-only now, but posting its controller anyway would
+            // leave the value overwritable by anything that set that text —
+            // read-only in the UI is not the same as unwritable.
+            badgeNumber: profile.badgeNumber,
+            mobileNumber:
+                _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
+            // jobRole and yard are deliberately NOT sent: ICT owns them, the
+            // fields are read-only above, and updateProfile skips a null.
+            profileImageUrl: _profileImageCtrl!.text.trim().isEmpty
+                ? null
+                : _profileImageCtrl!.text.trim(),
           );
 
       // Optional password change
@@ -104,12 +118,17 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       }
 
       // Refresh current profile provider
-      final updatedProfile = await ref.read(authServiceProvider).getCurrentProfile();
+      final updatedProfile =
+          await ref.read(authServiceProvider).getCurrentProfile();
       if (updatedProfile != null) {
         ref.read(currentProfileProvider.notifier).state = updatedProfile;
         // Keep the session's active yard in sync so new records are tagged correctly.
         AppSession.setYard(updatedProfile.yard);
         AppSession.setDirectorate(updatedProfile.directorate);
+        // The realtime filter keys off the yard that just changed, so it has
+        // to be re-derived here too — otherwise the listener keeps filtering
+        // for the OLD yard and the user stops seeing their own new one update.
+        AppSession.applyYardFilterToRealtime(updatedProfile.role);
       }
 
       if (mounted && Navigator.of(dialogContext).canPop()) {
@@ -124,9 +143,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_friendlyProfileError(e)),
-            backgroundColor: context.colors.dangerRed));
+        final msg = _friendlyProfileError(e);
+        if (setDlgState != null) {
+          setDlgState(() => _dialogError = msg);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(msg),
+              backgroundColor: context.colors.dangerRed));
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -134,14 +158,104 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   String _friendlyProfileError(Object e) {
-    final raw = e.toString().toLowerCase();
-    if (raw.contains('duplicate') ||
-        raw.contains('23505') ||
-        raw.contains('profiles_username_lower_idx') ||
-        raw.contains('unique')) {
+    final raw = e.toString().trim();
+    final low = raw.toLowerCase();
+
+    // Password reuse / current password
+    if (low.contains('current password')) {
+      return 'New password cannot be your current password. Please choose a different password.';
+    }
+    if (low.contains('used this password before') ||
+        low.contains('password_history')) {
+      return 'You have used this password recently. Please choose a password you have not used before.';
+    }
+
+    // Password policy rules
+    if (low.contains('at least 12') ||
+        low.contains('min length') ||
+        low.contains('too short')) {
+      return 'Password must be at least 12 characters.';
+    }
+    if (low.contains('at most 24') ||
+        low.contains('max length') ||
+        low.contains('too long')) {
+      return 'Password must be at most 24 characters.';
+    }
+    if (low.contains('uppercase')) {
+      return 'Password must contain an uppercase letter (A-Z).';
+    }
+    if (low.contains('lowercase')) {
+      return 'Password must contain a lowercase letter (a-z).';
+    }
+    if (low.contains('number') || low.contains('digit')) {
+      return 'Password must contain a number (0-9).';
+    }
+    if (low.contains('special character') || low.contains('symbol')) {
+      return 'Password must contain a special character (@ # % ! & ...).';
+    }
+    if (low.contains('common') || low.contains('commonly used')) {
+      return 'Password contains a commonly used word. Please choose a stronger password.';
+    }
+    if (low.contains('passwords do not match')) {
+      return 'Passwords do not match.';
+    }
+
+    // Username taken / unique constraint
+    if (low.contains('duplicate') ||
+        low.contains('23505') ||
+        low.contains('profiles_username_lower_idx') ||
+        (low.contains('username') &&
+            (low.contains('unique') ||
+                low.contains('already exists') ||
+                low.contains('taken')))) {
       return 'That username is already taken. Please choose another.';
     }
-    return 'Failed to update profile: $e';
+
+    // Email errors
+    if (low.contains('email') &&
+        (low.contains('duplicate') ||
+            low.contains('user_already_exists') ||
+            low.contains('23505') ||
+            low.contains('already in use'))) {
+      return 'This email address is already in use by another account.';
+    }
+
+    // Permission / Session errors
+    if (low.contains('42501') ||
+        low.contains('permission denied') ||
+        low.contains('only change your own password')) {
+      return 'You may only update your own account.';
+    }
+
+    // Network / server
+    if (low.contains('socketexception') ||
+        low.contains('connection refused') ||
+        low.contains('network')) {
+      return 'Network problem — could not reach the server. Check your connection and try again.';
+    }
+
+    // Clean raw message
+    var cleaned = raw;
+    for (final prefix in [
+      'Exception: ',
+      'PgQueryException: ',
+      'PostgreSQLException: ',
+      'AuthApiException: ',
+      'AuthException: ',
+      'AuthException(null): ',
+      'AuthException(invalid_credentials): ',
+    ]) {
+      if (cleaned.startsWith(prefix)) {
+        cleaned = cleaned.substring(prefix.length);
+      }
+    }
+    cleaned = cleaned.replaceFirst(RegExp(r'^Severity\.\w+\s*'), '').trim();
+    if (cleaned.startsWith('22023:')) {
+      cleaned = cleaned.substring(6).trim();
+    }
+    return cleaned.isNotEmpty
+        ? cleaned
+        : 'Failed to update profile. Please check the details and try again.';
   }
 
   String _initials(String? name) {
@@ -151,13 +265,49 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 
+  /// The largest profile photo accepted. The image is stored and shipped with
+  /// the profile, so an unbounded pick means an unbounded row.
+  static const int _maxProfileImageBytes = 2 * 1024 * 1024; // 2 MB
+
+  /// The image formats accepted. Narrow on purpose: FileType.image lets the
+  /// picker offer anything the platform calls an image -- including SVG, which
+  /// is a document that can carry script, and formats nothing here can decode.
+  /// These three are what the app actually renders.
+  static const List<String> _allowedImageExtensions = ['jpg', 'jpeg', 'png'];
+
   Future<String?> _pickProfileImage() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
+      type: FileType.custom,
+      allowedExtensions: _allowedImageExtensions,
       allowMultiple: false,
     );
     if (result == null || result.files.isEmpty) return null;
-    return result.files.single.path;
+    final path = result.files.single.path;
+    if (path == null) return null;
+
+    // Re-checked here, not just handed to the picker: a picker filter is a
+    // convenience the platform may not honour, and a path can arrive by other
+    // routes. The extension is what decides.
+    final ext = path.split('.').last.toLowerCase();
+    if (!_allowedImageExtensions.contains(ext)) {
+      if (mounted) {
+        context.showError('Only JPG and PNG images are accepted.');
+      }
+      return null;
+    }
+
+    // Checked off the file itself rather than the picker's reported size:
+    // that is what actually gets read and stored.
+    final length = await File(path).length();
+    if (length > _maxProfileImageBytes) {
+      if (mounted) {
+        final mb = (length / (1024 * 1024)).toStringAsFixed(1);
+        context.showError(
+            'That photo is ${mb}MB. Please choose one under 2MB.');
+      }
+      return null;
+    }
+    return path;
   }
 
   void _openEditDialog(BuildContext context) {
@@ -174,26 +324,61 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _confirmPasswordCtrl!.clear();
     _obscureNew = true;
     _obscureConfirm = true;
+    _dialogError = null;
 
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-          title: const Text('Edit Profile'),
-          content: Container(
-            width: 620,
-            constraints: const BoxConstraints(minHeight: 520, maxHeight: 680),
-            child: SingleChildScrollView(
-              child: Form(
+        builder: (ctx, setDlgState) => StyledFormDialog(
+          label: 'MY ACCOUNT',
+          title: 'Edit Profile',
+          icon: Icons.manage_accounts_rounded,
+          width: 620,
+          // ⚠️ This is a YARD form — the officer's own profile, opened from
+          // the yard shell — so it takes the yard's navy header, the same one
+          // the SR Register Entry popup uses. Without this flag it fell back
+          // to the 15% accent tint, which is the DIRECTORATE design, and the
+          // dialog looked like it belonged to a directorate console.
+          yard: true,
+          child: Form(
                 key: _formKey,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                      if (_dialogError != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 11),
+                          margin: const EdgeInsets.only(bottom: 14),
+                          decoration: BoxDecoration(
+                            color: context.colors.dangerRed.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color:
+                                    context.colors.dangerRed.withOpacity(0.35)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.error_outline_rounded,
+                                  color: context.colors.dangerRed, size: 20),
+                              const Gap(10),
+                              Expanded(
+                                child: Text(
+                                  _dialogError!,
+                                  style: TextStyle(
+                                    color: context.colors.dangerRed,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       Center(
                         child: InkWell(
                           borderRadius: BorderRadius.circular(60),
@@ -255,14 +440,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         ),
                       ],
                       const Gap(16),
+                      StyledFormSection(
+                        title: 'Your Details',
+                        icon: Icons.person_outline_rounded,
+                        children: [
                       TextFormField(
                         controller: _nameCtrl!,
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Full Name *',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          ),
                         validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                       ),
                       const Gap(10),
@@ -272,9 +459,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Username',
                           helperText: 'Used to sign in (email also works)',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          ),
                         validator: (v) {
                           final t = v?.trim() ?? '';
                           if (t.isEmpty) return null; // optional
@@ -285,14 +470,21 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         },
                       ),
                       const Gap(10),
+                      // ⚠️ Read-only, like Job Role and Yard below it. The
+                      // salary number is the Department's identifier for the
+                      // officer, not a detail about them — ICT sets it when
+                      // the account is provisioned, and an officer editing
+                      // their own would break the one field that ties the
+                      // account to a real member of staff.
                       TextFormField(
                         controller: _salaryCtrl!,
+                        readOnly: true,
+                        enabled: false,
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Salary Number',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          helperText: 'Set by ICT',
+                          ),
                       ),
                       const Gap(10),
                       TextFormField(
@@ -300,9 +492,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: const InputDecoration(
                           labelText: 'Mobile Number',
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        ),
+                          ),
                         keyboardType: TextInputType.phone,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
@@ -317,50 +507,48 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         },
                       ),
                       const Gap(10),
+                      // Job Role and Yard are set by ICT when the account is
+                      // provisioned -- an officer cannot reassign their own
+                      // posting, so they are shown for context, greyed, and
+                      // never sent on save.
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: _jobRoleCtrl!,
-                              style: TextStyle(color: context.colors.textPrimary),
+                              readOnly: true,
+                              enabled: false,
+                              style:
+                                  TextStyle(color: context.colors.textPrimary),
                               decoration: const InputDecoration(
                                 labelText: 'Job Role',
-                                contentPadding:
-                                    EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                              ),
+                                helperText: 'Set by ICT',
+                                ),
                             ),
                           ),
                           const Gap(10),
                           Expanded(
-                            child: StyledDropdownFormField<String>(
-                              value: _selectedYard,
-                              label: 'Yard',
-                              helperText: null,
-                              isDense: false,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 14),
-                              menuWidth: 280,
-                              options: [
-                                for (final y in kYards)
-                                  StyledDropdownOption(y.code, y.name),
-                              ],
-                              onChanged: (v) => setDlgState(
-                                  () => _selectedYard = v ?? kDefaultYardCode),
+                            child: TextFormField(
+                              initialValue: yardName(_selectedYard),
+                              readOnly: true,
+                              enabled: false,
+                              style:
+                                  TextStyle(color: context.colors.textPrimary),
+                              decoration: const InputDecoration(
+                                labelText: 'Yard',
+                                helperText: 'Set by ICT',
+                                ),
                             ),
                           ),
                         ],
                       ),
-                      const Gap(10),
-                      const Divider(height: 28),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('Change Password',
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
+                        ],
                       ),
-                      const Gap(2),
+                      const Gap(14),
+                      StyledFormSection(
+                        title: 'Change Password',
+                        icon: Icons.lock_outline_rounded,
+                        children: [
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
@@ -369,14 +557,41 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                 color: context.colors.textMuted, fontSize: 11)),
                       ),
                       const Gap(10),
+                      // ⚠️ ALWAYS in the tree, shown or not — the slot
+                      // stays and only its CONTENTS change.
+                      //
+                      // This was a bare `if`, which added two children above
+                      // the field on the first keystroke. The field then lost
+                      // focus and the officer had to click back into the box
+                      // for every following character.
+                      //
+                      // A fixed slot also keeps the layout from jumping under
+                      // the cursor as the checklist appears, which is worth
+                      // having on its own.
+                      //
+                      // Hidden until typing starts because the change is
+                      // OPTIONAL here (blank keeps the current password), and
+                      // a checklist of unmet rules on an untouched form reads
+                      // as an error blocking an unrelated edit.
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        alignment: Alignment.topCenter,
+                        child: _newPasswordCtrl!.text.isEmpty
+                            ? const SizedBox(width: double.infinity)
+                            : Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: PasswordRequirements(
+                                    password: _newPasswordCtrl!.text),
+                              ),
+                      ),
                       TextFormField(
                         controller: _newPasswordCtrl!,
                         obscureText: _obscureNew,
+                        onChanged: (_) => setDlgState(() {}),
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
                           labelText: 'New Password',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
                           suffixIcon: IconButton(
                             icon: Icon(
                                 _obscureNew
@@ -389,19 +604,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         ),
                         validator: (v) {
                           if (v == null || v.isEmpty) return null; // optional
-                          if (v.length < 8) return 'Min 8 characters';
+                          // Blank means "leave the password alone"; a typed one must pass.
+                          return PasswordPolicy.violation(v);
                           return null;
                         },
                       ),
+                      PasswordStrengthBar(password: _newPasswordCtrl!.text),
                       const Gap(10),
                       TextFormField(
                         controller: _confirmPasswordCtrl!,
                         obscureText: _obscureConfirm,
+                        onChanged: (_) => setDlgState(() {}),
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
                           labelText: 'Confirm New Password',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
                           suffixIcon: IconButton(
                             icon: Icon(
                                 _obscureConfirm
@@ -420,6 +636,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           return null;
                         },
                       ),
+                      // Same reasoning: a fixed slot, so the fields below
+                      // never shift index. PasswordMatchBar already shows
+                      // nothing for an empty confirm box.
+                      PasswordMatchBar(
+                          password: _newPasswordCtrl!.text,
+                          confirm: _confirmPasswordCtrl!.text),
                       const Gap(10),
                       TextFormField(
                         initialValue: supabase.auth.currentUser?.email ?? '',
@@ -427,16 +649,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         style: TextStyle(color: context.colors.textMuted),
                         decoration: InputDecoration(
                           labelText: 'Email Address',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
                           filled: true,
                           fillColor: context.colors.borderColor.withOpacity(0.3),
                         ),
                       ),
+                        ],
+                      ),
                   ],
                 ),
-              ),
-            ),
           ),
           actions: [
             TextButton(
@@ -444,7 +664,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: _isLoading ? null : () => _saveProfile(ctx),
+              onPressed: _isLoading ? null : () => _saveProfile(ctx, setDlgState),
               style: ElevatedButton.styleFrom(
                 backgroundColor: context.colors.primaryGold,
                 foregroundColor: context.colors.primaryNavy,
@@ -519,12 +739,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               const Gap(24),
               _ProfileHeroCard(
                 name: profile.fullName,
-                role: profile.role,
+                role: profile.postTitle,
                 email: email,
                 badge: profile.badgeNumber,
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
-                yard: yardName(profile.yard),
+                yard: _yardWithDirectorate(profile),
                 profileImageUrl: profile.profileImageUrl,
                 initials: _initials(profile.fullName),
               ).animate().fadeIn(duration: 400.ms, delay: 100.ms).slideY(begin: 0.1),
@@ -534,11 +754,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 username: profile.username,
                 badge: profile.badgeNumber,
                 email: email,
-                role: profile.role,
                 isActive: profile.isActive,
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
-                yard: yardName(profile.yard),
+                yard: _yardWithDirectorate(profile),
+                daysUntilPasswordExpiry: profile.daysUntilPasswordExpiry,
+                passwordExpired: profile.isPasswordExpired,
               ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideY(begin: 0.1),
             ],
           ),
@@ -546,6 +767,19 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       ),
     );
   }
+}
+
+/// The yard as it is actually referred to: with the directorate it sits under.
+///
+/// A yard alone is ambiguous — NNR is both CED and PSD, and the directorate is
+/// what puts the prefix on every SR number the officer registers. "Grey Line 1"
+/// on its own left that unsaid.
+String _yardWithDirectorate(ProfileModel profile) {
+  final yard = yardName(profile.yard);
+  final dir = profile.directorate;
+  if (dir == null || dir.trim().isEmpty) return yard;
+  final prefix = directorateSrPrefix(dir);
+  return prefix.isEmpty ? yard : '$prefix / $yard';
 }
 
 class _ProfileHeroCard extends StatelessWidget {
@@ -666,7 +900,10 @@ class _ProfileHeroCard extends StatelessWidget {
                       color: context.colors.accentLightBlue.withOpacity(0.4),
                     ),
                   ),
-                  child: Text(role.toUpperCase(),
+                  // The officer's POST, not the raw permission role: there
+                  // are no "admins" in this service, and "ADMIN" told the
+                  // officer nothing about the job they actually hold.
+                  child: Text(role,
                       style: TextStyle(
                           color: context.colors.accentLightBlue,
                           fontSize: 12,
@@ -681,33 +918,60 @@ class _ProfileHeroCard extends StatelessWidget {
   }
 }
 
+/// The profile's details, grouped and laid out as a responsive grid.
+///
+/// This was one column of full-width rows: nine identical bars stacked down
+/// the page, every field given the same weight whether it was the officer's
+/// name or a yard code, and a lot of empty space to the right of each. Now the
+/// fields sit in titled groups -- who the account is, how to reach them, where
+/// they are posted -- two to a row on a wide window and one on a narrow one.
 class _ProfileDetailsCard extends StatelessWidget {
   final String fullName;
   final String? username;
   final String? badge;
   final String email;
-  final String role;
   final bool isActive;
   final String? mobile;
   final String? jobRole;
   final String? yard;
+
+  /// Whole days until the account auto-deactivates, or null for an
+  /// institutional directorate account that never expires.
+  final int daysUntilPasswordExpiry;
+  final bool passwordExpired;
 
   const _ProfileDetailsCard({
     required this.fullName,
     this.username,
     required this.badge,
     required this.email,
-    required this.role,
     required this.isActive,
     required this.mobile,
     required this.jobRole,
     required this.yard,
+    required this.daysUntilPasswordExpiry,
+    required this.passwordExpired,
   });
 
   @override
   Widget build(BuildContext context) {
     final statusColor =
         isActive ? context.colors.successGreen : context.colors.dangerRed;
+
+    // ⚠️ How long the PASSWORD has left, not how long the account has.
+    //
+    // This tile used to count down `daysUntilExpiry` — account dormancy — and
+    // read "Never expires" for everyone who signs in regularly, which told
+    // the officer nothing they could act on. The password rotates every 90
+    // days and locks them out when it lapses, so that is the date worth
+    // knowing. It is the same number ICT's staff table shows as
+    // "Resets in N days", from the same field.
+    final (String expiryValue, Color? expiryColor) = passwordExpired
+        ? ('Expired', context.colors.dangerRed)
+        : daysUntilPasswordExpiry <= 14
+            ? ('$daysUntilPasswordExpiry days', context.colors.warningAmber)
+            : ('$daysUntilPasswordExpiry days', context.colors.textPrimary);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -720,52 +984,151 @@ class _ProfileDetailsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Profile Details',
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700)),
-          const Gap(20),
-          _InfoRow(
-              label: 'Full Name',
-              value: fullName,
-              icon: Icons.person_outline_rounded),
-          _InfoRow(
-              label: 'Username',
-              value: username?.isNotEmpty == true ? username! : '—',
-              icon: Icons.alternate_email_rounded),
-          _InfoRow(
-              label: 'Salary Number',
-              value: badge?.isNotEmpty == true ? badge! : '—',
-              icon: Icons.badge_outlined),
-          _InfoRow(
-              label: 'Mobile Number',
-              value: mobile?.isNotEmpty == true ? mobile! : '—',
-              icon: Icons.phone_android_rounded),
-          _InfoRow(
-              label: 'Email Address',
-              value: email,
-              icon: Icons.email_outlined),
-          _InfoRow(
-              label: 'Role',
-              value: role.toUpperCase(),
-              icon: Icons.admin_panel_settings_outlined),
-          _InfoRow(
-              label: 'Job Role',
-              value: jobRole?.isNotEmpty == true ? jobRole! : '—',
-              icon: Icons.work_outline_rounded),
-          _InfoRow(
-              label: 'Yard',
-              value: yard?.isNotEmpty == true ? yard! : '—',
-              icon: Icons.warehouse_rounded),
-          _InfoRow(
-            label: 'Status',
-            value: isActive ? 'ACTIVE' : 'INACTIVE',
-            valueColor: statusColor,
+          _Group(
+            title: 'Identity',
+            icon: Icons.person_outline_rounded,
+            fields: [
+              _Field('Full Name', fullName, Icons.badge_outlined),
+              _Field('Username', username, Icons.alternate_email_rounded),
+              _Field('Salary Number', badge, Icons.pin_outlined),
+            ],
+          ),
+          const Gap(22),
+          _Group(
+            title: 'Contact',
+            icon: Icons.contact_mail_outlined,
+            fields: [
+              _Field('Email Address', email, Icons.email_outlined),
+              _Field('Mobile Number', mobile, Icons.phone_android_rounded),
+            ],
+          ),
+          const Gap(22),
+          _Group(
+            title: 'Posting',
+            icon: Icons.work_outline_rounded,
+            // Set by ICT when the account is provisioned, so they are shown
+            // here but not editable. "Role" is deliberately absent: it named
+            // the same thing as Job Role in coarser words.
+            subtitle: 'Assigned by ICT',
+            fields: [
+              _Field('Job Role', jobRole, Icons.work_outline_rounded),
+              _Field('Yard', yard, Icons.warehouse_rounded),
+            ],
+          ),
+          const Gap(22),
+          _Group(
+            title: 'Account',
             icon: Icons.verified_user_outlined,
+            fields: [
+              _Field(
+                'Status',
+                isActive ? 'ACTIVE' : 'INACTIVE',
+                Icons.verified_user_outlined,
+                color: statusColor,
+              ),
+              _Field(
+                'Password Resets In',
+                expiryValue,
+                Icons.schedule_rounded,
+                color: expiryColor,
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+/// One field's label, value and icon. A null or blank [value] renders as a dash.
+class _Field {
+  final String label;
+  final String? value;
+  final IconData icon;
+  final Color? color;
+  const _Field(this.label, this.value, this.icon, {this.color});
+}
+
+/// A titled group of fields, two to a row when there is room for two.
+class _Group extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final String? subtitle;
+  final List<_Field> fields;
+
+  const _Group({
+    required this.title,
+    required this.icon,
+    required this.fields,
+    this.subtitle,
+  });
+
+  /// Below this a row of two would squeeze both values to nothing, so the
+  /// fields go one per row instead.
+  static const double _twoColumnMinWidth = 620;
+  static const double _gap = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 15, color: context.colors.primaryGold),
+            const Gap(8),
+            Text(title.toUpperCase(),
+                style: TextStyle(
+                    color: context.colors.primaryGold,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1)),
+            const Gap(10),
+            // A hairline carrying the eye across to the group's note, so the
+            // groups read as bands rather than as more stacked boxes.
+            Expanded(
+              child: Container(
+                  height: 1, color: context.colors.borderColor),
+            ),
+            if (subtitle != null) ...[
+              const Gap(10),
+              Text(subtitle!,
+                  style: TextStyle(
+                      color: context.colors.textMuted,
+                      fontSize: 10.5,
+                      fontStyle: FontStyle.italic)),
+            ],
+          ],
+        ),
+        const Gap(12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final twoUp = constraints.maxWidth >= _twoColumnMinWidth;
+            final cellWidth = twoUp
+                ? (constraints.maxWidth - _gap) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: _gap,
+              runSpacing: _gap,
+              children: [
+                for (final f in fields)
+                  SizedBox(
+                    width: cellWidth,
+                    child: _InfoRow(
+                      label: f.label,
+                      value: f.value?.trim().isNotEmpty == true
+                          ? f.value!
+                          : '—',
+                      valueColor: f.color,
+                      icon: f.icon,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }

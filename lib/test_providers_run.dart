@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'core/supabase_client.dart';
+import 'core/db_client.dart';
 import 'core/providers.dart';
 
 void main() {

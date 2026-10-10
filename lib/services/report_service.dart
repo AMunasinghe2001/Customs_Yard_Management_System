@@ -8,6 +8,7 @@ import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import 'package:intl/intl.dart';
+import '../core/app_session.dart';
 
 class ReportService {
   static final ReportService _instance = ReportService._internal();
@@ -26,24 +27,27 @@ class ReportService {
 
   static Future<void> _loadLogo() async {
     if (_logoSvg != null && _logoSvg!.isNotEmpty) return;
-    try {
-      final raw =
-          await rootBundle.loadString('Sri_Lanka_Customs_logo_tinted.svg');
-      _logoSvg = raw.replaceAll('currentColor', '#0D47A1');
-      return;
-    } catch (e) {
-      debugPrint('report logo: tinted SVG unavailable ($e), trying plain');
+    for (final asset in const [
+      'Sri_Lanka_Customs_logo_tinted.svg',
+      'Sri_Lanka_Customs_logo.svg',
+    ]) {
+      try {
+        final raw = await rootBundle.loadString(asset);
+        if (raw.trim().isEmpty) continue;
+        // The tinted emblem paints with `currentColor`, which a PDF has no
+        // notion of -- it has to be resolved to a literal before rendering.
+        _logoSvg = raw.replaceAll('currentColor', '#0D47A1');
+        return;
+      } catch (e) {
+        debugPrint('report logo: $asset unavailable ($e)');
+      }
     }
-    try {
-      final raw = await rootBundle.loadString('Sri_Lanka_Customs_logo.svg');
-      _logoSvg = raw;
-    } catch (e) {
-      // Falling back to the lettered "SLC" monogram. Logged, because an
-      // emblem silently missing from every report reads as a design choice
-      // rather than a failed asset load.
-      debugPrint('report logo: no SVG could be loaded ($e), using SLC');
-      _logoSvg = null;
-    }
+    // Every asset failed. Left NULL rather than cached as "missing", so the
+    // next report retries: this used to be a permanent downgrade to the "SLC"
+    // monogram for the rest of the session after one transient failure --
+    // and the guard above only re-runs while _logoSvg is null.
+    _logoSvg = null;
+    debugPrint('report logo: no SVG could be loaded, using the SLC monogram');
   }
 
   /// The emblem for a report header, or the lettered fallback.
@@ -78,7 +82,16 @@ class ReportService {
   Future<void> _ensureFontsLoaded() async {
     // The emblem rides along with the fonts: every report needs both, and this
     // runs before each one is built.
-    await _loadLogo();
+    //
+    // Guarded separately from the fonts on purpose. PdfGoogleFonts reads the
+    // asset manifest and THROWS when it cannot; that used to abort this whole
+    // method, so a font problem took the emblem down with it and every report
+    // in the session fell back to the "SLC" monogram for an unrelated reason.
+    try {
+      await _loadLogo();
+    } catch (e) {
+      debugPrint('report logo: load failed ($e), using the SLC monogram');
+    }
     if (_font != null && _fontBold != null && _fontSinhala != null) return;
     _font = await PdfGoogleFonts.notoSansRegular();
     _fontBold = await PdfGoogleFonts.notoSansBold();
@@ -147,7 +160,18 @@ class ReportService {
   Future<Uint8List> generateCategoryAndZonePdf(
       List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     // Grouping by Category (total item quantity per category), sorted desc.
@@ -382,7 +406,18 @@ class ReportService {
     // Loads the fonts AND the Customs emblem; without it this report
     // fell back to the lettered "SLC" monogram.
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
@@ -413,7 +448,18 @@ class ReportService {
     // Loads the fonts AND the Customs emblem; without it this report
     // fell back to the lettered "SLC" monogram.
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
@@ -449,7 +495,18 @@ class ReportService {
       Map<String, DateTime?>? destroyedByItem,
       Map<DateTime, double>? rates}) async {
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
     String v(String? s) => (s == null || s.trim().isEmpty) ? 'N/A' : s.trim();
     String d(DateTime? dt) =>
@@ -592,7 +649,6 @@ class ReportService {
       pw.MultiPage(
         pageFormat: format ?? PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        theme: pw.ThemeData.withFont(base: _font, bold: _fontBold),
         build: (context) => [
           _buildHeader('SR REGISTER ENTRY', dateStr, p.srNumber),
           pw.SizedBox(height: 18),
@@ -802,7 +858,18 @@ class ReportService {
     PdfPageFormat? format,
   }) async {
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
     final pageFmt = format ?? PdfPageFormat.a4;
     final isLandscape = pageFmt.width > pageFmt.height;
@@ -821,7 +888,6 @@ class ReportService {
       pw.MultiPage(
         pageFormat: pageFmt,
         margin: const pw.EdgeInsets.all(24),
-        theme: pw.ThemeData.withFont(base: _font, bold: _fontBold),
         build: (context) => [
           _buildHeader(title, dateStr, periodLabel),
           pw.SizedBox(height: 14),
@@ -886,7 +952,18 @@ class ReportService {
     PdfPageFormat? format,
   }) async {
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     // Disposition breakdown columns (in addition to admit/release/net).
@@ -1147,7 +1224,18 @@ class ReportService {
     // Loads the fonts AND the Customs emblem; without it this report
     // fell back to the lettered "SLC" monogram.
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
@@ -1179,7 +1267,18 @@ class ReportService {
     // Loads the fonts AND the Customs emblem; without it this report
     // fell back to the lettered "SLC" monogram.
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
@@ -1362,7 +1461,18 @@ class ReportService {
     // Loads the fonts AND the Customs emblem; without it this report
     // fell back to the lettered "SLC" monogram.
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
@@ -1385,7 +1495,7 @@ class ReportService {
                 .map((p) => [
                       p.fullName,
                       p.badgeNumber ?? 'N/A',
-                      p.role.toUpperCase(),
+                      p.postShortTitle.toUpperCase(),
                       p.isActive ? 'Active' : 'Deactivated',
                       DateFormat('yyyy-MM-dd').format(p.createdAt),
                     ])
@@ -1431,7 +1541,7 @@ class ReportService {
       sheetObject.appendRow([
         TextCellValue(p.fullName),
         TextCellValue(p.badgeNumber ?? ''),
-        TextCellValue(p.role.toUpperCase()),
+        TextCellValue(p.postShortTitle.toUpperCase()),
         TextCellValue(p.isActive ? 'Active' : 'Inactive'),
         TextCellValue(DateFormat('yyyy-MM-dd').format(p.createdAt)),
       ]);
@@ -1446,7 +1556,18 @@ class ReportService {
   Future<Uint8List> generateWarehousesListPdf(
       List<WarehouseModel> warehouses, Map<String, int> stats) async {
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
@@ -1541,7 +1662,18 @@ class ReportService {
       List<PackageModel> packages, Map<DateTime, double> rates,
       {required bool isRevenue}) async {
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     // Receipt number embedded in the release notes as "Receipt No: XXX".
@@ -1745,7 +1877,28 @@ class ReportService {
     return Uint8List.fromList(excel.encode()!);
   }
 
+  /// The yard this report was run from, written the way an SR number writes
+  /// it — "CED/GL2".
+  ///
+  /// ⚠️ Every report is already scoped to the signed-in yard by RLS, but a
+  /// printed page carried no trace of that: "CURRENT YARD STOCK" over 224
+  /// rows, with nothing saying WHICH yard's 224. Two yards' printouts were
+  /// indistinguishable once they left the screen.
+  ///
+  /// Includes the directorate because a yard code alone is ambiguous — NNR
+  /// belongs to both CED and PSD — and because that is the form officers
+  /// read off every SR number. Falls back to the bare yard when the
+  /// directorate is unknown, and to nothing at all when there is no yard
+  /// (the cross-yard directorate portals).
+  static String? _yardLabel() {
+    final yard = AppSession.currentYard.trim();
+    if (yard.isEmpty) return null;
+    final dir = (AppSession.currentDirectorate ?? '').trim();
+    return dir.isEmpty ? yard : '$dir/$yard';
+  }
+
   pw.Widget _buildHeader(String title, String date, String subTitle) {
+    final yard = _yardLabel();
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -1758,7 +1911,10 @@ class ReportService {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(
-                    title,
+                    // ⚠️ The yard goes in the TITLE, not only in the small
+                    // print: a page separated from its stack has to say
+                    // whose stock it lists.
+                    yard == null ? title : '$title  —  $yard',
                     style: pw.TextStyle(
                       fontSize: 20,
                       fontWeight: pw.FontWeight.bold,
@@ -1776,7 +1932,10 @@ class ReportService {
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    'Sri Lanka Customs - SR Management System',
+                    yard == null
+                        ? 'Sri Lanka Customs - SR Management System'
+                        : 'Sri Lanka Customs - SR Management System  |  '
+                            'Yard: $yard',
                     style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
                   ),
                 ],
@@ -2079,7 +2238,18 @@ class ReportService {
     // Loads the fonts AND the Customs emblem; without it this report
     // fell back to the lettered "SLC" monogram.
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
     final data = buildForfeitedReportRows(packages, dateHeader: dateHeader);
     final headers = data.$1;
@@ -2144,7 +2314,18 @@ class ReportService {
     required DateTime tenderDate,
   }) async {
     await _ensureFontsLoaded();
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      // ⚠️ The font theme belongs on the DOCUMENT, not on each page.
+      // Thirteen of these were bare, so those reports fell back to
+      // Helvetica — which has no em dash, and printed a hollow box
+      // wherever the text said "—". Setting it here covers every page the
+      // document holds, including ones added later.
+      theme: pw.ThemeData.withFont(
+        base: _font,
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
     final tenderDateStr = DateFormat('yyyy-MM-dd').format(tenderDate);
 

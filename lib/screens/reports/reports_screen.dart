@@ -9,6 +9,8 @@ import 'package:pdf/pdf.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../widgets/year_filter.dart';
+import '../../core/app_session.dart';
 import '../executive/unsold_shared.dart' show unsoldQty;
 import '../../core/yards.dart';
 import '../../core/post_status_activities.dart';
@@ -23,6 +25,7 @@ import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/app_dialog.dart';
 
 /// The statuses a report row can actually carry, in lifecycle order: the three
 /// registration dispositions (+ Other) followed by the terminal outcomes
@@ -99,20 +102,82 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// 'all' = every round side by side, else one of [kValuationRounds].
   String _valuationRound = 'all';
 
+  /// Physical yard code extracted from `_reportYard` (e.g. 'NNR' from 'NNR|CED', or 'ASIAN').
+  String? get _physicalYard {
+    if (_reportYard == null) return null;
+    final bar = _reportYard!.indexOf('|');
+    return bar < 0 ? _reportYard : _reportYard!.substring(0, bar);
+  }
+
   /// The yard passed to the data services. Executive mode → the picked yard
   /// (report cards are only shown once one is picked, so it's non-null here);
   /// disposal mode → the picked yard, or null for "All Yards" (cross-yard);
-  /// officer mode → null, so RLS scopes data to the officer's own yard.
-  String? get _yardArg =>
-      (widget.executiveMode || widget.disposalMode) ? _reportYard : null;
+  /// officer mode → AppSession.currentYard so queries scope strictly to the officer's own yard.
+  String? get _yardArg => (widget.executiveMode || widget.disposalMode)
+      ? _physicalYard
+      : AppSession.currentYard;
+
+  /// Checks whether an item/row matches the currently selected yard and directorate.
+  bool _matchesSelectedYard(String? rowYard, String? rowSrNumber) {
+    if (!widget.executiveMode && !widget.disposalMode) {
+      final effectiveYard = rowYard ?? yardOfSrNumber(rowSrNumber);
+      return effectiveYard == null ||
+          effectiveYard.isEmpty ||
+          effectiveYard == AppSession.currentYard;
+    }
+    if (_reportYard == null) return true;
+    final dirMap = ref.read(directorateSrPrefixMapProvider).valueOrNull;
+    final effectiveYard = rowYard ?? yardOfSrNumber(rowSrNumber);
+    return matchesYardFilter(_reportYard, effectiveYard, rowSrNumber ?? '',
+        prefixToCode: dirMap);
+  }
 
   /// Client-side yard filter for report lists whose service can't take a yard
-  /// (e.g. forfeited packages). No-op in officer mode, and in disposal mode
-  /// when "All Yards" is selected.
-  List<T> _filterByYard<T>(List<T> rows, String? Function(T) yardOf) {
-    if (!widget.executiveMode && !widget.disposalMode) return rows;
+  /// (e.g. forfeited packages). No-op in disposal mode when "All Yards" is selected,
+  /// scopes to AppSession.currentYard in officer mode.
+  List<T> _filterByYard<T>(List<T> rows, String? Function(T) yardOf,
+      [String? Function(T)? srNumberOf]) {
+    if (!widget.executiveMode && !widget.disposalMode) {
+      return rows.where((r) {
+        final y = yardOf(r);
+        String? sr = srNumberOf?.call(r);
+        if (sr == null) {
+          if (r is ForfeitedPackageModel) {
+            sr = r.srNumber;
+          } else if (r is PackageModel) {
+            sr = r.srNumber;
+          } else if (r is WarehouseEntryModel) {
+            sr = r.srNumber;
+          } else if (r is SrFinancials) {
+            sr = r.srNumber;
+          }
+        }
+        final effectiveYard = y ?? yardOfSrNumber(sr);
+        return effectiveYard == null ||
+            effectiveYard.isEmpty ||
+            effectiveYard == AppSession.currentYard;
+      }).toList();
+    }
     if (_reportYard == null) return rows;
-    return rows.where((r) => yardOf(r) == _reportYard).toList();
+    final dirMap = ref.read(directorateSrPrefixMapProvider).valueOrNull;
+    return rows.where((r) {
+      final y = yardOf(r);
+      String? sr = srNumberOf?.call(r);
+      if (sr == null) {
+        if (r is ForfeitedPackageModel) {
+          sr = r.srNumber;
+        } else if (r is PackageModel) {
+          sr = r.srNumber;
+        } else if (r is WarehouseEntryModel) {
+          sr = r.srNumber;
+        } else if (r is SrFinancials) {
+          sr = r.srNumber;
+        }
+      }
+      final effectiveYard = y ?? yardOfSrNumber(sr);
+      return matchesYardFilter(_reportYard, effectiveYard, sr ?? '',
+          prefixToCode: dirMap);
+    }).toList();
   }
 
   // Track loading state for each button uniquely
@@ -190,24 +255,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (_dateFilterType == 'day') {
       final initial = _startDate ?? today;
       final clampedInitial = initial.isAfter(today) ? today : initial;
-      final picked = await showDatePicker(
-        context: context,
+      // ⚠️ The app's own calendar, not Material's. The stock picker brings
+      // its own header, type and OK/Cancel, and patching its ColorScheme
+      // never makes it match the rounded, blurred dialogs beside it. This
+      // is the same picker the date-range dialog uses.
+      final picked = await custom.showOneTapCalendar(
+        context,
         initialDate: clampedInitial,
         firstDate: DateTime(2020),
         lastDate: today,
-        builder: (context, child) {
-          return Theme(
-            data: Theme.of(context).copyWith(
-              colorScheme: ColorScheme.dark(
-                primary: context.colors.primaryGold,
-                onPrimary: Colors.black,
-                surface: context.colors.cardDark,
-                onSurface: context.colors.textPrimary,
-              ),
-            ),
-            child: child!,
-          );
-        },
+        label: 'Select Day',
       );
       if (picked != null) {
         setState(() {
@@ -238,7 +295,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final initial = (_startDate != null && _endDate != null)
           ? DateTimeRange(start: _startDate!, end: _endDate!)
           : null;
-      final picked = await showDialog<dynamic>(
+      final picked = await showAppDialog<dynamic>(
         context: context,
         builder: (_) => custom.DateRangePickerDialog(initialRange: initial),
       );
@@ -266,7 +323,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (selectedYear == currentYear && selectedMonth > currentMonth) {
       selectedMonth = currentMonth;
     }
-    final years = List.generate(10, (i) => currentYear - i);
+    // Same list as the year picker: the years the register actually holds,
+    // not ten years back from today.
+    final years = _reportYearOptions();
+    if (!years.contains(selectedYear) && years.isNotEmpty) {
+      selectedYear = years.first;
+    }
     final months = [
       'January',
       'February',
@@ -282,7 +344,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       'December'
     ];
 
-    return showDialog<({int year, int month})>(
+    return showAppDialog<({int year, int month})>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) {
@@ -290,9 +352,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           if (selectedMonth > maxMonth) selectedMonth = maxMonth;
 
           return AlertDialog(
+            // Same chrome as every other dialog in the app: 20px corners
+            // and the surface colour, so a date picker does not arrive
+            // looking like it came from somewhere else.
             shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            backgroundColor: context.colors.cardDark,
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: context.colors.surfaceDark,
             title: Text('Select Month & Year',
                 style: TextStyle(
                     color: context.colors.textPrimary,
@@ -368,20 +433,44 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
+  /// The years the SR register actually covers, newest first.
+  ///
+  /// Falls back to this year and the next while the SR numbers are still
+  /// loading — an empty picker would be worse than a short one.
+  List<int> _reportYearOptions() {
+    final srs = ref.watch(packageYearSourceProvider).valueOrNull ?? const [];
+    final years = srYears(srs).map(int.tryParse).whereType<int>().toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (years.isEmpty) {
+      final y = DateTime.now().year;
+      return [y + 1, y];
+    }
+    return years;
+  }
+
   Future<int?> _showYearPickerDialog(
       BuildContext context, int initialYear) async {
     int selectedYear = initialYear;
-    final currentYear = DateTime.now().year;
-    if (selectedYear > currentYear) selectedYear = currentYear;
-    final years = List.generate(10, (i) => currentYear - i);
+    // ⚠️ The years the REGISTER actually holds, not a fixed count back from
+    // today. `List.generate(10, ...)` offered 2019 and eight other years
+    // nothing had ever been filed under, so the picker was mostly dead
+    // options and paged to 2/2 to show them.
+    //
+    // srYears() reads the trailing "/YYYY" off every SR number and always
+    // adds this year and the next — so a register starting in 2024 offers
+    // 2024-2027 and nothing else, and the list rolls forward on its own.
+    final years = _reportYearOptions();
+    if (!years.contains(selectedYear)) {
+      selectedYear = years.isEmpty ? DateTime.now().year : years.first;
+    }
 
-    return showDialog<int>(
+    return showAppDialog<int>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          backgroundColor: context.colors.cardDark,
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: context.colors.surfaceDark,
           title: Text('Select Year',
               style: TextStyle(
                   color: context.colors.textPrimary,
@@ -484,10 +573,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             StyledDropdownButton<String>(
               value: _reportYard,
               allLabel: widget.disposalMode ? 'All Yards' : 'Select Yard',
-              icon: Icons.location_city_rounded,
+              icon: Icons.warehouse_rounded,
               menuWidth: 260,
-              options: kYards
-                  .map((y) => StyledDropdownOption(y.code, y.name))
+              options: (ref.watch(yardFilterOptionsProvider).valueOrNull ??
+                      [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)])
+                  .map((o) => StyledDropdownOption(o.value, o.label))
                   .toList(),
               onChanged: (v) => setState(() {
                 _reportYard = v;
@@ -497,32 +587,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               }),
             ),
 
-          // ── Date Filter Mode Selector ──
+          // ── Date filter: ONE control ──
+          //
+          // ⚠️ This was a dropdown that chose the MODE plus a chip beside it
+          // that opened the picker — two buttons for one decision, and the
+          // dropdown already opened the picker on selection, so the chip's
+          // only remaining job was to re-open it. Now the dropdown carries
+          // the chosen value as its own label and re-opens the picker when
+          // the same mode is chosen again.
           StyledDropdownButton<String>(
             value: _dateFilterType,
-            allLabel: 'Date Filter',
-            icon: Icons.calendar_month_rounded,
-            menuWidth: 200,
-            options: const [
-              StyledDropdownOption('range', 'Custom Date Range'),
-              StyledDropdownOption('day', 'Single Day'),
-              StyledDropdownOption('month', 'By Month'),
-              StyledDropdownOption('year', 'By Year'),
-            ],
-            onChanged: (v) {
-              if (v != null && v != _dateFilterType) {
-                setState(() {
-                  _dateFilterType = v;
-                  _startDate = null;
-                  _endDate = null;
-                });
-                _handleDatePick();
-              }
-            },
-          ),
-
-          // ── Date Picker Action Chip ──
-          _filterChip(
+            allLabel: hasDate ? dateLabel : 'Date Filter',
             icon: _dateFilterType == 'day'
                 ? Icons.today_rounded
                 : (_dateFilterType == 'month'
@@ -530,9 +605,26 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     : (_dateFilterType == 'year'
                         ? Icons.calendar_view_week_rounded
                         : Icons.date_range_rounded)),
-            label: dateLabel,
-            active: hasDate,
-            onTap: _handleDatePick,
+            menuWidth: 220,
+            options: const [
+              StyledDropdownOption('range', 'Custom Date Range'),
+              StyledDropdownOption('day', 'Single Day'),
+              StyledDropdownOption('month', 'By Month'),
+              StyledDropdownOption('year', 'By Year'),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              // ⚠️ No `v != _dateFilterType` guard. Picking the SAME mode
+              // again is how the reader changes the day they are looking
+              // at, and swallowing it left them with no way to do so once
+              // the chip was gone.
+              setState(() {
+                _dateFilterType = v;
+                _startDate = null;
+                _endDate = null;
+              });
+              _handleDatePick();
+            },
           ),
           if (hasDate)
             IconButton(
@@ -614,33 +706,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  /// Outlined chip button (matches the other pages' Date Range / filter chips).
-  Widget _filterChip({
-    required IconData icon,
-    required String label,
-    required bool active,
-    required VoidCallback onTap,
-  }) {
-    final color =
-        active ? context.colors.primaryGold : context.colors.textSecondary;
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 16, color: color),
-      label: Text(label,
-          style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: active ? FontWeight.bold : FontWeight.normal)),
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(
-            color: active
-                ? context.colors.primaryGold
-                : context.colors.borderColor),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
 
   /// A chip that opens a popup menu of (value,label) choices — matches the
   /// "All Reasons" / "All Years" style popups on the other pages.
@@ -738,7 +803,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           }
         }
 
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (_) => PackageDetailsDialog(
             package: pkg,
@@ -788,7 +853,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
     final effectiveCols = shouldAddDetails ? [...columns, 'Details'] : columns;
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (ctx) => Dialog(
         insetPadding: const EdgeInsets.all(28),
@@ -1315,7 +1380,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             '$base.pdf'),
         onExportExcel: () {
           if (!mounted) return;
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (c) => ExcelExportDialog(
               title: 'Export $title',
@@ -1389,7 +1454,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
     void exportExcel() {
       if (!mounted) return;
-      showDialog(
+      showAppDialog(
         context: context,
         builder: (c) => ExcelExportDialog(
           title: 'Export $key',
@@ -1889,7 +1954,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// The goods that exhausted EVERY avenue: the Valuation Tender, Tender 1-3
   /// and the committee-priced final tender all failed. For each one it prints
   /// the committee the ADG appointed to value it and the final outcome the DG
-  /// proposed (destroy / remand / government use / auction), or "Pending
+  /// proposed (destroy / government use / auction / convert), or "Pending
   /// decision" when the DG has not ruled yet.
   Future<void> _generateNotSoldReport(String format) async {
     const key = 'Not Sold Packages';
@@ -1905,7 +1970,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       for (final info in exhausted) {
         final f = info.forfeited;
         // Respect the portal's yard picker and the date range above.
-        if (_yardArg != null && f.yard != _yardArg) continue;
+        if (!_matchesSelectedYard(f.yard, f.srNumber)) continue;
         if (_startDate != null && f.forfeitedAt.isBefore(_startDate!)) continue;
         if (_endDate != null &&
             f.forfeitedAt.isAfter(DateTime(
@@ -2010,10 +2075,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       for (final r in all) {
         // SRs with nothing recorded would only pad the report out.
         if (r.isEmpty) continue;
-        // Respect the portal's yard picker. Falls back to the SR prefix when a
-        // row carries no yard, the same way the tab's filter does.
-        if (_yardArg != null &&
-            (r.yard ?? yardOfSrNumber(r.srNumber)) != _yardArg) {
+        // Respect the portal's yard picker.
+        if (!_matchesSelectedYard(
+            r.yard ?? yardOfSrNumber(r.srNumber), r.srNumber)) {
           continue;
         }
 
@@ -2139,7 +2203,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   static String _reportMoney(double v) =>
       v == 0 ? '-' : NumberFormat('#,##0.00').format(v);
 
-  /// Goods the Top Management Directorate decided a particular way — Unsold, Remand, Auction
+  /// Goods the Top Management Directorate decided a particular way — Unsold, Auction
   /// or Convert. One generator for all of them: the report differs only by
   /// which `unsold_proposals.proposal` it keeps.
   ///
@@ -2164,7 +2228,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
       for (final info in exhausted) {
         final f = info.forfeited;
-        if (_yardArg != null && f.yard != _yardArg) continue;
+        if (!_matchesSelectedYard(f.yard, f.srNumber)) continue;
         if (_startDate != null && f.forfeitedAt.isBefore(_startDate!)) continue;
         if (_endDate != null &&
             f.forfeitedAt.isAfter(DateTime(
@@ -2346,7 +2410,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
       void exportExcel() {
         if (!mounted) return;
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (c) => ExcelExportDialog(
             title: 'Export $activity Report',
@@ -2532,6 +2596,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'other', 'Other Goods', 'excel'),
                     ),
                     _buildReportCard(
+                      title: 'Perishable Goods',
+                      description:
+                          'Goods that spoil — held with no appeal window.',
+                      icon: Icons.eco_rounded,
+                      color: const Color(0xFFD84315),
+                      onView: () => _generateSourceForfeitedReport(
+                          'perishable', 'Perishable Goods', 'view'),
+                      onPdf: () => _generateSourceForfeitedReport(
+                          'perishable', 'Perishable Goods', 'pdf'),
+                      onExcel: () => _generateSourceForfeitedReport(
+                          'perishable', 'Perishable Goods', 'excel'),
+                    ),
+                    _buildReportCard(
                       title: 'Appeal Goods',
                       description:
                           'Goods under appeal, with the decision or hold.',
@@ -2617,27 +2694,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onExcel: () => _generateNotSoldReport('excel'),
                     ),
                     // ── The Outcomes, one report each ──
-                    _buildReportCard(
-                      title: 'Remanded Goods',
-                      description: 'Unsold goods remanded for further action.',
-                      icon: Icons.reply_all_rounded,
-                      color: const Color(0xFF1565C0),
-                      onView: () => _generateOutcomeReport('view',
-                          key: 'Remanded Goods',
-                          title: 'REMANDED GOODS',
-                          fileBase: 'Remanded_Goods',
-                          outcome: 'remand'),
-                      onPdf: () => _generateOutcomeReport('pdf',
-                          key: 'Remanded Goods',
-                          title: 'REMANDED GOODS',
-                          fileBase: 'Remanded_Goods',
-                          outcome: 'remand'),
-                      onExcel: () => _generateOutcomeReport('excel',
-                          key: 'Remanded Goods',
-                          title: 'REMANDED GOODS',
-                          fileBase: 'Remanded_Goods',
-                          outcome: 'remand'),
-                    ),
                     _buildReportCard(
                       title: 'Auction Goods',
                       description: 'Unsold goods sent to public auction.',
@@ -2728,6 +2784,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: () => _generateReleasedGoodsReport('pdf'),
                       onExcel: () => _generateReleasedGoodsReport('excel'),
                     ),
+                    _buildReportCard(
+                      title: 'All Tenders',
+                      description:
+                          'Every tender sale, with its goods, proceeds & status.',
+                      icon: Icons.storefront_rounded,
+                      color: const Color(0xFF00695C),
+                      onView: () => _stockRevenueReport('all_tenders', 'view'),
+                      onPdf: () => _stockRevenueReport('all_tenders', 'pdf'),
+                      onExcel: () =>
+                          _stockRevenueReport('all_tenders', 'excel'),
+                    ),
+                    // Top Management only: the sheet the DG carries INTO a
+                    // tender sale, listing exactly what the Tender Sales page
+                    // is showing at that moment. The card itself always stays
+                    // put; it is the rows that come and go with each sale.
+                    if (widget.executiveMode)
+                      _buildReportCard(
+                        title: 'Tender Sale Sheet',
+                        description:
+                            'Goods in the running tenders, with valuations, '
+                            'to carry into the sale.',
+                        icon: Icons.gavel_rounded,
+                        color: const Color(0xFF4527A0),
+                        onView: () =>
+                            _stockRevenueReport('tender_day', 'view'),
+                        onPdf: () => _stockRevenueReport('tender_day', 'pdf'),
+                        onExcel: () =>
+                            _stockRevenueReport('tender_day', 'excel'),
+                      ),
                   ],
                 ),
 
@@ -2902,7 +2987,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export ${status.toUpperCase()} Data',
@@ -3056,7 +3141,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
     final srList = all.map((p) => p.srNumber).toList()..sort();
 
-    final sr = await showDialog<String>(
+    final sr = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         String current = '';
@@ -3199,7 +3284,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
     final srList = all.map((p) => p.srNumber).toList()..sort();
 
-    final sr = await showDialog<String>(
+    final sr = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         String current = '';
@@ -3312,7 +3397,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           .toList();
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export History for ${pkg.srNumber}',
@@ -3523,7 +3608,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       final svc = ref.read(packageServiceProvider);
       final disposal = ref.read(disposalServiceProvider);
-      final packages = await svc.getAllPackages(yard: _yardArg);
+      final allPackages = await svc.getAllPackages(yard: _yardArg);
+      final packages = _filterByYard(
+          allPackages, (p) => yardOfSrNumber(p.srNumber), (p) => p.srNumber);
 
       String title;
       String headline;
@@ -3565,7 +3652,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               for (final it in s.dedupedItems)
                 if (it.sold &&
                     inPeriod(it.soldAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
+                    _matchesSelectedYard(
+                        it.yard, it.forfeited?.srNumber))
                   it
           ];
           double totalRev = 0;
@@ -3575,7 +3663,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           for (final it in soldItems) {
             double tax = 0;
             for (final t in it.appliedTaxes) {
-              tax += (t is Map ? (t['amount'] as num?)?.toDouble() : 0) ?? 0;
+              tax += (t is Map ? parseDbNum(t['amount']) : 0) ?? 0;
             }
             totalRev += it.soldPrice + tax;
             final f = it.forfeited;
@@ -3637,7 +3725,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 for (final it in dn.items)
                   if (it.destroyed &&
                       inPeriod(it.destroyedAt) &&
-                      (_yardArg == null || it.yard == _yardArg))
+                      _matchesSelectedYard(it.yard, it.forfeited?.srNumber))
                     it
             ].length;
             final balance = added - soldItems.length - destroyed;
@@ -3654,84 +3742,220 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ];
           break;
 
-        case 'destroyed':
-          final destructions = await disposal.getDestructions();
-          final items = [
-            for (final dn in destructions)
-              for (final it in dn.items)
-                if (it.destroyed &&
-                    inPeriod(it.destroyedAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
-                  it
+        case 'all_tenders':
+          // Every tender held so far, listed by the GOODS that went into each
+          // -- the sale number and date repeat down its own items, so one
+          // tender reads as a block. Sold items show what they fetched;
+          // unsold ones say so, since "no price" and "sold for nothing" are
+          // different facts.
+          final allSales = await disposal.getTenderSales();
+          var tenders = allSales
+              .where((sale) => inPeriod(sale.saleDate ?? sale.createdAt))
+              .toList();
+          if (_reportYard != null) {
+            // Per ITEM, not the sale's own yard: a sale can mix items from a
+            // multi-directorate yard, so the sale-level code cannot tell them
+            // apart.
+            tenders = tenders
+                .where((sale) => sale.items.any((i) => _matchesSelectedYard(
+                    i.yard, i.forfeited?.srNumber)))
+                .toList();
+          }
+          tenders.sort((a, b) => (b.saleDate ?? b.createdAt)
+              .compareTo(a.saleDate ?? a.createdAt));
+
+          title = 'ALL TENDER SALES';
+          columns = [
+            'Tender No',
+            'Sale Date',
+            'SR Number',
+            'Goods Name',
+            'Qty',
+            'Latest Valuation (LKR)',
+            'Sold Price (LKR)',
+            'Status',
           ];
-          title = 'GOODS DESTROYED IN DESTRUCTION TENDER';
+          rows = [];
+          rowItemIds = [];
+          for (final sale in tenders) {
+            final dateStr = sale.saleDate != null
+                ? DateFormat('yyyy-MM-dd').format(sale.saleDate!)
+                : '—';
+            for (final it in sale.dedupedItems) {
+              if (!_matchesSelectedYard(
+                  it.yard, it.forfeited?.srNumber)) {
+                continue;
+              }
+              final f = it.forfeited;
+              final pkgItems =
+                  f?.packageDetails?.items ?? const <PackageItem>[];
+              final match = f?.itemId == null
+                  ? null
+                  : pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
+              final qty = f?.entryQty ?? match?.quantity ?? 1;
+              final unit = f?.valuationCost;
+              rows.add([
+                sale.saleNumber ?? '—',
+                dateStr,
+                f?.srNumber ?? '—',
+                f?.itemName ?? match?.itemName ?? '—',
+                '$qty',
+                (unit != null && unit > 0) ? money.format(unit * qty) : '—',
+                it.sold ? money.format(it.soldPrice) : '—',
+                it.sold ? 'Sold' : 'Unsold',
+              ]);
+              rowItemIds.add(f?.itemId);
+            }
+          }
+          headline = '${rows.length} goods';
+          break;
+
+        case 'tender_day':
+          // The sheet the DG carries INTO a tender sale: exactly the goods
+          // showing on Top Management's own Tender Sales page at that moment,
+          // so the print and the screen cannot disagree.
+          //
+          // A sale leaves this page once every item is decided (sold or unsold).
+          // Only items with status 'Awaiting Decision' (!sold && !unsold) appear.
+          final daySales = await disposal.getTenderSales();
+          var live = daySales.where((sale) {
+            return sale.items.any((i) =>
+                !i.sold &&
+                !i.unsold &&
+                (_reportYard == null ||
+                    _matchesSelectedYard(i.yard, i.forfeited?.srNumber)));
+          }).toList();
+          if (_reportYard != null) {
+            live = live
+                .where((sale) => sale.items.any((i) =>
+                    !i.sold &&
+                    !i.unsold &&
+                    _matchesSelectedYard(i.yard, i.forfeited?.srNumber)))
+                .toList();
+          }
+          live.sort((a, b) => (b.saleDate ?? b.createdAt)
+              .compareTo(a.saleDate ?? a.createdAt));
+
+          title = 'TENDER SALE — GOODS & VALUATIONS';
+          columns = [
+            'Tender No',
+            'SR Number',
+            'Goods Name',
+            'Goods Description',
+            'Qty',
+            'Yard / Warehouse',
+            'Latest Valuation (LKR)',
+          ];
+          rows = [];
+          rowItemIds = [];
+          for (final sale in live) {
+            for (final it in sale.dedupedItems) {
+              // Only goods whose status has not yet been updated to Sold or Unsold:
+              if (it.sold || it.unsold) continue;
+              if (!_matchesSelectedYard(
+                  it.yard, it.forfeited?.srNumber)) {
+                continue;
+              }
+              final f = it.forfeited;
+              final pkg = f?.packageDetails;
+              final pkgItems = pkg?.items ?? const <PackageItem>[];
+              final match = f?.itemId == null
+                  ? null
+                  : pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
+              final qty = f?.entryQty ?? match?.quantity ?? 1;
+              final unit = f?.valuationCost;
+              final desc = match?.goodsDescription?.trim();
+
+              // Where the goods physically are, so they can be pulled for the
+              // sale: the newest warehouse entry for this item.
+              String location = '—';
+              if (pkg != null && f?.itemId != null) {
+                final entries = pkg.warehouseEntries
+                    .where((e) => e.packageItemId == f!.itemId)
+                    .toList()
+                  ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
+                if (entries.isNotEmpty) {
+                  final w = entries.first;
+                  final zone = (w.zone?.isNotEmpty == true) ? ' · ${w.zone}' : '';
+                  location = '${yardName(it.yard)} / ${w.warehouseName}$zone';
+                }
+              }
+              if (location == '—') location = yardName(it.yard);
+
+              rows.add([
+                sale.saleNumber ?? '—',
+                f?.srNumber ?? '—',
+                f?.itemName ?? match?.itemName ?? '—',
+                (desc?.isNotEmpty == true) ? desc! : '—',
+                '$qty',
+                location,
+                (unit != null && unit > 0) ? money.format(unit * qty) : '—',
+              ]);
+              rowItemIds.add(f?.itemId);
+            }
+          }
+          headline = '${rows.length} goods';
+          break;
+
+        case 'destroyed':
+          // Destruction is no longer a tender: there is no buyer, so no
+          // valuation is realised and no "destroyed price" exists. What the
+          // report has to answer is what the destruction COST and what is
+          // left of the deposit -- the same figures the Destroyed Goods pages
+          // and the expense form show, read from the same provider so the
+          // three can never disagree.
+          final financials = await ref.read(srFinancialsProvider.future);
+          final bySr = {
+            for (final f in financials) f.srNumber.trim(): f,
+          };
+
+          // Every item currently marked destroyed OR pending destruction,
+          // taken from the packages themselves rather than the old
+          // destruction-tender tables.
+          final destroyedRows = <({PackageModel pkg, PackageItem item})>[];
+          for (final p in packages) {
+            for (final i in p.items ?? const <PackageItem>[]) {
+              final st = (i.status ?? '').toLowerCase();
+              if (st == 'destroyed' ||
+                  st == 'supposed to be destroyed' ||
+                  st == 'destroy') {
+                if (!inPeriod(p.updatedAt)) continue;
+                destroyedRows.add((pkg: p, item: i));
+              }
+            }
+          }
+
+          title = 'DESTROYED GOODS';
           columns = [
             'SR Number',
             'Goods Name',
             'Goods Description',
-            'Valuation (LKR)',
-            'Destroyed Price (LKR)',
+            'Destroying Deposit (LKR)',
+            'Total Costs (LKR)',
+            'Refund (LKR)',
           ];
           rows = [];
           rowItemIds = [];
 
-          String valuationOf(ForfeitedPackageModel? f, PackageItem? match) {
-            if (f?.valuationCost != null && f!.valuationCost! > 0) {
-              final qty = f.entryQty ?? match?.quantity ?? 1;
-              return money.format(f.valuationCost! * qty);
-            }
-            if (match != null && match.unitValue > 0) {
-              return money.format(match.unitValue * match.quantity);
-            }
-            if (f?.packageDetails?.declaredValue != null &&
-                f!.packageDetails!.declaredValue > 0) {
-              return money.format(f.packageDetails!.declaredValue);
-            }
-            return '—';
+          for (final r in destroyedRows) {
+            final fin = bySr[r.pkg.srNumber.trim()];
+            final deposit = fin?.destroyingDeposit ?? 0;
+            final spent = fin?.depositSpent ?? 0;
+            // A shortfall is shown as a negative refund rather than hidden:
+            // costs CAN exceed the deposit, and the report must say so.
+            final refund = deposit - spent;
+            final desc = r.item.goodsDescription?.trim();
+            rows.add([
+              r.pkg.srNumber,
+              r.item.itemName,
+              (desc?.isNotEmpty == true) ? desc! : '—',
+              deposit > 0 ? money.format(deposit) : '—',
+              spent > 0 ? money.format(spent) : '—',
+              (deposit > 0 || spent > 0) ? money.format(refund) : '—',
+            ]);
+            rowItemIds.add(r.item.id);
           }
 
-          String priceOf(DestructionItemModel it) =>
-              it.destroyedPrice > 0 ? money.format(it.destroyedPrice) : '—';
-
-          for (final it in items) {
-            final f = it.forfeited;
-            final pkgItems = f?.packageDetails?.items ?? const <PackageItem>[];
-            if (f?.itemId != null) {
-              final match =
-                  pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
-              final name = f?.itemName ?? match?.itemName ?? '—';
-              final desc = match?.goodsDescription?.trim();
-              rows.add([
-                f?.srNumber ?? '—',
-                name,
-                (desc?.isNotEmpty == true) ? desc! : '—',
-                valuationOf(f, match),
-                priceOf(it),
-              ]);
-              rowItemIds.add(f?.itemId);
-            } else if (pkgItems.isNotEmpty) {
-              for (final i in pkgItems) {
-                final desc = i.goodsDescription?.trim();
-                rows.add([
-                  f?.srNumber ?? '—',
-                  i.itemName,
-                  (desc?.isNotEmpty == true) ? desc! : '—',
-                  valuationOf(f, i),
-                  priceOf(it),
-                ]);
-                rowItemIds.add(i.id);
-              }
-            } else {
-              rows.add([
-                f?.srNumber ?? '—',
-                f?.itemName ?? '—',
-                '—',
-                valuationOf(f, null),
-                priceOf(it),
-              ]);
-              rowItemIds.add(null);
-            }
-          }
           headline = '${rows.length} goods';
           break;
 
@@ -3771,14 +3995,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               for (final it in s.dedupedItems)
                 if (it.sold &&
                     inPeriod(it.soldAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
+                    _matchesSelectedYard(
+                        it.yard, it.forfeited?.srNumber))
                   it
           ];
           double soldVal = 0;
           for (final it in soldItems) {
             double tax = 0;
             for (final t in it.appliedTaxes) {
-              tax += (t is Map ? (t['amount'] as num?)?.toDouble() : 0) ?? 0;
+              tax += (t is Map ? parseDbNum(t['amount']) : 0) ?? 0;
             }
             soldVal += it.soldPrice + tax;
           }
@@ -3791,7 +4016,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               for (final it in dn.items)
                 if (it.destroyed &&
                     inPeriod(it.destroyedAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
+                    _matchesSelectedYard(it.yard, it.forfeited?.srNumber))
                   it
           ];
           final destCnt = destroyedItems.length;
@@ -3887,7 +4112,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export $title',
@@ -3947,7 +4172,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       key: label,
       title: label.toUpperCase(),
       fileBase: label.replaceAll(' ', '_'),
-      dateHeader: source == 'abandoned' ? 'Abandoned On' : 'Recorded On',
+      // ⚠️ Named for what the row IS. `forfeited_packages` holds every
+      // route into the appeal window, so "Forfeited On" would be wrong for
+      // most of them -- the same correction the details popup carries.
+      dateHeader: switch (source) {
+        'abandoned' => 'Abandoned On',
+        'detain' || 'detained' => 'Detained On',
+        _ => 'Recorded On',
+      },
       format: format,
       fetch: () => ref
           .read(forfeitedPackageServiceProvider)
@@ -4022,7 +4254,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               '${fileBase}_Report.pdf'),
           onExportExcel: () {
             if (!mounted) return;
-            showDialog(
+            showAppDialog(
               context: context,
               builder: (ctx) => ExcelExportDialog(
                 title: 'Export $key',
@@ -4042,7 +4274,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           '${fileBase}_Report.pdf',
         );
       } else if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export $key',
@@ -4069,8 +4301,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     List<PackageModel> all;
     try {
-      all =
+      final pkgs =
           await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      all = _filterByYard(
+          pkgs, (p) => yardOfSrNumber(p.srNumber), (p) => p.srNumber);
     } catch (e) {
       _showError(e.toString());
       return;
@@ -4082,13 +4316,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _showNoDataMessage();
       return;
     }
-    final selected = await showDialog<List<PackageModel>>(
+    final selected = await showAppDialog<List<PackageModel>>(
       context: context,
       builder: (_) => _QrLabelPickerDialog(packages: all),
     );
     if (selected == null || selected.isEmpty || !mounted) return;
     // Reuse the existing print/save dialog for the chosen packages.
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => PrintBarcodeDialog(packages: selected),
     );
@@ -4098,7 +4332,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     Future<Uint8List> Function(PdfPageFormat) buildPdf,
     String fileName,
   ) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: true,
       builder: (context) => ReportPreviewDialog(
@@ -4356,7 +4590,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _showNoDataMessage();
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Warehouse Stock',
@@ -4417,7 +4651,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _showNoDataMessage();
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Released Data',
@@ -4503,7 +4737,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ),
           onExportExcel: () {
             if (!mounted) return;
-            showDialog(
+            showAppDialog(
               context: context,
               builder: (ctx) => ExcelExportDialog(
                 title: 'Export Old Entries',
@@ -4535,7 +4769,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Old Entries',
@@ -4593,7 +4827,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Summary Data',
@@ -4726,7 +4960,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             return;
           }
 
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export $statusName$whSuffix Inventory Audit',
@@ -4785,7 +5019,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Post Status Activities',
@@ -4838,7 +5072,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Item Categories',
@@ -4895,7 +5129,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _showNoDataMessage();
       } else {
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Warehouses List',
@@ -4963,7 +5197,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             .getAllPackages(yard: _yardArg);
         final rates = await ref.read(storageRateProvider.future);
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Storage Charges',
@@ -5030,7 +5264,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             .getAllPackages(yard: _yardArg);
         final rates = await ref.read(storageRateProvider.future);
         if (mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export Released Revenue',
@@ -5053,8 +5287,28 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   List<T> _filterByDate<T>(List<T> list) {
-    if (_startDate == null && _endDate == null) return list;
-    return list.where((item) {
+    var result = list;
+    if (widget.executiveMode || widget.disposalMode) {
+      if (_reportYard != null) {
+        result = result.where((item) {
+          if (item is PackageModel) {
+            return _matchesSelectedYard(null, item.srNumber);
+          } else if (item is WarehouseEntryModel) {
+            return _matchesSelectedYard(null, item.srNumber);
+          } else if (item is ForfeitedPackageModel) {
+            return _matchesSelectedYard(item.yard, item.srNumber);
+          } else if (item is SrFinancials) {
+            return _matchesSelectedYard(item.yard, item.srNumber);
+          } else if (item is ReTenderSaleInfo) {
+            return _matchesSelectedYard(
+                item.forfeited.yard, item.forfeited.srNumber);
+          }
+          return true;
+        }).toList();
+      }
+    }
+    if (_startDate == null && _endDate == null) return result;
+    return result.where((item) {
       DateTime? dt;
       if (item is PackageModel) {
         dt = item.entryDate;
@@ -5114,7 +5368,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final fileName = '${reportTitle.replaceAll(' ', '_')}.xlsx';
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Summary Data',
@@ -5142,7 +5396,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final fileName = 'Staff_Audit_Report.xlsx';
 
       if (mounted) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export Staff Audit',

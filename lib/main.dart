@@ -1,17 +1,29 @@
+import 'dart:io';
 import 'dart:async';
 import 'dart:io' show exit;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'core/supabase_client.dart';
+import 'core/app_env.dart';
+import 'core/db/pg_connection.dart';
+import 'core/db_client.dart';
+import 'core/session_reset.dart';
 import 'package:window_manager/window_manager.dart';
+import 'core/app_log.dart';
+import 'screens/lock/idle_lock_screen.dart';
 import 'core/error_handling.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
 import 'core/providers.dart';
 import 'core/app_updater.dart';
 import 'core/holidays.dart';
+import 'core/idle_lock.dart';
+import 'widgets/offline_banner.dart';
+import 'widgets/idle_lock_overlay.dart';
+import 'widgets/update_banner.dart';
 import 'services/services.dart';
+import 'core/frame_watch.dart';
+import 'core/update_check.dart';
 
 void main() async {
   // Everything runs inside one guarded zone so that an uncaught ASYNC error
@@ -24,15 +36,34 @@ void main() async {
 Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ⚠️ The idle lock starts OFF on every launch.
+  //
+  // `idleLockedFlag` is a process-global so the lock can outlive the
+  // ProviderScope rebuild its own sign-out causes. Nothing carries it between
+  // runs, but stating it here is what makes that guaranteed rather than
+  // incidental: a flag that outlives everything must have one unambiguous
+  // place where it is known to be false, and "the app just started, with
+  // nobody signed in" is it.
+  //
+  // ⚠️ NOT in the overlay's build(). That is where this check used to live,
+  // and it fired one frame after the lock was raised -- while the sign-out
+  // was still in flight and the profile was therefore still set -- so it
+  // cancelled the lock and the officer was dropped on the portal chooser
+  // with no lock screen at all.
+  idleLockedFlag.value = false;
+
   // Installed before anything else can fail, so start-up errors are logged too.
   await AppErrorHandler.install();
 
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
-    minimumSize: Size(1000, 700),
+    size: Size(1280, 800),
+    minimumSize: Size(1180, 720),
+    center: true,
     title: 'Sri Lanka Customs SR Management System',
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.setMinimumSize(const Size(1180, 720));
     await windowManager.show();
     await windowManager.focus();
   });
@@ -57,23 +88,133 @@ Future<void> _start() async {
   } catch (e) {
     startupError = e;
     debugPrint('Database unavailable at start-up: $e');
+    // ⚠️ Say WHERE the connection was pointed and WHAT it trusted.
+    //
+    // "Bad server certificate" names TLS and nothing else, and the cause is
+    // usually one of two things this prints: the .env was not found (so the
+    // profile is empty and the target is the compiled-in default), or the
+    // CA file did not resolve (so the trust anchor is the OS store, which
+    // has never heard of Supabase's private root). Both took a long time to
+    // find by reasoning; both are one line of output here.
+    debugPrint('  profile      : ${AppEnv.profile}');
+    debugPrint('  env file     : ${AppEnv.loadedFrom ?? "NOT FOUND"}');
+    debugPrint('  target       : ${PgConfig.describe}');
+    debugPrint('  CA (resolved): ${PgConfig.resolvedSslRootCertPath ?? "none"}');
+    debugPrint('  CA problem   : ${PgConfig.sslRootCertProblem ?? "none"}');
+    debugPrint('  trust anchor : '
+        '${PgConfig.securityContext == null ? "OS STORE (no CA loaded)" : "the CA file"}');
   }
 
   // Background auto-update check (Windows/macOS). Never throws.
   await initAutoUpdater();
 
-  // Fetch Sri Lanka public holidays for the sale/destruction working-day
-  // deadlines. Fire-and-forget — never blocks startup, falls back to the
-  // static list + weekend rule if offline.
+  // ⚠️ NOT awaited. This is an HTTPS call to GitHub, and on a branch PC with
+  // a slow or dead link it would hold the splash screen for its whole
+  // timeout before the officer could sign in. The banner appears whenever
+  // the answer arrives; until then there is simply nothing to show.
+  //
+  // fetchAvailableUpdate never throws, so no error can escape this.
+  unawaited(fetchAvailableUpdate().then((u) {
+    if (u != null) availableUpdate.value = u;
+  }));
+
+  // ⚠️ Still fetched, though nothing reads it today.
+  //
+  // It existed for the sale/destruction working-day DEADLINE, which has been
+  // removed: a clock should not decide whether goods are unsold, and a public
+  // holiday should not change which packages reach the DG. The calendar itself
+  // is still the right answer for anything that genuinely has to fall on an
+  // office day, so the warm-up stays rather than being rediscovered later.
   unawaited(loadPublicHolidays());
 
+  // ⚠️ The ProviderScope is REBUILT on every sign-out, keyed by the session
+  // epoch. Riverpod caches each provider's value for the life of its
+  // container and none of the data providers are autoDispose, so without
+  // this the previous user's rows stayed in memory and rendered under the
+  // next user's name — GL1 packages under a GL2 officer. Dropping the
+  // container is what guarantees a session starts empty; see
+  // core/session_reset.dart.
+  // Logs any frame long enough to swallow a click — see frame_watch.dart.
+  FrameWatch.arm();
+
   runApp(
-    ProviderScope(
-      child: startupError == null
-          ? const CustomsApp()
-          : DatabaseUnavailableApp(error: startupError),
+    // ⚠️ THE LOCK SCREEN SITS ABOVE ALL OF THIS, not inside it.
+    //
+    // Locking signs the session out, which bumps the epoch below and
+    // replaces the whole ProviderScope. `routerProvider` then yields a
+    // NEW GoRouter, MaterialApp.router is rebuilt with a different
+    // config, and every widget under its builder is destroyed and
+    // recreated -- which is where the lock overlay used to live.
+    //
+    // The officer saw the lock screen arrive and then, about two
+    // seconds later, jump back to its first frame: a fresh State
+    // restarted the entrance fade and all three ambient animations.
+    // Skipping the fade did not fix it, because the drift, breathe and
+    // orbit controllers still began again from zero.
+    //
+    // IdleLockScreen has no providers and no theme lookups -- it takes
+    // its accent and its callback as plain values -- so it can be
+    // mounted here, once, and stay mounted. IdleLockOverlay keeps the
+    // part that needs the scope: watching for idleness and signing out.
+    _LockLayer(
+      child: ValueListenableBuilder<int>(
+        valueListenable: sessionEpoch,
+        builder: (_, epoch, __) => ProviderScope(
+          key: ValueKey('session-$epoch'),
+          child: startupError == null
+              ? const CustomsApp()
+              : DatabaseUnavailableApp(error: startupError),
+        ),
+      ),
     ),
   );
+}
+
+/// Holds the idle lock screen above the app, where a session reset
+/// cannot reach it.
+///
+/// ⚠️ A Directionality and a Material are supplied by hand: this sits
+/// OUTSIDE MaterialApp, so none of the inherited widgets the lock screen
+/// would normally find are in scope. Without them it throws on the first
+/// Text it tries to lay out.
+class _LockLayer extends StatelessWidget {
+  const _LockLayer({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Stack(
+        children: [
+          child,
+          ValueListenableBuilder<bool>(
+            valueListenable: idleLockedFlag,
+            builder: (context, locked, _) {
+              if (!locked) return const SizedBox.shrink();
+              return ValueListenableBuilder<Color?>(
+                valueListenable: lockAccent,
+                builder: (context, accent, __) => Positioned.fill(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: IdleLockScreen(
+                      accent: accent,
+                      // ⚠️ Read at PRESS time, not captured here. The
+                      // overlay re-publishes it after every session
+                      // reset, so a callback captured once would be
+                      // the one belonging to a torn-down container.
+                      onUnlock: () => lockUnlockRequest?.call(),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Shown instead of the app when the database could not be reached at start-up.
@@ -128,10 +269,26 @@ class _DatabaseUnavailableAppState extends State<DatabaseUnavailableApp> {
     }
     if (s.contains('does not exist')) {
       return 'The server is running but has no database with that name. Create '
-          'it, then run the files in supabase/ to build the schema.';
+          'it, then run the files in db/ to build the schema.';
     }
     if (s.contains('failed host lookup')) {
       return 'That host name could not be resolved. Check PG_HOST.';
+    }
+    // ⚠️ "Bad server certificate" names TLS and says nothing about the cause,
+    // and the cause is nearly always a private CA the OS has never heard of.
+    // Supabase is the case in hand: its pooler is signed by "Supabase Root
+    // 2021 CA", which is not in the Windows trust store, so verification
+    // fails on a link that is otherwise perfectly healthy.
+    //
+    // ⚠️ The hint deliberately does NOT suggest PG_SSL_VERIFY=false. That
+    // would make the message go away while leaving the connection encrypted
+    // to whoever answered — the one outcome worse than not connecting.
+    if (s.contains('certificate') || s.contains('handshake')) {
+      return 'The server\'s TLS certificate was not trusted. If this is '
+          'Supabase, its pooler uses a private CA: set '
+          'PG_SSL_ROOT_CERT=supabase-root-2021.crt and put that file beside '
+          'the application. Do NOT turn PG_SSL_VERIFY off — that keeps the '
+          'traffic encrypted but stops checking who it is encrypted to.';
     }
     return 'The database could not be opened.';
   }
@@ -336,14 +493,14 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
 
   @override
   void onWindowClose() async {
-    print('DEBUG: Global window close caught...');
+    AppLog.debug('window close caught', tag: 'shutdown');
 
     // Hide the window immediately so the user feels an instant close
     await windowManager.hide();
 
     try {
       final user = supabase.auth.currentUser;
-      print('DEBUG: App closing. Current user ID: ${user?.id}');
+      AppLog.debug('closing; current user ${user?.id}', tag: 'shutdown');
 
       if (user != null) {
         await AuditLogService().recordLog(
@@ -364,14 +521,15 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
             .eq('id', user.id)
             .timeout(const Duration(seconds: 2));
 
-        print('DEBUG: Successfully set user offline in Database directly.');
+        AppLog.debug('set user offline in the database', tag: 'shutdown');
       } else {
-        print('DEBUG: No logged in user. Taking no DB action.');
+        AppLog.debug('no signed-in user; nothing to do', tag: 'shutdown');
       }
     } catch (e) {
-      print('DEBUG: Could not set offline on exit: $e');
+      AppLog.warn('could not set offline on exit', error: e,
+          tag: 'shutdown');
     } finally {
-      print('DEBUG: Destroying window process...');
+      AppLog.debug('destroying window', tag: 'shutdown');
       await windowManager.destroy();
     }
   }
@@ -379,7 +537,7 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
-    print('DEBUG: CustomsApp building with themeMode: $themeMode');
+    AppLog.debug('building with themeMode: $themeMode', tag: 'app');
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: 'Sri Lanka Customs SR Management System',
@@ -388,6 +546,23 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
       themeMode: themeMode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      // Everything the router draws sits inside the idle watcher, so any click,
+      // scroll or key press anywhere in the app resets the countdown — and the
+      // lock screen, when it comes, covers every route including dialogs.
+      // ⚠️ The offline strip sits OUTSIDE the idle lock, so a lost connection
+      // is still announced on the lock screen — a branch PC that drops its
+      // link while unattended should say so when someone comes back to it.
+      builder: (context, child) => IdleActivityDetector(
+        child: OfflineBanner(
+          // ⚠️ INSIDE the offline strip and OUTSIDE the lock, like the strip
+          // above it. Offline is the more urgent of the two and keeps the
+          // top; an update notice on a locked screen is harmless and means
+          // the officer sees it the moment they come back.
+          child: UpdateBanner(
+            child: IdleLockOverlay(child: child ?? const SizedBox.shrink()),
+          ),
+        ),
+      ),
       // Desktop scrolling. Flutter hides the scrollbar and disables
       // drag-to-scroll on desktop, assuming a wheel is always present — but on
       // a machine without one (or where the wheel does not reach a nested

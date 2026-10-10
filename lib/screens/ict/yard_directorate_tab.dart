@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 
 import '../../core/directorates.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
+import 'ict_ui.dart';
 import '../../models/models.dart';
-import '../../widgets/empty_state_card.dart';
+import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
 
 /// ICT Directorate → **Yards & Directorates**.
@@ -33,79 +35,108 @@ class YardDirectorateTab extends ConsumerWidget {
     final links = ref.watch(yardDirectoratesProvider);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
+          // ⚠️ The section title, its explanation and its Add button are ON
+          // the card, not floating above it. That is what makes this read as
+          // an ERP module rather than a page that happens to have a table:
+          // the card is the unit, and its header says what you are looking at
+          // and what you can do to it.
+          IctSectionCard(
             icon: Icons.account_balance_rounded,
             title: 'Directorates',
             subtitle:
-                'Head-office divisions. The SR prefix is what goes in front of '
-                'every SR number registered under the directorate.',
-            accent: accent,
-            actionLabel: 'Add Directorate',
-            onAction: () => _editDirectorate(context, ref),
-          ),
-          const Gap(14),
-          directorates.when(
-            loading: () => const _Loading(),
-            error: (e, _) => _LoadFailed(
-                what: 'directorates',
-                error: e,
-                onRetry: () => ref.invalidate(directoratesProvider)),
-            data: (list) => _DirectorateTable(
-              rows: list,
-              accent: accent,
-              onEdit: (d) => _editDirectorate(context, ref, existing: d),
-              onToggle: (d) async {
-                await ref
-                    .read(directorateServiceProvider)
-                    .setDirectorateActive(d.code, !d.isActive);
-                ref.read(directorateConfigRefreshProvider.notifier).trigger();
-              },
-            ),
-          ),
-          const Gap(34),
-          _SectionHeader(
-            icon: Icons.warehouse_rounded,
-            title: 'Yards',
-            subtitle:
-                'Physical yards. Tick every directorate a yard belongs to — '
-                'several yards belong to more than one.',
-            accent: accent,
-            actionLabel: 'Add Yard',
-            onAction: () => _editYard(context, ref),
-          ),
-          const Gap(14),
-          yards.when(
-            loading: () => const _Loading(),
-            error: (e, _) => _LoadFailed(
-                what: 'yards',
-                error: e,
-                onRetry: () => ref.invalidate(yardsProvider)),
-            data: (yardList) => links.when(
+                'Head-office divisions. The SR prefix goes in front of every '
+                'SR number registered under the directorate.',
+            badge: directorates.valueOrNull == null
+                ? null
+                : '${directorates.valueOrNull!.length}',
+            actions: [
+              IctPrimaryButton(
+                dense: true,
+                label: 'Add Directorate',
+                icon: Icons.add_rounded,
+                accent: accent,
+                onPressed: () => _editDirectorate(context, ref),
+              ),
+            ],
+            child: directorates.when(
+              skipLoadingOnReload: true,
               loading: () => const _Loading(),
               error: (e, _) => _LoadFailed(
-                  what: 'yard/directorate links',
+                  what: 'directorates',
                   error: e,
-                  onRetry: () => ref.invalidate(yardDirectoratesProvider)),
-              data: (linkMap) => _YardTable(
-                rows: yardList,
-                links: linkMap,
+                  onRetry: () => ref.invalidate(directoratesProvider)),
+              data: (list) => _DirectorateTable(
+                rows: list,
                 accent: accent,
-                onEdit: (y) => _editYard(context, ref, existing: y),
-                onToggle: (y) async {
+                onEdit: (d) => _editDirectorate(context, ref, existing: d),
+                onToggle: (d) async {
                   await ref
                       .read(directorateServiceProvider)
-                      .setYardActive(y.code, !y.isActive);
+                      .setDirectorateActive(d.code, !d.isActive);
                   ref.read(directorateConfigRefreshProvider.notifier).trigger();
                 },
               ),
             ),
-          ),
+          ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn(),
+          const Gap(24),
+          IctSectionCard(
+            icon: Icons.warehouse_rounded,
+            title: 'Yards',
+            subtitle:
+                'Physical yards. Tick every directorate a yard belongs to — '
+                'several belong to more than one.',
+            badge: yards.valueOrNull == null
+                ? null
+                : '${yards.valueOrNull!.length}',
+            actions: [
+              IctPrimaryButton(
+                dense: true,
+                label: 'Add Yard',
+                icon: Icons.add_rounded,
+                accent: accent,
+                onPressed: () => _editYard(context, ref),
+              ),
+            ],
+            child: yards.when(
+              skipLoadingOnReload: true,
+              loading: () => const _Loading(),
+              error: (e, _) => _LoadFailed(
+                  what: 'yards',
+                  error: e,
+                  onRetry: () => ref.invalidate(yardsProvider)),
+              data: (yardList) => links.when(
+                skipLoadingOnReload: true,
+                loading: () => const _Loading(),
+                error: (e, _) => _LoadFailed(
+                    what: 'yard/directorate links',
+                    error: e,
+                    onRetry: () => ref.invalidate(yardDirectoratesProvider)),
+                data: (linkMap) => _YardTable(
+                  rows: yardList,
+                  links: linkMap,
+                  accent: accent,
+                  onEdit: (y) => _editYard(context, ref, existing: y),
+                  onToggle: (y) async {
+                    await ref
+                        .read(directorateServiceProvider)
+                        .setYardActive(y.code, !y.isActive);
+                    ref
+                        .read(directorateConfigRefreshProvider.notifier)
+                        .trigger();
+                  },
+                ),
+              ),
+            ),
+          )
+              .animate()
+              .slideY(begin: 0.05, duration: 400.ms, delay: 80.ms)
+              .fadeIn(delay: 80.ms),
           const Gap(28),
-          _SrNumberNote(accent: accent),
+          _SrNumberNote(accent: accent).animate().fadeIn(delay: 200.ms),
         ],
       ),
     );
@@ -123,7 +154,7 @@ class YardDirectorateTab extends ConsumerWidget {
     String? error;
     bool saving = false;
 
-    await showDialog(
+    await showIctDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
         Future<void> save() async {
@@ -167,6 +198,8 @@ class YardDirectorateTab extends ConsumerWidget {
         return StyledFormDialog(
           label: isNew ? 'NEW DIRECTORATE' : 'EDIT DIRECTORATE',
           title: isNew ? 'Add a Directorate' : 'Edit ${existing.code}',
+          headerAccentColor: accent,
+          erp: true,
           icon: Icons.account_balance_rounded,
           width: 460,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -175,6 +208,8 @@ class YardDirectorateTab extends ConsumerWidget {
               const Gap(12),
             ],
             StyledFormSection(
+              erp: true,
+              accentColor: accent,
               title: 'Directorate',
               icon: Icons.badge_outlined,
               children: [
@@ -221,6 +256,8 @@ class YardDirectorateTab extends ConsumerWidget {
               child: const Text('Cancel'),
             ),
             StyledDialogPrimaryButton(
+              erp: true,
+              accentColor: accent,
               labelText: isNew ? 'Create' : 'Save Changes',
               icon: Icons.save_rounded,
               loading: saving,
@@ -250,7 +287,7 @@ class YardDirectorateTab extends ConsumerWidget {
     bool saving = false;
 
     if (!context.mounted) return;
-    await showDialog(
+    await showIctDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
         Future<void> save() async {
@@ -299,6 +336,8 @@ class YardDirectorateTab extends ConsumerWidget {
         return StyledFormDialog(
           label: isNew ? 'NEW YARD' : 'EDIT YARD',
           title: isNew ? 'Add a Yard' : 'Edit ${existing.code}',
+          headerAccentColor: accent,
+          erp: true,
           icon: Icons.warehouse_rounded,
           width: 520,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -307,6 +346,8 @@ class YardDirectorateTab extends ConsumerWidget {
               const Gap(12),
             ],
             StyledFormSection(
+              erp: true,
+              accentColor: accent,
               title: 'Yard',
               icon: Icons.badge_outlined,
               children: [
@@ -344,6 +385,8 @@ class YardDirectorateTab extends ConsumerWidget {
             ),
             const Gap(14),
             StyledFormSection(
+              erp: true,
+              accentColor: accent,
               title: 'Belongs to',
               icon: Icons.account_tree_outlined,
               children: [
@@ -357,24 +400,43 @@ class YardDirectorateTab extends ConsumerWidget {
                       height: 1.4),
                 ),
                 const Gap(4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final d in allDirectorates.where((d) => d.isActive))
-                      FilterChip(
-                        label: Text('${d.srPrefix} — ${d.name}'),
-                        selected: selected.contains(d.code),
-                        onSelected: (on) => setS(() {
-                          if (on) {
-                            selected.add(d.code);
-                          } else {
-                            selected.remove(d.code);
-                          }
-                        }),
-                      ),
-                  ],
-                ),
+                // ⚠️ Two even columns, not a Wrap.
+                //
+                // A Wrap packs each row until the next chip will not fit, so
+                // with names of every length ("B/A — Baggage / Airport" beside
+                // "SSD — Social Protection & Security Directorate") the rows
+                // came out one, then two, then one — a ragged block that reads
+                // as a mistake rather than as a list of eight equal choices.
+                // A fixed two-column grid gives every directorate the same
+                // box, and the eye can go straight down a column.
+                LayoutBuilder(builder: (context, box) {
+                  final active =
+                      allDirectorates.where((d) => d.isActive).toList();
+                  const gap = 8.0;
+                  final cellWidth = (box.maxWidth - gap) / 2;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final d in active)
+                        SizedBox(
+                          width: cellWidth,
+                          child: _DirectorateTick(
+                            accent: accent,
+                            label: '${d.srPrefix} — ${d.name}',
+                            selected: selected.contains(d.code),
+                            onChanged: (on) => setS(() {
+                              if (on) {
+                                selected.add(d.code);
+                              } else {
+                                selected.remove(d.code);
+                              }
+                            }),
+                          ),
+                        ),
+                    ],
+                  );
+                }),
               ],
             ),
           ]),
@@ -384,6 +446,8 @@ class YardDirectorateTab extends ConsumerWidget {
               child: const Text('Cancel'),
             ),
             StyledDialogPrimaryButton(
+              erp: true,
+              accentColor: accent,
               labelText: isNew ? 'Create' : 'Save Changes',
               icon: Icons.save_rounded,
               loading: saving,
@@ -407,7 +471,7 @@ class YardDirectorateTab extends ConsumerWidget {
     }
     if (s.contains('42p01') || s.contains('does not exist')) {
       return 'These tables are not in this database yet. Run '
-          'supabase/migrations/20260839_ict_directorates_and_yards.sql.';
+          'db/migrations/20260839_ict_directorates_and_yards.sql.';
     }
     return e.toString().replaceAll('Exception: ', '');
   }
@@ -426,35 +490,54 @@ class _DirectorateTable extends StatelessWidget {
   final List<DirectorateModel> rows;
   final Color accent;
   final ValueChanged<DirectorateModel> onEdit;
-  final ValueChanged<DirectorateModel> onToggle;
+  final Future<void> Function(DirectorateModel) onToggle;
 
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) {
-      return const EmptyStateCard(
+      // EmptyTableState, not EmptyStateCard: this sits INSIDE the section
+      // card, and EmptyStateCard draws a bordered card of its own -- a card
+      // inside a card, with two borders a few pixels apart.
+      return const EmptyTableState(
         icon: Icons.account_balance_outlined,
         message: 'No directorates yet',
         subtitle: 'Add the first one to start assigning yards to it.',
       );
     }
-    const widths = [1, 1, 4, 1, 1];
+    // ⚠️ Status and Actions are FIXED, not flex. As flex 1 each they were
+    // the narrowest columns in a wide row: the pill and the buttons ended
+    // up touching, and the toggle spilled past the card's edge (the 6px
+    // overflow stripe). Fixed widths cannot be squeezed by a long name.
+    //
+    // The flex share follows what each column actually holds. SR Prefix
+    // is a fixed-width chip and Code is three or four characters, so at
+    // 2/2/7 both sat in a column far wider than their content while the
+    // NAME -- the only one that varies, and the longest -- was the column
+    // running out of room. 2/2/9 gives the name that space back without
+    // letting the short columns collapse.
+    const widths = [2, 2, 9];
+    const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];
     return _TableShell(
-      columns: const ['SR Prefix', 'Code', 'Name', 'Status', ''],
+      columns: const ['SR Prefix', 'Code', 'Name', 'Status', 'Actions'],
       widths: widths,
+      fixed: fixed,
       children: [
-        for (final d in rows)
+        for (var i = 0; i < rows.length; i++)
           _TableRow(
-            faded: !d.isActive,
+            index: i,
+            faded: !rows[i].isActive,
             widths: widths,
+            fixed: fixed,
             cells: [
-              _MonoChip(text: d.srPrefix, color: accent),
-              Text(d.code),
-              Text(d.name, overflow: TextOverflow.ellipsis),
-              _StatusPill(active: d.isActive),
+              _MonoChip(text: rows[i].srPrefix, color: accent),
+              Text(rows[i].code),
+              Text(rows[i].name, overflow: TextOverflow.ellipsis),
+              _StatusPill(active: rows[i].isActive),
               _RowActions(
-                onEdit: () => onEdit(d),
-                onToggle: () => onToggle(d),
-                active: d.isActive,
+                accent: accent,
+                onEdit: () => onEdit(rows[i]),
+                onToggle: () => onToggle(rows[i]),
+                active: rows[i].isActive,
               ),
             ],
           ),
@@ -476,44 +559,119 @@ class _YardTable extends StatelessWidget {
   final Map<String, List<String>> links;
   final Color accent;
   final ValueChanged<YardModel> onEdit;
-  final ValueChanged<YardModel> onToggle;
+  final Future<void> Function(YardModel) onToggle;
 
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) {
-      return const EmptyStateCard(
+      return const EmptyTableState(
         icon: Icons.warehouse_outlined,
         message: 'No yards yet',
         subtitle: 'Add a yard and tick the directorates it belongs to.',
       );
     }
-    const widths = [3, 1, 3, 3, 1, 1];
+    // ⚠️ Balanced against what each column actually holds: a yard name and
+    // an example SR are long, a code is four characters, and Directorates
+    // is a row of fixed-width chips. At 3/1/3/3 the codes had as much room
+    // as the SR numbers, and the names ran out of it.
+    const widths = [5, 2, 4, 6];
+    const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];
     return _TableShell(
       columns: const [
-        'Yard', 'Code', 'Directorates', 'Example SR', 'Status', ''
+        'Yard', 'Code', 'Directorates', 'Example SR', 'Status', 'Actions'
       ],
       widths: widths,
+      fixed: fixed,
       children: [
-        for (final y in rows)
+        for (var i = 0; i < rows.length; i++)
           _TableRow(
-            faded: !y.isActive,
+            index: i,
+            faded: !rows[i].isActive,
             widths: widths,
+            fixed: fixed,
             cells: [
-              Text(y.name, overflow: TextOverflow.ellipsis),
-              Text(y.code),
-              _DirectorateChips(codes: links[y.code] ?? const [], accent: accent),
+              Text(rows[i].name, overflow: TextOverflow.ellipsis),
+              Text(rows[i].code),
+              _DirectorateChips(
+                  codes: links[rows[i].code] ?? const [], accent: accent),
               // Shows the consequence of the mapping in the mapping's own row,
               // which is the fastest way to spot a wrong prefix.
-              _ExampleSr(yard: y, directorates: links[y.code] ?? const []),
-              _StatusPill(active: y.isActive),
+              _ExampleSr(
+                  yard: rows[i],
+                  directorates: links[rows[i].code] ?? const []),
+              _StatusPill(active: rows[i].isActive),
               _RowActions(
-                onEdit: () => onEdit(y),
-                onToggle: () => onToggle(y),
-                active: y.isActive,
+                accent: accent,
+                onEdit: () => onEdit(rows[i]),
+                onToggle: () => onToggle(rows[i]),
+                active: rows[i].isActive,
               ),
             ],
           ),
       ],
+    );
+  }
+}
+
+/// One directorate in the "Belongs to" grid.
+///
+/// A FilterChip sizes itself to its label and carries the app's global chip
+/// theme, so eight of them could never line up into a grid and none of them
+/// carried the console's accent. This is a plain box that fills the cell it
+/// is given.
+class _DirectorateTick extends StatelessWidget {
+  const _DirectorateTick({
+    required this.accent,
+    required this.label,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final Color accent;
+  final String label;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kIctControlRadius),
+        onTap: () => onChanged(!selected),
+        child: Container(
+          height: kIctControlHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color:
+                selected ? accent.withOpacity(0.1) : context.colors.surfaceDark,
+            borderRadius: BorderRadius.circular(kIctControlRadius),
+            border: Border.all(
+                color: selected
+                    ? accent.withOpacity(0.5)
+                    : context.colors.borderColor),
+          ),
+          child: Row(children: [
+            Icon(
+                selected
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
+                size: 17,
+                color: selected ? accent : context.colors.textMuted),
+            const Gap(8),
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: selected ? accent : context.colors.textPrimary,
+                      fontSize: 12,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500)),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -580,128 +738,123 @@ class _ExampleSr extends StatelessWidget {
 
 // ── Small shared pieces ─────────────────────────────────────────────────────
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.accent,
-    required this.actionLabel,
-    required this.onAction,
-  });
-
-  final IconData icon;
-  final String title, subtitle, actionLabel;
-  final Color accent;
-  final VoidCallback onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Icon(icon, color: accent, size: 20),
-      const Gap(10),
-      Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title,
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800)),
-          const Gap(3),
-          Text(subtitle,
-              style: TextStyle(
-                  color: context.colors.textMuted, fontSize: 12, height: 1.4)),
-        ]),
-      ),
-      const Gap(14),
-      FilledButton.icon(
-        onPressed: onAction,
-        icon: const Icon(Icons.add_rounded, size: 18),
-        label: Text(actionLabel),
-        style: FilledButton.styleFrom(backgroundColor: accent),
-      ),
-    ]);
+/// A column layout shared by the header and every row, so the two cannot
+/// drift: [widths] are flex columns from the left, [fixed] are pixel columns
+/// pinned to the right.
+List<Widget> _ictColumns({
+  required List<Widget> cells,
+  required List<int> widths,
+  required List<double> fixed,
+}) {
+  final out = <Widget>[];
+  for (var i = 0; i < cells.length; i++) {
+    final w = i < widths.length ? cells[i] : cells[i];
+    if (i > 0) out.add(const Gap(kIctCellGap));
+    if (i < widths.length) {
+      out.add(Expanded(flex: widths[i], child: w));
+    } else {
+      out.add(SizedBox(width: fixed[i - widths.length], child: w));
+    }
   }
+  return out;
 }
 
 class _TableShell extends StatelessWidget {
   const _TableShell({
     required this.columns,
     required this.widths,
+    required this.fixed,
     required this.children,
   });
 
   final List<String> columns;
   final List<int> widths;
+  final List<double> fixed;
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: context.colors.cardDark,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.colors.borderColor),
-      ),
-      child: Column(children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: context.colors.scaffoldBg,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(13)),
-          ),
-          child: Row(children: [
-            for (var i = 0; i < columns.length; i++)
-              Expanded(
-                flex: widths[i],
-                child: Text(columns[i].toUpperCase(),
+    // ⚠️ No card of its own any more: this table sits INSIDE an
+    // IctSectionCard, which draws the border, the radius and the title. A
+    // second border here would have shown as a double rule under the header.
+    return Column(children: [
+      Container(
+        height: kIctHeadingHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        color: context.colors.surfaceDark,
+        child: Row(
+          children: _ictColumns(
+            widths: widths,
+            fixed: fixed,
+            // The same quiet uppercase rule DataTable2 gets from
+            // IctTableTheme -- these rows are hand-built, so the two would
+            // otherwise be the console's only mismatched headings.
+            cells: [
+              for (final c in columns)
+                Text(c.toUpperCase(),
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         color: context.colors.textMuted,
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5)),
-              ),
-          ]),
+                        letterSpacing: 0.9)),
+            ],
+          ),
         ),
-        ...children,
-      ]),
-    );
+      ),
+      ...children,
+    ]);
   }
 }
 
 class _TableRow extends StatelessWidget {
   const _TableRow(
-      {required this.cells, required this.widths, this.faded = false});
+      {required this.cells,
+      required this.widths,
+      required this.fixed,
+      required this.index,
+      this.faded = false});
 
   final List<Widget> cells;
 
-  /// Must match the header's widths, or the columns will not line up.
+  /// Must match the header's, or the columns will not line up.
   final List<int> widths;
+  final List<double> fixed;
+
+  /// Row number. Kept because the row above the first needs no rule.
+  final int index;
   final bool faded;
 
   @override
   Widget build(BuildContext context) {
-    // A deactivated row stays visible — its code is still stamped on historical
-    // data — but reads as switched off.
+    // A deactivated row stays visible — its code is still stamped on
+    // historical data — but reads as switched off.
     final row = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: context.colors.borderColor)),
-      ),
+      constraints: const BoxConstraints(minHeight: kIctRowHeight),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      // A light rule between rows, so a wide row can be followed across —
+      // the same rule DataTable2 draws from IctTableTheme's dividerColor.
+      decoration: index == 0
+          ? null
+          : BoxDecoration(
+              border: Border(
+                  top: BorderSide(
+                      color: context.colors.borderColor.withOpacity(0.5))),
+            ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          for (var i = 0; i < cells.length; i++)
-            Expanded(
-              flex: widths[i],
-              child: DefaultTextStyle.merge(
+        children: _ictColumns(
+          widths: widths,
+          fixed: fixed,
+          cells: [
+            for (final c in cells)
+              DefaultTextStyle.merge(
                 style: TextStyle(
-                    color: context.colors.textPrimary, fontSize: 13),
-                child: cells[i],
+                    color: context.colors.textPrimary, fontSize: 12.5),
+                child: c,
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
     return faded ? Opacity(opacity: 0.45, child: row) : row;
@@ -718,15 +871,22 @@ class _MonoChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
+      // ⚠️ One size for every code. They were padded around their text, so
+      // "BA", "ACD" and "B/A" each came out a different width and a column of
+      // them read as a ragged edge rather than as a set of labels. A code is
+      // at most four characters, so one box fits them all.
       child: Container(
-        padding: EdgeInsets.symmetric(
-            horizontal: small ? 6 : 8, vertical: small ? 2 : 3),
+        width: small ? 42 : 52,
+        height: small ? 19 : 23,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.withOpacity(0.12),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: color.withOpacity(0.35)),
         ),
         child: Text(text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
                 color: color,
                 fontFamily: 'monospace',
@@ -737,25 +897,27 @@ class _MonoChip extends StatelessWidget {
   }
 }
 
+/// The console's status pill, at the console's one width — so this column
+/// lines up with the status column on every other ICT screen.
+/// ⚠️ ENABLED / DISABLED here, not ACTIVE / INACTIVE.
+///
+/// A yard or a directorate is a configuration row that ICT switches on and
+/// off, and the control beside it IS a switch — "enabled" is what a switch
+/// does. An ACCOUNT is a different thing: it is active, expired or
+/// deactivated as a fact of its own lifetime, not because someone flipped it,
+/// so the Staff and Directorate Access tables keep ACTIVE. One word for both
+/// would have said these two very different states are the same thing.
 class _StatusPill extends StatelessWidget {
   const _StatusPill({required this.active});
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    final c = active ? context.colors.successGreen : context.colors.textMuted;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-        const Gap(6),
-        Text(active ? 'Active' : 'Off',
-            style:
-                TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w600)),
-      ]),
+    return IctStatusPill(
+      label: active ? 'Enabled' : 'Disabled',
+      color: active
+          ? context.colors.successGreen
+          : context.colors.textMuted,
     );
   }
 }
@@ -765,29 +927,122 @@ class _RowActions extends StatelessWidget {
     required this.onEdit,
     required this.onToggle,
     required this.active,
+    required this.accent,
   });
 
-  final VoidCallback onEdit, onToggle;
+  final VoidCallback onEdit;
+  final Future<void> Function() onToggle;
   final bool active;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-      IconButton(
-        icon: const Icon(Icons.edit_outlined, size: 18),
+    // ⚠️ Two controls at the console's one icon size. This was the shared Edit
+    // button (a 27px tinted square) beside a 34px IconButton holding a toggle
+    // glyph -- two sizes for two actions on the same row, and the oversized
+    // one is what pushed this column past the card's edge.
+    //
+    // Disabling, not deleting: the code is stamped on historical rows.
+    return Row(mainAxisAlignment: MainAxisAlignment.start, children: [
+      IctIconButton(
+        icon: Icons.edit_rounded,
+        color: accent,
         tooltip: 'Edit',
         onPressed: onEdit,
       ),
-      IconButton(
-        icon: Icon(active ? Icons.toggle_on_rounded : Icons.toggle_off_rounded,
-            size: 22,
-            color:
-                active ? context.colors.successGreen : context.colors.textMuted),
-        // Deactivating, not deleting: the code is referenced by historical rows.
-        tooltip: active ? 'Deactivate (hides it from pickers)' : 'Activate',
-        onPressed: onToggle,
-      ),
+      const Gap(8),
+      _EnableSwitch(active: active, onChanged: onToggle),
     ]);
+  }
+}
+
+/// The enable/disable switch on a Yards & Directorates row.
+///
+/// ⚠️ It flips FIRST and asks the server after.
+///
+/// It used to await the write and then invalidate the providers, so the switch
+/// sat still for the length of a round trip and the page then rebuilt from
+/// underneath it. Moving the local state first is what makes it read as a
+/// switch rather than as a form submission — and if the write fails the switch
+/// goes back and says why, which is the only thing waiting ever bought.
+class _EnableSwitch extends StatefulWidget {
+  const _EnableSwitch({required this.active, required this.onChanged});
+
+  final bool active;
+  final Future<void> Function() onChanged;
+
+  @override
+  State<_EnableSwitch> createState() => _EnableSwitchState();
+}
+
+class _EnableSwitchState extends State<_EnableSwitch> {
+  /// What the switch is SHOWING, which runs ahead of what the server holds.
+  bool? _optimistic;
+
+  @override
+  void didUpdateWidget(covariant _EnableSwitch old) {
+    super.didUpdateWidget(old);
+    // Once the refreshed row agrees with us, stop overriding it — otherwise a
+    // change made anywhere else would never show on this row again.
+    if (_optimistic != null && widget.active == _optimistic) _optimistic = null;
+  }
+
+  Future<void> _flip() async {
+    setState(() => _optimistic = !(_optimistic ?? widget.active));
+    try {
+      await widget.onChanged();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _optimistic = null);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceAll('Exception: ', '')),
+        backgroundColor: context.colors.dangerRed,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final on = _optimistic ?? widget.active;
+    final track = on ? context.colors.successGreen : context.colors.textMuted;
+    return Tooltip(
+      message: on ? 'Disable (hides it from pickers)' : 'Enable',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: _flip,
+          child: SizedBox(
+            width: kIctIconButtonSize,
+            height: kIctIconButtonSize,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                width: 30,
+                height: 17,
+                decoration: BoxDecoration(
+                  color: track.withOpacity(on ? 0.9 : 0.3),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  alignment: on ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    width: 13,
+                    height: 13,
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    decoration: const BoxDecoration(
+                        color: Colors.white, shape: BoxShape.circle),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -871,7 +1126,7 @@ class _LoadFailed extends StatelessWidget {
             missing
                 // The single most likely cause, named outright.
                 ? 'The $what table is not in this database yet. Run '
-                    'supabase/migrations/20260839_ict_directorates_and_yards.sql, '
+                    'db/migrations/20260839_ict_directorates_and_yards.sql, '
                     'then reload.'
                 : 'Could not load $what: $error',
             style: TextStyle(

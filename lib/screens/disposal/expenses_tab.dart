@@ -12,12 +12,14 @@ import '../../models/models.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import 'disposal_shared.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Page index for this tab's client-side pager.
 final _expensePageProvider = StateProvider<int>((ref) => 0);
@@ -51,25 +53,40 @@ class ExpensesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
-    final rowsAsync = ref.watch(srFinancialsProvider);
+    // ⚠️ One PAGE. `srFinancialsProvider` calls getAllPackages() AND
+    // getTenderSales() and rolls the whole yard up in Dart -- per item, per
+    // tax name. That was measured and left alone once, on ONE yard; this tab
+    // shows twenty-eight. `sr_expense_summary` (postgres/30) settles which
+    // SRs have money to account for, and the ledger is built for that page.
     final page = ref.watch(_expensePageProvider);
+    final query = ExpenseQuery(
+      page: page,
+      search: ref.watch(disposalSearchProvider(_tabKey)),
+      yardFilter: ref.watch(disposalYardFilterProvider(_tabKey)),
+      dateStart: ref.watch(_expenseDateRangeProvider)?.start,
+      dateEnd: ref.watch(_expenseDateRangeProvider)?.end,
+    );
+    final rowsAsync = ref.watch(expensePageProvider(query));
     final dateFilterType = ref.watch(_expenseDateFilterTypeProvider);
     final dateRange = ref.watch(_expenseDateRangeProvider);
     final dateLabel = _getExpenseDateFilterLabel(dateFilterType, dateRange);
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24 — see the dashboard's own tab bodies. Vertical chrome
+      // on a table page is rows the officer cannot see.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title · search · yard · date — the standard filter header.
           Row(children: [
-            Text('Disposal Expenses',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Disposal Expenses', Icons.payments_rounded,
+                  subtitle:
+                      'Operational expenditures, advertising, transport, and disposal costs',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: _tabKey, hint: 'Search SR / goods\u2026'),
             const Gap(12),
@@ -96,40 +113,17 @@ class ExpensesTab extends ConsumerWidget {
               loading: () =>
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(srFinancialsProvider)),
-              data: (all) {
-                final q =
-                    ref.watch(disposalSearchProvider(_tabKey)).toLowerCase();
-                final yf = ref.watch(disposalYardFilterProvider(_tabKey));
-
-                // Only SRs that carry a deposit or already have a cost are
-                // worth listing — the rest have nothing to account for.
-                var rows = all.where(
-                    (r) => r.destroyingDeposit > 0 || r.depositSpent > 0);
-                if (yf != null) {
-                  // Fall back to the SR prefix when a row carries no yard of
-                  // its own, so the filter cannot silently hide goods that
-                  // plainly belong to the selected yard.
-                  rows = rows.where(
-                      (r) => (r.yard ?? yardOfSrNumber(r.srNumber)) == yf);
-                }
-                if (q.isNotEmpty) {
-                  rows =
-                      rows.where((r) => r.srNumber.toLowerCase().contains(q));
-                }
-                if (dateRange != null) {
-                  rows = rows.where((r) => _matchesDateRange(r, dateRange));
-                }
-                final list = rows.toList();
-
-                // A filter can leave the pager past the end.
+                  error: e,
+                  onRetry: () => ref.refresh(expensePageProvider(query))),
+              data: (result) {
+                // Filtered, sorted and paged by the database, including
+                // the "carries a deposit or has a cost" rule -- an SR with
+                // neither has nothing to show.
+                final pageRows = result.rows;
+                final total = result.total;
                 final maxPage =
-                    list.isEmpty ? 0 : (list.length - 1) ~/ kClientPageSize;
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
                 final safePage = page > maxPage ? maxPage : page;
-                final pageRows = list
-                    .skip(safePage * kClientPageSize)
-                    .take(kClientPageSize)
-                    .toList();
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,16 +132,21 @@ class ExpensesTab extends ConsumerWidget {
                     Row(children: [
                       StatChip(
                           label: 'SRs with a deposit',
-                          value: '${list.length}',
+                          // The DATABASE's count for this filter.
+                          value: '$total',
                           color: amber),
                       const Gap(12),
-                      Expanded(child: _TotalsStrip(rows: list)),
+                      // ⚠️ Totals across EVERY filtered SR, from their own
+                      // query -- summing the page would report a fraction of
+                      // the money and understate what has been spent.
+                      Expanded(child: _TotalsStrip(totals: result.totals)),
                     ]),
                     const Gap(14),
                     Expanded(child: _ExpensesTable(rows: pageRows)),
                     TablePager(
-                      total: list.length,
+                      total: total,
                       page: safePage,
+                      accent: context.colors.successGreen,
                       onPageChanged: (p) =>
                           ref.read(_expensePageProvider.notifier).state = p,
                     ),
@@ -208,8 +207,6 @@ class DisposalDateFilter extends StatelessWidget {
           isDense: true,
           menuWidth: 200,
           splashRadius: 14,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           prefixIcon: Icon(
             filterType == 'day'
                 ? Icons.today_rounded
@@ -235,20 +232,14 @@ class DisposalDateFilter extends StatelessWidget {
   }
 }
 
-bool _matchesDateRange(SrFinancials r, DateTimeRange range) {
-  final d = r.date;
-  if (d != null) {
-    return !d.isBefore(range.start) && !d.isAfter(range.end);
-  }
-  final yearMatch = RegExp(r'\b(20\d{2})\b').firstMatch(r.srNumber);
-  if (yearMatch != null) {
-    final srYear = int.tryParse(yearMatch.group(1)!);
-    if (srYear != null) {
-      return srYear >= range.start.year && srYear <= range.end.year;
-    }
-  }
-  return true;
-}
+// ⚠️ `_matchesDateRange` moved into `sr_expense_summary`'s `activity_date`
+// (postgres/30), fallbacks and all — when money was last spent, then the SR's
+// entry date, then created_at, and finally THE YEAR IN THE SR NUMBER.
+//
+// That last one is the reason it needed care: a legacy SR can carry no usable
+// date, and the app matched it on its number's year rather than dropping it
+// from every date filter. The view's verify block asserts no row is dateless,
+// because a dateless row is one a range filter hides without saying so.
 
 String _getExpenseDateFilterLabel(String type, DateTimeRange? range) {
   if (range == null || type == 'all') return 'All Time';
@@ -330,7 +321,7 @@ Future<void> _handleExpenseDatePick(
       ref.read(_expensePageProvider.notifier).state = 0;
     }
   } else if (filterType == 'range') {
-    final picked = await showDialog<dynamic>(
+    final picked = await showAppDialog<dynamic>(
       context: context,
       builder: (ctx) =>
           custom.DateRangePickerDialog(initialRange: currentRange),
@@ -379,7 +370,7 @@ Future<({int year, int month})?> _showExpenseMonthPickerDialog(
     'December'
   ];
 
-  return showDialog<({int year, int month})>(
+  return showAppDialog<({int year, int month})>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (context, setDlgState) {
@@ -472,7 +463,7 @@ Future<int?> _showExpenseYearPickerDialog(
   if (selectedYear > currentYear) selectedYear = currentYear;
   final years = List.generate(10, (i) => currentYear - i);
 
-  return showDialog<int>(
+  return showAppDialog<int>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (context, setDlgState) => AlertDialog(
@@ -521,22 +512,24 @@ Future<int?> _showExpenseYearPickerDialog(
 
 /// Running totals for whatever the table is currently showing.
 class _TotalsStrip extends StatelessWidget {
-  final List<SrFinancials> rows;
-  const _TotalsStrip({required this.rows});
+  /// Summed in SQL across every SR the filter matches — see
+  /// `getExpenseTotals`.
+  ///
+  /// ⚠️ It used to add up the rows on screen. That was right while the table
+  /// held every row and became wrong the moment it held twenty: the strip
+  /// would have reported one page's worth of money as the directorate's total.
+  final Map<String, double> totals;
+  const _TotalsStrip({required this.totals});
 
   @override
   Widget build(BuildContext context) {
-    double deposit = 0, destruction = 0, advertising = 0, refund = 0;
-    double labour = 0, transport = 0, auction = 0;
-    for (final r in rows) {
-      deposit += r.destroyingDeposit;
-      destruction += r.destructionExpense;
-      advertising += r.advertisingExpense;
-      labour += r.labourExpense;
-      transport += r.transportExpense;
-      auction += r.auctionExpense;
-      refund += r.refund;
-    }
+    final deposit = totals['deposit'] ?? 0;
+    final destruction = totals['destruction'] ?? 0;
+    final advertising = totals['advertising'] ?? 0;
+    final labour = totals['labour'] ?? 0;
+    final transport = totals['transport'] ?? 0;
+    final auction = totals['auction'] ?? 0;
+    final refund = totals['refund'] ?? 0;
 
     return Wrap(
       spacing: 12,
@@ -628,8 +621,12 @@ class _ExpensesTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final money = NumberFormat('#,##0.00');
-    final packages = ref.watch(livePackagesProvider).valueOrNull ?? [];
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
+    // ⚠️ The details popup fetches ITS OWN package, when it is opened.
+    //
+    // This watched `livePackagesProvider` -- every package in the yard, 176
+    // rows at 159ms -- so the table paid for them on every build, to serve a
+    // lookup that only runs when an officer clicks a row. Most never do.
 
     return Container(
       width: double.infinity,
@@ -777,9 +774,9 @@ class _ExpensesTable extends ConsumerWidget {
                     tooltip: 'Record costs for this SR',
                     icon: Icon(Icons.edit_note_rounded,
                         size: 20, color: context.colors.successGreen),
-                    onPressed: () => showDialog(
+                    onPressed: () => showAppDialog(
                       context: context,
-                      builder: (_) => _RecordExpenseDialog(sr: r),
+                      builder: (_) => RecordExpenseDialog(sr: r),
                     ),
                   ),
                 )),
@@ -788,12 +785,13 @@ class _ExpensesTable extends ConsumerWidget {
                     tooltip: 'View complete SR details',
                     icon: Icon(Icons.info_outline_rounded,
                         size: 18, color: context.colors.accentLightBlue),
-                    onPressed: () {
-                      final pkg = packages
-                          .where((p) => p.srNumber.trim() == r.srNumber.trim())
-                          .firstOrNull;
+                    onPressed: () async {
+                      final pkg = await ref
+                          .read(packageServiceProvider)
+                          .getPackageBySrNumber(r.srNumber.trim());
+                      if (!context.mounted) return;
                       if (pkg != null) {
-                        showDialog(
+                        showAppDialog(
                           context: context,
                           builder: (_) => PackageDetailsDialog(
                             package: pkg,
@@ -806,7 +804,7 @@ class _ExpensesTable extends ConsumerWidget {
                           ),
                         );
                       } else {
-                        showDialog(
+                        showAppDialog(
                           context: context,
                           builder: (_) => _SrGoodsDialog(sr: r),
                         );
@@ -1037,21 +1035,74 @@ class _StatusBadge extends StatelessWidget {
 
 /// Records both costs for ONE SR, and previews the resulting refund
 /// live so the officer sees the consequence before saving.
-class _RecordExpenseDialog extends ConsumerStatefulWidget {
+class RecordExpenseDialog extends ConsumerStatefulWidget {
   final SrFinancials sr;
-  const _RecordExpenseDialog({required this.sr});
+
+  /// Opened from the Destroyed Goods table: hides Auction Expenses (it never
+  /// applies to a destruction) and adjusts the copy to talk about destruction
+  /// specifically instead of disposal in general.
+  final bool forDestruction;
+
+  /// Opened on a row that is already DESTROYED: the form is shown, but
+  /// greyed and read-only, with a notice saying why.
+  ///
+  /// ⚠️ THE POINT, given directly: "ඩිස්ට්‍රෝයිඩ් කියලා අප්ඩේට් වුනා
+  /// කියන්නේ ඒ ගුඩ්ස් විනාශ කරලා ඉවරයි කියන එකනේ. එතකොට කොස්ට් අප්ඩේට්
+  /// කරලා වැඩක් නෑ නේද." Once the goods are gone the destruction is closed,
+  /// and a cost changed afterwards would restate a settled account.
+  ///
+  /// ⚠️ The dialog still OPENS. Hiding the button would leave the officer
+  /// with no way to see what was charged; showing a dead form with no
+  /// explanation is worse again. It opens, it is visibly disabled, and it
+  /// says why.
+  final bool locked;
+
+  const RecordExpenseDialog(
+      {super.key,
+      required this.sr,
+      this.forDestruction = false,
+      this.locked = false});
 
   @override
-  ConsumerState<_RecordExpenseDialog> createState() =>
+  ConsumerState<RecordExpenseDialog> createState() =>
       _RecordExpenseDialogState();
 }
 
-class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
+class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   /// One controller per recordable kind, keyed the same way the database is.
   /// Driving the form off `kRecordableExpenseKinds` means adding another cost
   /// needs no change here — only that map, and the icon table below.
   late final Map<String, TextEditingController> _fields;
   bool _saving = false;
+
+  /// Kinds a destruction never incurs.
+  ///
+  /// ⚠️ ADVERTISING IS NOT ONE OF THEM. This set used to hold it too, on
+  /// the reasoning that "the goods are handed straight to the destroying
+  /// contractor, so nothing is advertised". That premise was wrong and the
+  /// officer corrected it: a destruction IS advertised, and the cost comes
+  /// out of the same destroying deposit as the rest.
+  ///
+  /// Auction stays out, and only that: a destroyed item is never sold, so an
+  /// auction cost against one would be a data-entry mistake rather than a
+  /// field somebody needs.
+  static const _notForDestruction = {'auction_expense'};
+
+  /// The kinds this dialog offers.
+  Iterable<MapEntry<String, String>> get _kinds => widget.forDestruction
+      ? kRecordableExpenseKinds.entries
+          .where((e) => !_notForDestruction.contains(e.key))
+      : kRecordableExpenseKinds.entries;
+
+  /// What is already recorded under the kinds this dialog does NOT offer.
+  ///
+  /// The deposit pays for every cost booked against the SR, not just the ones
+  /// on screen. Leaving these out of the arithmetic would show a refund larger
+  /// than the depositor is actually owed whenever an earlier advertising or
+  /// auction cost exists.
+  double get _hiddenSpend => widget.forDestruction
+      ? _notForDestruction.fold<double>(0, (a, k) => a + _existing(k))
+      : 0;
 
   /// The figure already recorded for [kind] on this SR.
   double _existing(String kind) {
@@ -1098,7 +1149,7 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
   void initState() {
     super.initState();
     _fields = {
-      for (final kind in kRecordableExpenseKinds.keys)
+      for (final kind in _kinds.map((e) => e.key))
         kind: TextEditingController(
             text:
                 _existing(kind) == 0 ? '' : _existing(kind).toStringAsFixed(2))
@@ -1119,7 +1170,8 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
   double _valueOf(String kind) =>
       double.tryParse(_fields[kind]?.text.trim() ?? '') ?? 0;
 
-  double get _spent => _fields.keys.fold<double>(0, (a, k) => a + _valueOf(k));
+  double get _spent =>
+      _fields.keys.fold<double>(0, (a, k) => a + _valueOf(k)) + _hiddenSpend;
 
   double get _refund {
     final left = widget.sr.destroyingDeposit - _spent;
@@ -1132,6 +1184,10 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
   }
 
   Future<void> _save() async {
+    // ⚠️ Guarded here as well as in the UI. The Save button is gone on a
+    // locked form, but this is the only place that actually writes -- a
+    // future keyboard shortcut or an autosave must not slip past the rule.
+    if (widget.locked) return;
     setState(() => _saving = true);
     try {
       final svc = ref.read(disposalServiceProvider);
@@ -1139,7 +1195,7 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
           widget.sr.goods.isNotEmpty ? widget.sr.goods.first.itemId : null;
       // Every kind is written, zeros included: clearing a field must record
       // the zero, not leave the old figure standing.
-      for (final entry in kRecordableExpenseKinds.entries) {
+      for (final entry in _kinds) {
         await svc.addFinancialExpense(
           kind: entry.key,
           amount: _valueOf(entry.key),
@@ -1165,36 +1221,49 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
     final green = context.colors.successGreen;
 
     return StyledFormDialog(
-      label: 'DISPOSAL EXPENSES',
+      label:
+          widget.forDestruction ? 'DESTRUCTION EXPENSES' : 'DISPOSAL EXPENSES',
       title: widget.sr.srNumber,
-      icon: Icons.receipt_long_rounded,
+      icon: widget.forDestruction
+          ? Icons.local_fire_department_rounded
+          : Icons.receipt_long_rounded,
       headerAccentColor: green,
       width: 520,
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        const Gap(8),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: green,
-            foregroundColor: Colors.white,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          icon: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.check_rounded, size: 18),
-          label: const Text('Save Costs',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          onPressed: _saving ? null : _save,
-        ),
-      ],
+      actions: widget.locked
+          // ⚠️ No Save at all on a closed record -- not a greyed one.
+          // A disabled Save invites the officer to keep trying it; a single
+          // Close says the form is finished with.
+          ? [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: _saving ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              const Gap(8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: green,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Save Costs',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: _saving ? null : _save,
+              ),
+            ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -1221,22 +1290,40 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
             children: [
               // One field per recordable kind, driven off the shared map so
               // this form never drifts from what the database accepts.
-              for (final entry in kRecordableExpenseKinds.entries) ...[
-                TextField(
-                  controller: _fields[entry.key],
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: '${entry.value} (LKR)',
-                    hintText: '0.00',
-                    isDense: true,
-                    prefixIcon: Icon(
-                        _icons[entry.key] ?? Icons.payments_rounded,
-                        color: _colourFor(context, entry.key)),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+              for (final entry in _kinds) ...[
+                // ⚠️ A LOCKED FORM RENDERS NO FIELD AT ALL.
+                //
+                // It used to be a `readOnly: true` TextField, which still
+                // takes focus: clicking one drew the accent focus ring, put
+                // a caret in it and let the text be selected, so a closed
+                // record looked editable and only refused once the officer
+                // tried. Asked for plainly -- a view popup must not be
+                // clickable anywhere, not even faintly.
+                //
+                // `readOnly` is about writes; this is about AFFORDANCE. The
+                // only way to have no affordance is to have no input.
+                if (widget.locked)
+                  _ReadOnlyCost(
+                    label: entry.value,
+                    icon: _icons[entry.key] ?? Icons.payments_rounded,
+                    amount: _valueOf(entry.key),
+                  )
+                else
+                  TextField(
+                    controller: _fields[entry.key],
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: '${entry.value} (LKR)',
+                      hintText: '0.00',
+                      isDense: true,
+                      prefixIcon: Icon(
+                          _icons[entry.key] ?? Icons.payments_rounded,
+                          color: _colourFor(context, entry.key)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
-                ),
                 const Gap(12),
               ],
               const Gap(2),
@@ -1257,7 +1344,11 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
                     const Gap(10),
                     Expanded(
                       child: Text(
-                        'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
+                        widget.locked
+                            ? 'These goods have already been destroyed, so the costs are closed and cannot be edited. They are shown here for reference only.'
+                            : widget.forDestruction
+                                ? 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.'
+                                : 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
                         style: TextStyle(
                           color: context.colors.textSecondary,
                           fontSize: 12,
@@ -1334,6 +1425,57 @@ class _KeyValue extends StatelessWidget {
                   fontWeight: emphasise ? FontWeight.w800 : FontWeight.w600)),
         ),
       ]),
+    );
+  }
+}
+
+/// One cost on a CLOSED record: a label and a figure, and nothing to click.
+///
+/// ⚠️ Deliberately not a disabled/readOnly `TextField`. An input that
+/// cannot be written to still takes focus, shows a caret and draws a focus
+/// ring, so the form reads as editable and refuses only after the officer
+/// tries. A closed record should not invite the attempt.
+class _ReadOnlyCost extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final double amount;
+
+  const _ReadOnlyCost(
+      {required this.label, required this.icon, required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final muted = context.colors.textMuted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: muted.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: muted),
+          const Gap(10),
+          Expanded(
+            child: Text(
+              '$label (LKR)',
+              style: TextStyle(fontSize: 12, color: muted),
+            ),
+          ),
+          // A real zero is shown as 0.00, not hidden -- on a closed record
+          // "nothing was charged" is a finding, not a blank.
+          Text(
+            money.format(amount),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: context.colors.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

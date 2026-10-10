@@ -45,18 +45,40 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          // The tab reads exhaustedUnsoldProvider ("every avenue exhausted"),
-          // not unsoldTenderSalesProvider. Overriding the latter left the real
-          // provider live, so the widget queried a database that isn't there
-          // and rendered an empty table.
-          exhaustedUnsoldProvider.overrideWith((ref) => Future.value([
-                ReTenderSaleInfo(forfeited: forfeited, sales: const []),
-              ])),
+          // ⚠️ The tab pages on the SERVER now: which packages have run out
+          // of tenders is the `exhausted_unsold` view's job (postgres/23), so
+          // the harness supplies the PAGE that view would have returned rather
+          // than a list for the widget to narrow.
+          exhaustedUnsoldPageProvider.overrideWith((ref, q) => Future.value((
+                rows: [ReTenderSaleInfo(forfeited: forfeited, sales: const [])],
+                total: 1,
+              ))),
           // Also stubbed, for the same reason: both are read during build.
-          unsoldProposalsProvider.overrideWith(
-              (ref) => Future.value(const <String, UnsoldProposalModel>{})),
+          // ⚠️ The PAGE-wide provider, which is what the tab reads.
+          // Both were whole-table fetches used as one-`[fpId]`-per-row
+          // lookups; the tab now asks for its page's ids only.
+          pageProposalsProvider.overrideWith(
+              (ref, key) => Future.value(const <String, UnsoldProposalModel>{})),
           storageRateProvider.overrideWith(
               (ref) => Future.value(const <DateTime, double>{})),
+          // Stubbed for the same reason as the others: the Valuation column now
+          // reads the Top Management committee's figure, and without this the
+          // widget opens a real socket to PostgreSQL.
+          pageCommitteesProvider.overrideWith(
+              (ref, key) => Future.value(const <String, TenderCommitteeModel>{})),
+          // The four table cells read the page's bids and re-valuations.
+          pageBidsProvider.overrideWith((ref, key) =>
+              Future.value(const <String, Map<String, List<double>>>{})),
+          pageRevaluationsProvider.overrideWith((ref, key) => Future.value(
+              const <String, Map<String, TenderRevaluationModel>>{})),
+          // The yard filter dropdown is now DB-driven (ICT's Yards &
+          // Directorates table), so rendering it opens a real socket unless
+          // its source providers are stubbed too.
+          yardsProvider.overrideWith((ref) => Future.value(const <YardModel>[])),
+          directoratesProvider
+              .overrideWith((ref) => Future.value(const <DirectorateModel>[])),
+          yardDirectoratesProvider.overrideWith(
+              (ref) => Future.value(const <String, List<String>>{})),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
@@ -73,7 +95,13 @@ void main() {
     // "Unresolved / Unsold Packages" when the outcome tabs were split out, and
     // this assertion was left behind pointing at a string the app no longer
     // renders anywhere.
-    expect(find.text('Unsold Goods'), findsOneWidget);
+    // ⚠️ Matched on the WORDS, not the exact string: the Central Disposal
+    // titles carry a leading emoji, and pinning the whole label here would
+    // break every time one is chosen differently.
+    expect(
+        find.byWidgetPredicate((w) =>
+            w is Text && (w.data ?? '').contains('Unsold Goods')),
+        findsOneWidget);
 
     // The package itself renders.
     expect(find.text('SR-100'), findsWidgets);
@@ -85,14 +113,14 @@ void main() {
 
     // With no outcome recorded yet, the Final Outcome column reads as awaiting
     // the Top Management Directorate rather than showing a decision.
-    expect(find.text('Awaiting Top Management Directorate'), findsWidgets);
+    expect(find.text('Awaiting Top Management'), findsWidgets);
   });
 
   testWidgets('shows the recorded final outcome once one exists',
       (tester) async {
     // Central Disposal's tab is READ-ONLY: the outcome is chosen in the Top
     // Management Directorate's portal (unsold_decision_tab.dart) and this tab
-    // only reports it. The old version of this test expected Destroy / Remand /
+    // only reports it. The old version of this test expected Destroy /
     // Government Use / Auction action buttons here, which is a capability this
     // widget deliberately no longer has.
     final now = DateTime.now();
@@ -132,10 +160,11 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          exhaustedUnsoldProvider.overrideWith((ref) => Future.value([
-                ReTenderSaleInfo(forfeited: forfeited, sales: const []),
-              ])),
-          unsoldProposalsProvider.overrideWith((ref) => Future.value({
+          exhaustedUnsoldPageProvider.overrideWith((ref, q) => Future.value((
+                rows: [ReTenderSaleInfo(forfeited: forfeited, sales: const [])],
+                total: 1,
+              ))),
+          pageProposalsProvider.overrideWith((ref, key) => Future.value({
                 'fp-1': UnsoldProposalModel(
                   id: 'prop-1',
                   forfeitedPackageId: 'fp-1',
@@ -147,6 +176,24 @@ void main() {
               })),
           storageRateProvider.overrideWith(
               (ref) => Future.value(const <DateTime, double>{})),
+          // Stubbed for the same reason as the others: the Valuation column now
+          // reads the Top Management committee's figure, and without this the
+          // widget opens a real socket to PostgreSQL.
+          pageCommitteesProvider.overrideWith(
+              (ref, key) => Future.value(const <String, TenderCommitteeModel>{})),
+          // The four table cells read the page's bids and re-valuations.
+          pageBidsProvider.overrideWith((ref, key) =>
+              Future.value(const <String, Map<String, List<double>>>{})),
+          pageRevaluationsProvider.overrideWith((ref, key) => Future.value(
+              const <String, Map<String, TenderRevaluationModel>>{})),
+          // The yard filter dropdown is now DB-driven (ICT's Yards &
+          // Directorates table), so rendering it opens a real socket unless
+          // its source providers are stubbed too.
+          yardsProvider.overrideWith((ref) => Future.value(const <YardModel>[])),
+          directoratesProvider
+              .overrideWith((ref) => Future.value(const <DirectorateModel>[])),
+          yardDirectoratesProvider.overrideWith(
+              (ref) => Future.value(const <String, List<String>>{})),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
@@ -162,6 +209,6 @@ void main() {
     expect(find.text('SR-100'), findsWidgets);
     // The decision is reported, not offered as a choice.
     expect(find.text('Government Use'), findsWidgets);
-    expect(find.text('Awaiting Top Management Directorate'), findsNothing);
+    expect(find.text('Awaiting Top Management'), findsNothing);
   });
 }

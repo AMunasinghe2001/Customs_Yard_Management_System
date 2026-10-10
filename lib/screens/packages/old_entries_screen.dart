@@ -6,15 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
-import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
-import '../../widgets/year_filter.dart';
+import '../../widgets/date_filter_button.dart';
+import '../../widgets/app_dialog.dart';
 
 final oldEntrySearchProvider = StateProvider<String>((ref) => '');
 
@@ -49,36 +48,29 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
     super.dispose();
   }
 
-  List<String> _extractYears(List<PackageModel> packages) {
-    final yearRegex = RegExp(r'\b(19\d\d|20\d\d)\b');
-    final years = <String>{};
-    for (final p in packages) {
-      if (p.oldSrNumber != null) {
-        for (final m in yearRegex.allMatches(p.oldSrNumber!)) {
-          if (m.group(1) != null) years.add(m.group(1)!);
-        }
-      }
-      for (final m in yearRegex.allMatches(p.srNumber)) {
-        if (m.group(1) != null) years.add(m.group(1)!);
-      }
-      if (p.entryDate != null) {
-        years.add(p.entryDate!.year.toString());
-      }
-      if (p.cusdecDate != null) {
-        for (final m in yearRegex.allMatches(p.cusdecDate!)) {
-          if (m.group(1) != null) years.add(m.group(1)!);
-        }
-      }
-    }
-    return years.toList()..sort((a, b) => b.compareTo(a));
-  }
+  // ⚠️ `_extractYears` moved into `getOldEntryYears`. It scanned FOUR places
+  // a year can appear -- the old SR number, the new one, the entry date and
+  // the CusDec date -- because a legacy entry filed under one numbering and
+  // re-registered under another has to be findable by either year. That rule
+  // is unchanged; it just runs over the whole table now instead of over
+  // whatever twenty rows happen to be on screen.
 
   @override
   Widget build(BuildContext context) {
-    final packagesAsync = ref.watch(livePackagesProvider);
+    // ⚠️ Every filter is in the key. "Has a legacy SR number" is not one of
+    // them -- it is the list's DEFINITION, applied in the query itself.
+    final query = OldEntryQuery(
+      page: _page,
+      search: ref.watch(oldEntrySearchProvider),
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+    );
+    final packagesAsync = ref.watch(oldEntriesPageProvider(query));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
-    final search = ref.watch(oldEntrySearchProvider);
+    // Read through the query above; the listener still resets the page so a
+    // new search starts at the top rather than on page 4 of the old result.
     ref.listen(oldEntrySearchProvider, (_, __) => setState(() => _page = 0));
 
     return AppShell(
@@ -106,13 +98,13 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
 
               // ── Search & Filter Bar ──────────────────────────────
               packagesAsync.maybeWhen(
-                data: (packages) {
-                  final oldPackages = packages
-                      .where((p) =>
-                          p.oldSrNumber != null &&
-                          p.oldSrNumber!.trim().isNotEmpty)
-                      .toList();
-                  final availableYears = _extractYears(oldPackages);
+                data: (result) {
+                  // ⚠️ From its own query, over all four places a year can
+                  // appear -- not from the twenty rows on screen, which would
+                  // offer only the years currently visible.
+                  final availableYears =
+                      ref.watch(oldEntryYearsProvider).valueOrNull ??
+                          const <String>[];
 
                   return Container(
                     padding: const EdgeInsets.all(12),
@@ -157,66 +149,17 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                           runSpacing: 8,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final picked = await showDialog<DateTimeRange>(
-                                  context: context,
-                                  builder: (_) => custom.DateRangePickerDialog(
-                                      initialRange: _dateRange),
-                                );
-                                if (picked != null) {
-                                  setState(() {
-                                    _dateRange = picked;
-                                    _page = 0;
-                                  });
-                                }
-                              },
-                              icon: Icon(Icons.date_range_rounded,
-                                  size: 16,
-                                  color: _dateRange != null
-                                      ? context.colors.primaryGold
-                                      : context.colors.textSecondary),
-                              label: Text(
-                                _dateRange == null
-                                    ? 'Date Range'
-                                    : '${DateFormat('yyyy-MM-dd').format(_dateRange!.start)} → ${DateFormat('yyyy-MM-dd').format(_dateRange!.end)}',
-                                style: TextStyle(
-                                    color: _dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.textSecondary,
-                                    fontWeight: _dateRange != null
-                                        ? FontWeight.bold
-                                        : FontWeight.normal),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                    color: _dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.borderColor),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                            if (_dateRange != null)
-                              IconButton(
-                                icon: Icon(Icons.clear_rounded,
-                                    size: 16, color: context.colors.dangerRed),
-                                onPressed: () => setState(() {
-                                  _dateRange = null;
-                                  _page = 0;
-                                }),
-                                tooltip: 'Clear Date Filter',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            const SizedBox(width: 4),
-                            YearFilterButton(
-                              value: _yearFilter,
+                            // One control for both "when" questions — the
+                            // entry-date range and the SR-number year. They
+                            // used to be two buttons side by side, and the
+                            // reader had to know which held the live filter.
+                            DateFilterButton(
+                              dateRange: _dateRange,
+                              year: _yearFilter,
                               years: availableYears,
-                              onChanged: (v) => setState(() {
-                                _yearFilter = v;
+                              onChanged: (range, year) => setState(() {
+                                _dateRange = range;
+                                _yearFilter = year;
                                 _page = 0;
                               }),
                             ),
@@ -241,64 +184,20 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (packages) {
-                    // Only packages that carry a legacy SR number.
-                    var rows = packages
-                        .where((p) =>
-                            p.oldSrNumber != null &&
-                            p.oldSrNumber!.trim().isNotEmpty)
-                        .toList();
-
-                    // Apply Year filter
-                    if (_yearFilter != null) {
-                      final y = _yearFilter!;
-                      rows = rows.where((p) {
-                        final oldHas = (p.oldSrNumber ?? '').contains(y);
-                        final newHas = p.srNumber.contains(y);
-                        final entryHas = p.entryDate?.year.toString() == y;
-                        final cusdecDateHas = (p.cusdecDate ?? '').contains(y);
-                        return oldHas || newHas || entryHas || cusdecDateHas;
-                      }).toList();
+                      onRetry: () =>
+                          ref.refresh(oldEntriesPageProvider(query))),
+                  data: (result) {
+                    // Filtered, sorted and paged by the database — including
+                    // the "has a legacy SR number" definition of this list.
+                    final pageRows = result.rows;
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
                     }
-
-                    // Apply Date Range filter
-                    if (_dateRange != null) {
-                      final start = DateTime(_dateRange!.start.year,
-                          _dateRange!.start.month, _dateRange!.start.day);
-                      final end = DateTime(
-                          _dateRange!.end.year,
-                          _dateRange!.end.month,
-                          _dateRange!.end.day,
-                          23,
-                          59,
-                          59);
-                      rows = rows.where((p) {
-                        final date = p.entryDate ?? p.createdAt;
-                        return (date.isAfter(start) ||
-                                date.isAtSameMomentAs(start)) &&
-                            (date.isBefore(end) || date.isAtSameMomentAs(end));
-                      }).toList();
-                    }
-
-                    final q = search.trim().toLowerCase();
-                    if (q.isNotEmpty) {
-                      rows = rows
-                          .where((p) =>
-                              (p.oldSrNumber ?? '')
-                                  .toLowerCase()
-                                  .contains(q) ||
-                              p.srNumber.toLowerCase().contains(q) ||
-                              p.consigneeName.toLowerCase().contains(q) ||
-                              (p.cusdecNo ?? '').toLowerCase().contains(q))
-                          .toList();
-                    }
-                    rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-                    final pageRows = rows
-                        .skip(_page * kClientPageSize)
-                        .take(kClientPageSize)
-                        .toList();
 
                     return Column(
                       children: [
@@ -318,6 +217,17 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                 empty: const EmptyTableState(
                                     message: 'No old entries yet'),
                                 isVerticalScrollBarVisible: true,
+                                // ⚠️ Proportional, not fixed. Pinning each
+                                // text column to its content width dumped
+                                // every spare pixel into the one flexible
+                                // column at the end, so the table finished
+                                // with a long empty gap. Sharing the slack
+                                // keeps the gaps even: the dates stay fixed
+                                // because they are exactly 10 characters and
+                                // padding them only wastes room, and the two
+                                // widest fields carry the rest. Same
+                                // treatment as Goods History, so the two
+                                // tables read alike.
                                 columns: const [
                                   DataColumn2(
                                       label: Text('Old SR Number'),
@@ -327,23 +237,22 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                       size: ColumnSize.M),
                                   DataColumn2(
                                       label: Text('Cusdec No'),
-                                      size: ColumnSize.S,
-                                      fixedWidth: 130),
+                                      size: ColumnSize.M),
                                   DataColumn2(
                                       label: Text('Cusdec Date'),
                                       size: ColumnSize.S,
-                                      fixedWidth: 120),
+                                      fixedWidth: 110),
                                   DataColumn2(
                                       label: Text('Entry Date'),
                                       size: ColumnSize.S,
-                                      fixedWidth: 120),
+                                      fixedWidth: 110),
                                   DataColumn2(
                                       label: Text('Consignee'),
-                                      size: ColumnSize.M),
+                                      size: ColumnSize.L),
                                   DataColumn2(
                                       label: Center(child: Text('Details')),
                                       size: ColumnSize.S,
-                                      fixedWidth: 60),
+                                      fixedWidth: 55),
                                 ],
                                 rows: pageRows
                                     .map((p) => DataRow(cells: [
@@ -388,13 +297,26 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                                 color: context
                                                     .colors.accentLightBlue,
                                                 size: 18),
-                                            onPressed: () => showDialog(
+                                            onPressed: () => showAppDialog(
                                               context: context,
+                                              // ⚠️ NOT useLegacySummary.
+                                              // That flag swaps the per-item
+                                              // cargo list for a single-item
+                                              // summary, so an old entry
+                                              // opened here showed one
+                                              // condensed panel while the
+                                              // same SR opened from Goods
+                                              // History showed every item
+                                              // with its storage, appeal,
+                                              // tender rounds and outcome.
+                                              // A migrated package is the
+                                              // same package; the record it
+                                              // carries does not change with
+                                              // the door you open it by.
                                               builder: (_) =>
                                                   PackageDetailsDialog(
                                                 package: p,
                                                 storageRate: storageRate,
-                                                useLegacySummary: true,
                                               ),
                                             ),
                                           ))),
@@ -405,13 +327,26 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                           ),
                         ),
                         TablePager(
-                          total: rows.length,
-                          page: _page,
-                          pageSize: kClientPageSize,
+                          // The database's count for this filter.
+                          total: result.total,
+                          page: _page.clamp(0, maxPage),
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],
-                    );
+                    )
+                        // ⚠️ The table has to arrive like every other page's.
+                        // The header and the filter bar above it were already
+                        // animated and this was not, so the two slid in and
+                        // the rows simply appeared underneath them — which
+                        // read as the table snapping into place.
+                        //
+                        // Same 400ms slide and the same 300ms delay the other
+                        // tables use, so it lands just after the filter bar
+                        // rather than racing it.
+                        .animate()
+                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
+                        .fadeIn();
                   },
                 ),
               ),

@@ -19,7 +19,7 @@ works — it just generates SQL now.
 | `pg_select_parser.dart` | Parses PostgREST select strings (`*, package_items(*)`) into a tree. |
 | `pg_query.dart` | Turns that tree plus the filters into SQL, and runs it. |
 | `pg_schema.dart` | Caches the foreign keys, read from the catalog, so embeds know how tables join. |
-| `pg_auth.dart` | Sign in / sign up / password change, against `auth.users`. |
+| `pg_auth.dart` | Sign in / sign up / password change, against `sr_auth.users`. |
 | `pg_realtime.dart` | LISTEN/NOTIFY in place of Supabase's websocket channels. |
 
 ## How an embed becomes SQL
@@ -59,18 +59,18 @@ guessing, because guessing would put the wrong officer's name on a record.
 
 ## How RLS still works
 
-Every one of the 73 policies is written against `auth.uid()`. On Supabase that
-came from the JWT. Here `auth.uid()` is a SQL function reading a session
+Every one of the 73 policies is written against `sr_auth.uid()`. On Supabase that
+came from the JWT. Here `sr_auth.uid()` is a SQL function reading a session
 variable, and `PgAuth` sets it on sign-in:
 
 ```
 signInWithPassword() -> PgDatabase.setCurrentUser(id)
                      -> set_config('app.current_user_id', id, false)
-                     -> auth.uid() returns id
+                     -> sr_auth.uid() returns id
                      -> the same 73 policies apply, unchanged
 ```
 
-Signed out, the variable is empty, `auth.uid()` is NULL, and user-scoped
+Signed out, the variable is empty, `sr_auth.uid()` is NULL, and user-scoped
 policies deny. A bug that forgets to set it locks the user out rather than
 showing them everything — the failure falls the safe way.
 

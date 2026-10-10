@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'lib/core/supabase_client.dart'; // Adjust path if needed
+import 'lib/core/db_client.dart'; // Adjust path if needed
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

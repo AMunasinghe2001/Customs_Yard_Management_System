@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
+import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -85,8 +86,6 @@ class DisposalSearchState extends ConsumerState<DisposalSearch> {
                 ),
           filled: true,
           fillColor: context.colors.primaryGold.withOpacity(0.06),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           border: border(context.colors.primaryGold.withOpacity(0.4)),
           enabledBorder: border(context.colors.primaryGold.withOpacity(0.4)),
           focusedBorder: border(context.colors.primaryGold, 1.5),
@@ -104,12 +103,23 @@ class DisposalSearchState extends ConsumerState<DisposalSearch> {
 
 /// Yard dropdown with an "All Yards" option, bound to a provided value/onChanged.
 /// Used by tabs that filter their own (cross-yard) list locally.
-class YardAllFilter extends StatelessWidget {
+///
+/// [value] / the string [onChanged] reports is a [YardFilterOption.value]:
+/// a bare yard code, or `"<yard>|<directorate>"` for one entry of a
+/// multi-directorate yard (e.g. "NNR|CED", shown as "CED/NNR"). Apply it to a
+/// row with [matchesYardFilter], never a bare `==` on `yard` — a split entry
+/// also has to match the row's SR-number directorate prefix.
+class YardAllFilter extends ConsumerWidget {
   final String? value; // null = all
   final ValueChanged<String?> onChanged;
   const YardAllFilter({required this.value, required this.onChanged});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final optionsAsync = ref.watch(yardFilterOptionsProvider);
+    // ICT-maintained list; kYards is only the offline fallback while it loads
+    // or a query fails, so the dropdown is never empty.
+    final options = optionsAsync.valueOrNull ??
+        [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)];
     return SizedBox(
       width: 220,
       child: Theme(
@@ -137,13 +147,11 @@ class YardAllFilter extends StatelessWidget {
           helperText: null,
           isDense: true,
           menuWidth: 220,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           prefixIcon: Icon(Icons.warehouse_rounded,
               color: context.colors.primaryGold, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+            for (final o in options) StyledDropdownOption(o.value, o.label),
           ],
           onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
         ),

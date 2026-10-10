@@ -35,7 +35,7 @@ create or replace function public.notify_db_change()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform pg_notify(

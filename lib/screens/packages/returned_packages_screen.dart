@@ -12,12 +12,16 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/destruction_status_pill.dart';
+import '../../widgets/handover_cell.dart';
+import '../../widgets/perishable_row.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
 final returnedPackageReasonFilterProvider =
@@ -36,73 +40,55 @@ class _ReturnedPackagesScreenState
     extends ConsumerState<ReturnedPackagesScreen> {
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
-  int _page = 0; // current client-side page of the filtered rows
+  int _page = 0;
+  bool? _perishableOnly; // current client-side page of the filtered rows
 
-  WarehouseEntryModel? _latestReturnedEntry(PackageModel package) {
-    final entries =
-        package.warehouseEntries.where((e) => e.isReturned).toList();
-    if (entries.isEmpty) return null;
-    entries.sort((a, b) {
-      final aDate = a.returnedAt ?? a.admittedAt;
-      final bDate = b.returnedAt ?? b.admittedAt;
-      return bDate.compareTo(aDate);
-    });
-    return entries.first;
-  }
+  // ⚠️ `_latestReturnedEntry`, `_isReleaseEntry`, `_returnedItemName` and
+  // `_extractReceiptNo` all moved into the `disposition_rows` view (source 4,
+  // postgres/21, plus the receipt split in 22). They are not gone — they are
+  // in SQL, because paging in SQL needs the rows to exist in SQL.
+  //
+  // The release rule in particular is worth finding there: a release is the
+  // one disposition with NO tag, so it matches the ABSENCE of a bracket,
+  // which the other three sources' tag list cannot express.
 
-  /// A returned entry that represents an actual RELEASE — not a forfeit,
-  /// abandonment or other disposition. Plain/untagged returns are releases;
-  /// final releases are tagged "[FINAL:RELEASED]" or "[RELEASE...]".
-  bool _isReleaseEntry(WarehouseEntryModel e) {
-    if (!e.isReturned) return false;
-    final notes = (e.returnNotes ?? '').trim().toUpperCase();
-    if (notes.isEmpty) return true;
-    if (!notes.startsWith('[')) return true; // free-text receipt note
-    return notes.startsWith('[FINAL:RELEASED]') || notes.startsWith('[RELEASE');
-  }
-
-  List<_ReturnedRow> _buildReturnedRows(List<PackageModel> packages) {
-    final rows = <_ReturnedRow>[];
-    for (final package in packages) {
-      for (final entry in package.warehouseEntries) {
-        if (!_isReleaseEntry(entry)) continue;
-        rows.add(_ReturnedRow(
-          package: package,
-          entry: entry,
-          itemName: _returnedItemName(package, entry),
-          receiptNo: _extractReceiptNo(entry.returnNotes),
-          receiptDate: _extractReceiptDate(entry.returnNotes),
-        ));
-      }
+  /// The view's rows, as this page's widgets already expect them.
+  ///
+  /// Only rehydrates the twenty rows that came back — which rows count as a
+  /// release, in what order, and which page are all the view's job now.
+  List<_ReturnedRow> _rowsFrom(DispositionPageWithPackages result) {
+    final out = <_ReturnedRow>[];
+    for (final r in result.rows) {
+      final pkg = result.packages[r.packageId];
+      if (pkg == null) continue;
+      final entry = r.entryId == null
+          ? null
+          : pkg.warehouseEntries.where((e) => e.id == r.entryId).firstOrNull;
+      final item = r.itemId == null
+          ? null
+          : pkg.items.where((i) => i.id == r.itemId).firstOrNull;
+      out.add(_ReturnedRow(
+        package: pkg,
+        entry: entry,
+        item: item,
+        itemId: r.itemId,
+        itemName: r.itemName,
+        hsCode: r.hsCode,
+        quantity: r.quantity,
+        receiptNo: r.receiptNo,
+        receiptDate: entry != null ? _extractReceiptDate(entry.returnNotes) : null,
+        happenedAt: r.happenedAt,
+        // ⚠️ The entry's answer, else the ITEM's. Goods released with no
+        // warehouse entry have no entry-level flag to read, and the view
+        // returns null for them -- which the table used to paint as
+        // "Delivered". `item_handover_done` is the record of the act for
+        // exactly those goods (migration 041).
+        delivered: r.delivered ?? r.itemHandoverDone,
+        deliveredAt: r.deliveredAt ?? r.itemHandoverAt,
+        isPerishable: r.isPerishable,
+      ));
     }
-    rows.sort((a, b) {
-      final aDate = a.entry.returnedAt ?? a.entry.admittedAt;
-      final bDate = b.entry.returnedAt ?? b.entry.admittedAt;
-      return bDate.compareTo(aDate);
-    });
-    return rows;
-  }
-
-  String _returnedItemName(PackageModel package, WarehouseEntryModel? entry) {
-    if (entry == null) return '—';
-    final itemId = entry.packageItemId;
-    for (final item in package.items) {
-      if (item.id == itemId) return item.itemName;
-    }
-    if (package.items.isNotEmpty) return package.items.first.itemName;
-    return '—';
-  }
-
-  String? _extractReceiptNo(String? notes) {
-    if (notes == null || notes.trim().isEmpty) return null;
-    for (final part in notes.split('|')) {
-      final text = part.trim();
-      if (text.toLowerCase().startsWith('receipt no:')) {
-        final idx = text.indexOf(':');
-        if (idx != -1) return text.substring(idx + 1).trim();
-      }
-    }
-    return null;
+    return out;
   }
 
   String? _extractReceiptDate(String? notes) {
@@ -120,9 +106,16 @@ class _ReturnedPackagesScreenState
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tableSearchCtrl.text = ref.read(returnedPackageSearchProvider);
-    });
+    // ⚠️ SYNCHRONOUS, not in a post-frame callback.
+    //
+    // The search box is an Autocomplete, which builds its own controller. The
+    // fieldViewBuilder copies _tableSearchCtrl into it, but a post-frame
+    // callback runs AFTER that first build and calls no setState -- so leaving
+    // the page and coming back left the table filtered by the remembered query
+    // while the box showed nothing. The filter was on and invisible.
+    //
+    // Assigning here means the first build already has the text.
+    _tableSearchCtrl.text = ref.read(returnedPackageSearchProvider);
   }
 
   @override
@@ -140,12 +133,27 @@ class _ReturnedPackagesScreenState
 
   @override
   Widget build(BuildContext context) {
-    final packages = ref.watch(livePackagesProvider);
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final search = ref.watch(returnedPackageSearchProvider);
     final dateRange = ref.watch(returnedPackageDateRangeProvider);
     final rFilter = ref.watch(returnedPackageReasonFilterProvider);
+
+    // ⚠️ Everything this page filters on goes into the key, so every filter
+    // is applied in SQL. A RELEASE is the disposition with NO tag -- see the
+    // view's fourth source -- which is why it has a final_tag of its own
+    // rather than being matched from the tag list.
+    final query = DispositionQuery(
+      finalTag: 'RELEASED',
+      page: _page,
+      search: search,
+      dateStart: dateRange?.start,
+      dateEnd: dateRange?.end,
+      year: _yearFilter,
+      holdReason: rFilter,
+      perishableOnly: _perishableOnly,
+    );
+    final page = ref.watch(dispositionPageWithPackagesProvider(query));
 
     // Any filter change jumps back to the first page.
     ref.listen(returnedPackageSearchProvider, (_, __) => _resetPage());
@@ -183,22 +191,15 @@ class _ReturnedPackagesScreenState
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final pkgs = ref.watch(livePackagesProvider);
-                            return pkgs.when(
-                              data: (list) {
-                                final count = _buildReturnedRows(list).length;
-                                return Text('$count Released',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold));
-                              },
-                              loading: () => const SizedBox(),
-                              error: (_, __) => const SizedBox(),
-                            );
-                          },
+                        // The count the DATABASE reports for this filter.
+                        page.when(
+                          data: (p) => Text('${p.total} Released',
+                              style: TextStyle(
+                                  color: context.colors.textMuted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold)),
+                          loading: () => const SizedBox(),
+                          error: (_, __) => const SizedBox(),
                         ),
                       ],
                     ),
@@ -361,66 +362,26 @@ class _ReturnedPackagesScreenState
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<dynamic>(
-                              context: context,
-                              builder: (context) =>
-                                  custom.DateRangePickerDialog(
-                                      initialRange: dateRange),
-                            );
-                            if (picked is DateTimeRange) {
-                              ref
-                                  .read(
-                                      returnedPackageDateRangeProvider.notifier)
-                                  .state = picked;
-                            } else if (picked == false) {
-                              ref
-                                  .read(
-                                      returnedPackageDateRangeProvider.notifier)
-                                  .state = null;
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: dateRange != null
-                                  ? context.colors.primaryGold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            dateRange != null
-                                ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                                : 'Date Range',
-                            style: TextStyle(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            onPressed: () => ref
+                        DateFilterButton(
+                          dateRange: dateRange,
+                          year: _yearFilter,
+                          years: srYears(ref
+                                  .watch(dispositionYearSourceProvider(
+                                      'RELEASED'))
+                                  .valueOrNull ??
+                              const <String>[]),
+                          onChanged: (range, year) {
+                            ref
                                 .read(returnedPackageDateRangeProvider.notifier)
-                                .state = null,
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
+                                .state = range;
+                            setState(() {
+                              _yearFilter = year;
+                              _page = 0;
+                            });
+                          },
+                        ),
                         const SizedBox(width: 8),
+                        
                         StyledDropdownButton<String>(
                           value: rFilter == 'all' ? null : rFilter,
                           allLabel: 'Post Status Activity',
@@ -436,18 +397,23 @@ class _ReturnedPackagesScreenState
                                   returnedPackageReasonFilterProvider.notifier)
                               .state = v ?? 'all',
                         ),
-                        const SizedBox(width: 8),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          years: srYears(_buildReturnedRows(
-                                  packages.valueOrNull ??
-                                      const <PackageModel>[])
-                              .map((r) => r.package.srNumber)),
-                          onChanged: (v) => setState(() {
-                            _yearFilter = v;
-                            _page = 0;
-                          }),
-                        ),
+
+                        if (ref
+                                .watch(dispositionHasPerishablesProvider((
+                                  finalTag: 'RELEASED',
+                                  yard: ref
+                                      .watch(currentProfileProvider)
+                                      ?.yard,
+                                )))
+                                .valueOrNull ==
+                            true)
+                          PerishableFilterChip(
+                            selected: _perishableOnly == true,
+                            onChanged: (v) => setState(() {
+                              _perishableOnly = v ? true : null;
+                              _page = 0;
+                            }),
+                          ),
                       ],
                     ),
                   ],
@@ -459,57 +425,28 @@ class _ReturnedPackagesScreenState
 
               const Gap(16),
               Expanded(
-                child: packages.when(
+                child: page.when(
                   loading: () => Center(
                       child: CircularProgressIndicator(
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final rows = _buildReturnedRows(list).where((row) {
-                      if (search.isNotEmpty) {
-                        final s = search.toLowerCase();
-                        final receiptNo = row.receiptNo?.toLowerCase() ?? '';
-                        final itemName = row.itemName.toLowerCase();
-                        if (!row.package.srNumber.toLowerCase().contains(s) &&
-                            !row.package.consigneeName
-                                .toLowerCase()
-                                .contains(s) &&
-                            !itemName.contains(s) &&
-                            !receiptNo.contains(s)) {
-                          return false;
-                        }
-                      }
-
-                      if (rFilter != 'all' && row.entry.holdReason != rFilter)
-                        return false;
-
-                      if (dateRange != null) {
-                        final date =
-                            row.entry.returnedAt ?? row.entry.admittedAt;
-                        final startOfDay = DateTime(dateRange.start.year,
-                            dateRange.start.month, dateRange.start.day);
-                        final endOfDay = DateTime(dateRange.end.year,
-                            dateRange.end.month, dateRange.end.day, 23, 59, 59);
-                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
-                          return false;
-                      }
-                      if (!srYearMatches(row.package.srNumber, _yearFilter))
-                        return false;
-                      return true;
-                    }).toList();
-
-                    // Client-side paging: clamp the page if the filtered set
-                    // shrank, then show only the current page's rows.
-                    final maxPage =
-                        rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+                      onRetry: () => ref
+                          .refresh(dispositionPageWithPackagesProvider(query))),
+                  data: (result) {
+                    // Already filtered, sorted and paged by the database --
+                    // including the Reason dropdown and the receipt-number
+                    // search, which are why this page needed two columns on
+                    // the view that no other page uses.
+                    final pageRows = _rowsFrom(result);
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
                     if (_page > maxPage) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted) setState(() => _page = maxPage);
                       });
                     }
-                    final pageRows = pageSlice(rows, _page.clamp(0, maxPage));
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -559,13 +496,34 @@ class _ReturnedPackagesScreenState
                                   DataColumn2(
                                       label: Text('Receipt No'),
                                       size: ColumnSize.M),
+                                  // ⚠️ The COLLECTION, which is not the
+                                  // release. The receipt above says an
+                                  // officer ruled the goods released; this
+                                  // says whether the owner has come for
+                                  // them. Same width as every other
+                                  // delivery column, because it holds the
+                                  // same fixed-size pill.
+                                  DataColumn2(
+                                      label: Center(child: Text('Delivery')),
+                                      fixedWidth:
+                                          kDestructionStatusColumnWidth),
                                   DataColumn2(
                                       label: Center(child: Text('Details')),
                                       size: ColumnSize.S,
                                       fixedWidth: 55),
                                 ],
                                 rows: pageRows
-                                    .map((row) => DataRow(cells: [
+                                    .map((row) => DataRow(
+                                            // The same faint wash the Sold /
+                                            // Destroyed / Re-exported tables
+                                            // carry, so a perishable is
+                                            // findable at a glance on every
+                                            // disposition page rather than on
+                                            // all but this one.
+                                            color: WidgetStateProperty.all(
+                                                perishableRowColor(
+                                                    context, row.isPerishable)),
+                                            cells: [
                                           DataCell(TooltipText(
                                               row.package.srNumber,
                                               style: TextStyle(
@@ -576,12 +534,15 @@ class _ReturnedPackagesScreenState
                                           DataCell(TooltipText(row.itemName,
                                               overflow: TextOverflow.ellipsis)),
                                           DataCell(TooltipText((() {
-                                            final hs = row.package.items
-                                                .where((i) =>
-                                                    i.id ==
-                                                    row.entry.packageItemId)
-                                                .firstOrNull
-                                                ?.hsCode;
+                                            final hs = row.hsCode ??
+                                                (row.entry != null
+                                                    ? row.package.items
+                                                        .where((i) =>
+                                                            i.id ==
+                                                            row.entry!.packageItemId)
+                                                        .firstOrNull
+                                                        ?.hsCode
+                                                    : row.item?.hsCode);
                                             return (hs != null && hs.isNotEmpty)
                                                 ? hs
                                                 : '—';
@@ -591,26 +552,30 @@ class _ReturnedPackagesScreenState
                                                   fontSize: 12))),
                                           DataCell(Center(
                                               child: Text(
-                                                  '${row.entry.itemCount}'))),
+                                                  '${row.entry?.itemCount ?? row.item?.quantity ?? row.quantity}'))),
                                           // Entry Date (SR form) — falls back to the
                                           // warehouse admit date.
                                           DataCell(TooltipText((() {
                                             final d = row.package.entryDate ??
-                                                row.entry.admittedAt;
+                                                row.entry?.admittedAt ??
+                                                row.package.createdAt;
                                             return DateFormat('yyyy-MM-dd')
                                                 .format(d);
                                           })())),
-                                          // Release Date = the entry's returned date.
-                                          DataCell(TooltipText(row
-                                                      .entry.returnedAt !=
-                                                  null
-                                              ? DateFormat('yyyy-MM-dd')
-                                                  .format(row.entry.returnedAt!)
-                                              : '—')),
+                                          // Release Date = the entry's returned date or disposition date.
+                                          DataCell(TooltipText((() {
+                                            final d = row.entry?.returnedAt ??
+                                                row.happenedAt;
+                                            return d != null
+                                                ? DateFormat('yyyy-MM-dd')
+                                                    .format(d)
+                                                : '—';
+                                          })())),
                                           // Warehouse charge from the SR Entry Date →
                                           // Release Date (not the warehouse admit date).
                                           DataCell(TooltipText((() {
                                             final e = row.entry;
+                                            if (e == null) return '—';
                                             final chargeStart =
                                                 row.package.entryDate ??
                                                     e.admittedAt;
@@ -639,6 +604,36 @@ class _ReturnedPackagesScreenState
                                               row.receiptNo ?? '—',
                                               overflow: TextOverflow.ellipsis)),
                                           DataCell(Center(
+                                            child: HandoverCell(
+                                              entry: row.entry,
+                                              // ⚠️ false, never "true when
+                                              // there is no entry". A
+                                              // perishable released straight
+                                              // out of the yard has no
+                                              // warehouse entry by design,
+                                              // so that rule marked every
+                                              // one of them Handed Over on
+                                              // arrival -- with no button
+                                              // left to press. Releasing is
+                                              // the DECISION; the hand-over
+                                              // is a later act the yard
+                                              // confirms here.
+                                              delivered: row.delivered ?? false,
+                                              itemId: row.itemId,
+                                              kind: HandoverEntryKind.released,
+                                              // ⚠️ The package and the
+                                              // rate history, so the button
+                                              // can price the storage the
+                                              // owner owes before the goods
+                                              // leave. Without them it
+                                              // falls back to a bare flag
+                                              // and the charge on this very
+                                              // row goes uncollected.
+                                              package: row.package,
+                                              rates: storageRateHistory,
+                                            ),
+                                          )),
+                                          DataCell(Center(
                                               child: IconButton(
                                             icon: Icon(
                                                 Icons.info_outline_rounded,
@@ -646,7 +641,7 @@ class _ReturnedPackagesScreenState
                                                     .colors.accentLightBlue,
                                                 size: 18),
                                             onPressed: () {
-                                              showDialog(
+                                              showAppDialog(
                                                 context: context,
                                                 builder: (_) =>
                                                     PackageDetailsDialog(
@@ -654,7 +649,30 @@ class _ReturnedPackagesScreenState
                                                   storageRate:
                                                       storageRateHistory,
                                                   highlightEntry: row.entry,
+                                                  highlightItemId:
+                                                      row.item?.id ?? row.itemId,
                                                   useLegacySummary: true,
+                                                  // ⚠️ The same section
+                                                  // Re-exported Goods
+                                                  // carries. Both endings
+                                                  // are ruled once and
+                                                  // handed over later, and
+                                                  // an officer reading one
+                                                  // popup should not have
+                                                  // to learn a second
+                                                  // layout for the same
+                                                  // fact.
+                                                  handover: HandoverOutcome(
+                                                    kind:
+                                                        HandoverKind.released,
+                                                    decidedAt:
+                                                        row.entry?.returnedAt ??
+                                                            row.happenedAt,
+                                                    delivered:
+                                                        row.delivered ?? false,
+                                                    deliveredAt:
+                                                        row.deliveredAt,
+                                                  ),
                                                 ),
                                               );
                                             },
@@ -666,8 +684,10 @@ class _ReturnedPackagesScreenState
                           ),
                         ),
                         TablePager(
-                          total: rows.length,
+                          // The database's count for this filter.
+                          total: result.total,
                           page: _page.clamp(0, maxPage),
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],
@@ -719,16 +739,39 @@ class _MiniStat extends StatelessWidget {
 
 class _ReturnedRow {
   final PackageModel package;
-  final WarehouseEntryModel entry;
+  final WarehouseEntryModel? entry;
+  final PackageItem? item;
+  final String? itemId;
   final String itemName;
+  final String? hsCode;
+  final int quantity;
   final String? receiptNo;
   final String? receiptDate;
+  final DateTime? happenedAt;
+
+  /// Has the owner actually collected the goods?
+  ///
+  /// ⚠️ A release is two events wearing one date: an officer RULES it,
+  /// writing the receipt, and the owner COMES FOR THEM later. This page
+  /// showed only the first, so all 33 rows looked finished while the yard
+  /// could still be storing every one of them.
+  final bool? delivered;
+  final DateTime? deliveredAt;
+  final bool isPerishable;
 
   const _ReturnedRow({
     required this.package,
-    required this.entry,
+    this.entry,
+    this.item,
+    this.itemId,
     required this.itemName,
+    this.hsCode,
+    required this.quantity,
     this.receiptNo,
     this.receiptDate,
+    this.happenedAt,
+    this.delivered,
+    this.deliveredAt,
+    this.isPerishable = false,
   });
 }

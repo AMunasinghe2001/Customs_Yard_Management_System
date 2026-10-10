@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/one_tap_date_picker.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Yard-side form that sends a Disposal Request to the Central Disposal
 /// Directorate. Unlike a tender, it has no tender number — just a request
@@ -45,8 +46,8 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
     if (_appliedAppealDefaults) return;
     final defaults = <String, String>{};
     for (final p in packages) {
-      final d = p.appealRequestDisposition; // 'destruction' | 'sale' | null
-      if (d != null) defaults[p.id] = d;
+      final d = p.appealRequestDisposition; // 'sale' | null
+      if (d == 'sale') defaults[p.id] = 'sale';
     }
     _appliedAppealDefaults = true;
     if (defaults.isEmpty) return;
@@ -289,7 +290,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                     .format(_requestDate),
                                 readOnly: true,
                                 onTap: () async {
-                                  final date = await showDialog<DateTime>(
+                                  final date = await showAppDialog<DateTime>(
                                     context: context,
                                     builder: (_) => OneTapDatePicker(
                                         initialDate: _requestDate,
@@ -356,17 +357,8 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                           fontWeight: FontWeight.bold)),
                                   const Spacer(),
                                   _MiniCount(
-                                      label: 'Destruction',
-                                      count: selected.values
-                                          .where((d) => d == 'destruction')
-                                          .length,
-                                      color: context.colors.dangerRed),
-                                  const Gap(8),
-                                  _MiniCount(
-                                      label: 'Sale',
-                                      count: selected.values
-                                          .where((d) => d == 'sale')
-                                          .length,
+                                      label: 'Tender Sale',
+                                      count: selected.length,
                                       color: context.colors.successGreen),
                                 ]),
                               ),
@@ -451,8 +443,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                         final map = <String, String>{};
                                         for (final p in packages) {
                                           if (!p.isActionable) continue;
-                                          map[p.id] =
-                                              selected[p.id] ?? 'destruction';
+                                          map[p.id] = 'sale';
                                         }
                                         ref
                                             .read(
@@ -534,19 +525,8 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                             if (isSelected) {
                                               map.remove(pkg.id);
                                             } else {
-                                              map[pkg.id] = 'destruction';
+                                              map[pkg.id] = 'sale';
                                             }
-                                            ref
-                                                .read(
-                                                    selectedRequestDispositionsProvider
-                                                        .notifier)
-                                                .state = map;
-                                          },
-                                          onDisposition: (d) {
-                                            final map =
-                                                Map<String, String>.from(
-                                                    selected);
-                                            map[pkg.id] = d;
                                             ref
                                                 .read(
                                                     selectedRequestDispositionsProvider
@@ -629,7 +609,6 @@ class _PackageRequestRow extends StatelessWidget {
   final bool isSelected;
   final String? disposition;
   final VoidCallback onToggle;
-  final ValueChanged<String> onDisposition;
 
   /// Still inside its 30-day appeal window with no decision yet, so it cannot
   /// be sent. Listed anyway — greyed out — so the officer can see it is there
@@ -649,7 +628,6 @@ class _PackageRequestRow extends StatelessWidget {
     required this.isSelected,
     required this.disposition,
     required this.onToggle,
-    required this.onDisposition,
     this.pending = false,
     this.daysLeft = 0,
   });
@@ -665,8 +643,9 @@ class _PackageRequestRow extends StatelessWidget {
           color: isSelected
               ? context.colors.primaryGold.withOpacity(0.06)
               : Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Checkbox(
                 activeColor: context.colors.primaryGold,
@@ -674,58 +653,64 @@ class _PackageRequestRow extends StatelessWidget {
                 onChanged: pending ? null : (_) => onToggle(),
               ),
               const Gap(4),
+              // Goods block. The SR line and the item line each wrap on their
+              // own, so a long name or an extra chip pushes nothing into the
+              // column beside it -- they used to sit in bare Rows where the
+              // chips had no room to give and collided with the text.
               Expanded(
                 flex: 5,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(children: [
-                      Flexible(
-                        child: Text(srNumber,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(srNumber,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 color: context.colors.accentLightBlue)),
-                      ),
-                      const Gap(8),
-                      _SourceChip(source: source),
-                      if (pending) ...[
-                        const Gap(8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color:
-                                context.colors.warningAmber.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                                color: context.colors.warningAmber
-                                    .withOpacity(0.4)),
+                        _SourceChip(source: source),
+                        if (pending)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color:
+                                  context.colors.warningAmber.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: context.colors.warningAmber
+                                      .withOpacity(0.4)),
+                            ),
+                            child: Text(
+                                daysLeft > 0
+                                    ? 'In appeal · ${daysLeft}d'
+                                    : 'In appeal',
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: context.colors.warningAmber)),
                           ),
-                          child: Text(
-                              daysLeft > 0
-                                  ? 'In appeal \u00b7 ${daysLeft}d'
-                                  : 'In appeal',
-                              style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: context.colors.warningAmber)),
-                        ),
                       ],
-                    ]),
-                    Row(
+                    ),
+                    const Gap(3),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Flexible(
-                          child: Text(itemName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: context.colors.textSecondary)),
-                        ),
-                        if (quantity != null) ...[
-                          const Gap(6),
+                        Text(itemName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: context.colors.textSecondary)),
+                        if (quantity != null)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 1),
@@ -743,26 +728,46 @@ class _PackageRequestRow extends StatelessWidget {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
+              const Gap(12),
               Expanded(
                 flex: 4,
                 child: Text(consignee,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontSize: 13, color: context.colors.textPrimary)),
               ),
-              const Gap(8),
-              // Disposition picker — active only when the row is selected.
-              _DispositionToggle(
-                value: disposition,
-                enabled: isSelected && !pending,
-                onChanged: onDisposition,
+              const Gap(12),
+              // Disposition indicator — every item in this dialog is for Sale.
+              // Fixed width so the badges line up down the list instead of
+              // sitting at a different x on every row.
+              SizedBox(
+                width: 74,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: context.colors.successGreen.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: context.colors.successGreen.withOpacity(0.4)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.sell_rounded,
+                        size: 12, color: context.colors.successGreen),
+                    const Gap(4),
+                    Text('Sale',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: context.colors.successGreen)),
+                  ]),
+                ),
               ),
             ],
           ),
@@ -783,6 +788,7 @@ class _SourceChip extends StatelessWidget {
     final (label, color) = switch (source) {
       'abandoned' => ('Abandoned', context.colors.heldOrange),
       'other' => ('Other', context.colors.warningAmber),
+      'perishable' => ('Perishable', context.colors.dangerRed),
       'detain' => ('Detained', context.colors.primaryGold),
       _ => ('Forfeit', context.colors.accentBlue),
     };
@@ -796,69 +802,6 @@ class _SourceChip extends StatelessWidget {
       child: Text(label,
           style: TextStyle(
               color: color, fontSize: 9.5, fontWeight: FontWeight.w800)),
-    );
-  }
-}
-
-class _DispositionToggle extends StatelessWidget {
-  final String? value;
-  final bool enabled;
-  final ValueChanged<String> onChanged;
-  const _DispositionToggle(
-      {required this.value, required this.enabled, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    Widget seg(String code, IconData icon, Color color) {
-      final active = enabled && value == code;
-      return InkWell(
-        onTap: enabled ? () => onChanged(code) : null,
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? color.withOpacity(0.15) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: active ? color.withOpacity(0.6) : Colors.transparent),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon,
-                size: 14,
-                color: active
-                    ? color
-                    : context.colors.textMuted.withOpacity(enabled ? 1 : 0.5)),
-            const Gap(5),
-            Text(dispositionLabel(code),
-                style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: active
-                        ? color
-                        : context.colors.textMuted
-                            .withOpacity(enabled ? 1 : 0.5))),
-          ]),
-        ),
-      );
-    }
-
-    return Opacity(
-      opacity: enabled ? 1 : 0.45,
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: context.colors.textPrimary.withOpacity(0.03),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.colors.borderColor),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          seg('destruction', Icons.delete_forever_rounded,
-              context.colors.dangerRed),
-          const Gap(2),
-          seg('sale', Icons.sell_rounded, context.colors.successGreen),
-        ]),
-      ),
     );
   }
 }

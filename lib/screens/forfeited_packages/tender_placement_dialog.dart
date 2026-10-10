@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/one_tap_date_picker.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Place a tender. In [reTender] mode the package pool is the tendered-but-unsold
 /// packages (`reTenderablePackagesProvider`) instead of fresh appeal-passed
@@ -245,7 +246,7 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                                   label: 'Tender Date *',
                                   value: _tenderDate,
                                   onTap: () async {
-                                    final d = await showDialog<DateTime>(
+                                    final d = await showAppDialog<DateTime>(
                                       context: context,
                                       builder: (_) => OneTapDatePicker(
                                           initialDate: _tenderDate),
@@ -263,7 +264,7 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                                   value: _saleDate,
                                   hint: 'Select sale date',
                                   onTap: () async {
-                                    final d = await showDialog<DateTime>(
+                                    final d = await showAppDialog<DateTime>(
                                       context: context,
                                       builder: (_) => OneTapDatePicker(
                                           initialDate:
@@ -277,7 +278,7 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                               Expanded(
                                 child: InkWell(
                                   onTap: () async {
-                                    final t = await showDialog<TimeOfDay>(
+                                    final t = await showAppDialog<TimeOfDay>(
                                       context: context,
                                       builder: (_) => OneTapTimePicker(
                                           initialTime:

@@ -13,12 +13,17 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/appeal_state_chip.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
+import '../../widgets/table_pager.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/disposal_page_header.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
+import '../../widgets/send_disposal_request_button.dart';
+import '../../widgets/qty_cell.dart';
 
 final abandonedPackageSearchProvider = StateProvider<String>((ref) => '');
 final abandonedPackageReasonFilterProvider =
@@ -39,14 +44,9 @@ bool _isAbandonedEntry(WarehouseEntryModel e) {
 bool _statusIsAbandoned(String? s) =>
     (s ?? '').trim().toLowerCase() == 'abandoned';
 
-/// True if the item has been moved on to a final disposition
-/// (Released/Sold/Destroyed/Re-exported/Other) — it should no longer appear
-/// in the Abandoned table.
-bool _itemHasFinalDisposition(PackageModel p, String itemId) {
-  return p.warehouseEntries.any((e) =>
-      e.packageItemId == itemId &&
-      (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
-}
+// ⚠️ `_itemHasFinalDisposition` moved into the view: an item with a [FINAL:]
+// entry has an outcome already, and offering an action on it would let the
+// same goods be disposed of twice. The view's verify block asserts it.
 
 /// True if a package has any abandoned item — either a form-level abandoned
 /// item, or a partial/full abandonment disposition event.
@@ -72,6 +72,10 @@ class _AbandonedPackagesScreenState
     extends ConsumerState<AbandonedPackagesScreen> {
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
+
+  /// ⚠️ New: this page had no pager at all. Reset on every filter change, or
+  /// a narrowed result strands the reader on a page that no longer exists.
+  int _page = 0;
 
   /// Submits a single-package disposal request (Sale / Destruction) for an
   /// abandoned package — used by the details popup's Final Disposition
@@ -103,10 +107,7 @@ class _AbandonedPackagesScreenState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.dangerRed,
-          content: Text('Error: $e'),
-        ));
+        showErrorSnack(context, e);
       }
     }
   }
@@ -125,75 +126,68 @@ class _AbandonedPackagesScreenState
   /// waiting on that provider's heavy cross-table query, which is why the
   /// button took a moment to light up.
   ///
-  /// The 30-day appeal window blocks it, EXCEPT once the Appeal Directorate
-  /// has ruled. A hold blocks it either way — that appeal is still open.
-  static bool _isRowActionable(_AbandonedRow row, ItemAppealOutcome? outcome) {
-    if (outcome?.onHold ?? false) return false;
-    if (outcome?.unblocksAction ?? false) return true;
-    return !isWithinAppealWindow(
-        row.package.entryDate ?? row.package.createdAt);
-  }
+  /// ⚠️ The rule moved into `getHeldGoodsCounts`, which applies it in one
+  /// place for the header: a HOLD always blocks, a decision releases early,
+  /// and otherwise the 30-day window decides. Counting it here as well would
+  /// mean the header and the query could disagree.
 
-  List<_AbandonedRow> _buildRows(List<PackageModel> packages,
-      {Set<String> sentKeys = const {}}) {
-    final rows = <_AbandonedRow>[];
-    for (final package in packages) {
-      for (final item in package.items) {
-        // Skip items that have already moved to a final disposition.
-        if (_itemHasFinalDisposition(package, item.id)) continue;
-        // Skip items already sent in a disposal request.
-        if (sentKeys.contains('${package.id}:${item.id}')) continue;
+  /// The view's rows, as this page's widgets already expect them.
+  ///
+  /// ⚠️ Replaces `_buildRows`. Both sources live in the view now: an
+  /// [ABANDONED] disposition EVENT (repeatable per item -- a partial
+  /// abandonment is its own row) and a form-level 'abandoned' status with no
+  /// event of its own, where the held entry supplies the context. Finalised
+  /// items are excluded there too.
+  List<_AbandonedRow> _rowsFrom(HeldGoodsPage result) {
+    final out = <_AbandonedRow>[];
+    for (final k in result.keys) {
+      final pkg = result.packages[k.packageId];
+      if (pkg == null) continue;
+      final item = pkg.items.where((i) => i.id == k.itemId).firstOrNull;
+      if (item == null) continue;
 
-        final itemEntries = package.warehouseEntries
-            .where((e) => e.packageItemId == item.id)
-            .toList();
+      final itemEntries =
+          pkg.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+      // 'AE:<entryId>' is an abandonment EVENT; anything else is the
+      // form-level status row, which takes the earliest entry as context.
+      final isEvent = k.rowKey.startsWith('AE:');
+      final entry = isEvent
+          ? itemEntries
+              .where((e) => 'AE:${e.id}' == k.rowKey)
+              .firstOrNull
+          : (itemEntries.isNotEmpty ? itemEntries.first : null);
 
-        // 1. Disposition abandonment events ([ABANDONED] in returnNotes) —
-        //    each event is its own row (partial/full, repeatable per item).
-        final abandonedEntries = itemEntries.where(_isAbandonedEntry).toList();
-        for (final entry in abandonedEntries) {
-          rows.add(_AbandonedRow(
-            package: package,
-            item: item,
-            entry: entry,
-            qty: entry.itemCount,
-            date: entry.returnedAt ?? entry.admittedAt,
-            reason: entry.holdReason,
-            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
-          ));
-        }
-
-        // 2. Form-level abandonment (item.status == 'abandoned') with no
-        //    disposition event — use the held entry for context.
-        if (_statusIsAbandoned(item.status) && abandonedEntries.isEmpty) {
-          final ctx = itemEntries.isNotEmpty ? itemEntries.first : null;
-          rows.add(_AbandonedRow(
-            package: package,
-            item: item,
-            entry: ctx,
-            qty: ctx?.itemCount ?? item.quantity,
-            date: ctx?.admittedAt,
-            reason: ctx?.holdReason ??
-                (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
-            officer: ctx?.admittedByName ?? '—',
-          ));
-        }
-      }
+      out.add(_AbandonedRow(
+        package: pkg,
+        item: item,
+        entry: entry,
+        qty: entry?.itemCount ?? item.quantity,
+        date: isEvent
+            ? (entry?.returnedAt ?? entry?.admittedAt)
+            : entry?.admittedAt,
+        reason: entry?.holdReason ??
+            (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
+        officer: isEvent
+            ? (entry?.returnedByName ?? entry?.returnedByBadge ?? '—')
+            : (entry?.admittedByName ?? '—'),
+      ));
     }
-    rows.sort((a, b) {
-      final aDate = a.date ?? DateTime(2000);
-      final bDate = b.date ?? DateTime(2000);
-      return bDate.compareTo(aDate);
-    });
-    return rows;
+    return out;
   }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tableSearchCtrl.text = ref.read(abandonedPackageSearchProvider);
-    });
+    // ⚠️ SYNCHRONOUS, not in a post-frame callback.
+    //
+    // The search box is an Autocomplete, which builds its own controller. The
+    // fieldViewBuilder copies _tableSearchCtrl into it, but a post-frame
+    // callback runs AFTER that first build and calls no setState -- so leaving
+    // the page and coming back left the table filtered by the remembered query
+    // while the box showed nothing. The filter was on and invisible.
+    //
+    // Assigning here means the first build already has the text.
+    _tableSearchCtrl.text = ref.read(abandonedPackageSearchProvider);
   }
 
   @override
@@ -204,17 +198,29 @@ class _AbandonedPackagesScreenState
 
   @override
   Widget build(BuildContext context) {
-    final packages = ref.watch(livePackagesProvider);
+    // ⚠️ This page had NO pager: it fetched every package in the yard and
+    // handed the whole list to DataTable2. Both row sources -- the
+    // [ABANDONED] disposition event and the form-level status -- now live in
+    // the `held_goods_rows` view (postgres/25, kind ABANDONED).
+    final query = HeldGoodsQuery(
+      kind: 'ABANDONED',
+      page: _page,
+      search: ref.watch(abandonedPackageSearchProvider),
+      dateStart: ref.watch(abandonedPackageDateRangeProvider)?.start,
+      dateEnd: ref.watch(abandonedPackageDateRangeProvider)?.end,
+      year: _yearFilter,
+      activity: ref.watch(abandonedPackageReasonFilterProvider),
+    );
+    final packages = ref.watch(heldGoodsPageProvider(query));
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    final search = ref.watch(abandonedPackageSearchProvider);
     // Appeal rulings, keyed by item id. A decision releases the goods early;
     // a hold keeps them frozen past the deadline.
     final appealOutcomes =
         ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
             const <String, ItemAppealOutcome>{};
-    final sentKeys =
-        ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
+    // ⚠️ Items already sent to Central Disposal are excluded by the QUERY
+    // now (`sent = false` on the view), not by a set held here.
     final dateRange = ref.watch(abandonedPackageDateRangeProvider);
     final rFilter = ref.watch(abandonedPackageReasonFilterProvider);
 
@@ -228,131 +234,45 @@ class _AbandonedPackagesScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header row
-              SizedBox(
-                width: double.infinity,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  runSpacing: 16,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Abandoned Goods',
-                            style: Theme.of(context).textTheme.headlineLarge),
-                        Text(
-                            'Manage abandoned goods and send them for disposal',
-                            style:
-                                TextStyle(color: context.colors.textSecondary)),
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final pkgs = ref.watch(livePackagesProvider);
-                            final sk = ref
-                                    .watch(sentAbandonedOtherFpKeysProvider)
-                                    .valueOrNull ??
-                                {};
-                            final outcomes = ref
-                                    .watch(allItemAppealOutcomesProvider)
-                                    .valueOrNull ??
-                                const <String, ItemAppealOutcome>{};
-                            return pkgs.when(
-                              data: (list) {
-                                // Counts the SAME rows the table renders, so
-                                // the header always agrees with the list below.
-                                final rows = _buildRows(list, sentKeys: sk);
-                                final total = rows.length;
-                                final actionable = rows
-                                    .where((r) => _isRowActionable(
-                                        r, outcomes[r.item.id]))
-                                    .length;
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _AbandonedStatChip(
-                                        label: 'Total',
-                                        value: '$total',
-                                        color: context.colors.accentLightBlue),
-                                    const Gap(8),
-                                    _AbandonedStatChip(
-                                        label: 'In Appeal',
-                                        value:
-                                            '${total - actionable < 0 ? 0 : total - actionable}',
-                                        color: context.colors.warningAmber),
-                                    const Gap(8),
-                                    _AbandonedStatChip(
-                                        label: 'Actionable',
-                                        value: '$actionable',
-                                        color: context.colors.successGreen),
-                                  ],
-                                );
-                              },
-                              loading: () => const SizedBox(),
-                              error: (_, __) => const SizedBox(),
-                            );
-                          },
-                        ),
-                        const Gap(16),
-                        Consumer(
-                          builder: (context, ref, child) {
-                            // Enabled from data already on screen, so the
-                            // button lights up with the table rather than
-                            // after a separate cross-table query.
-                            final sk = ref
-                                    .watch(sentAbandonedOtherFpKeysProvider)
-                                    .valueOrNull ??
-                                {};
-                            final outcomes = ref
-                                    .watch(allItemAppealOutcomesProvider)
-                                    .valueOrNull ??
-                                const <String, ItemAppealOutcome>{};
-                            final n = ref.watch(livePackagesProvider).maybeWhen(
-                                data: (list) => _buildRows(list, sentKeys: sk)
-                                    .where((r) => _isRowActionable(
-                                        r, outcomes[r.item.id]))
-                                    .length,
-                                orElse: () => 0);
-                            return ElevatedButton.icon(
-                              icon: const Icon(Icons.local_shipping_rounded,
-                                  size: 16),
-                              label: const Text('Send Disposal Request'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: n > 0
-                                    ? context.colors.primaryGold
-                                    : context.colors.textMuted.withOpacity(0.2),
-                                foregroundColor: n > 0
-                                    ? Colors.white
-                                    : context.colors.textMuted,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 20, vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                                elevation: n > 0 ? 2 : 0,
-                              ),
-                              onPressed: n > 0
-                                  ? () => showDialog(
-                                        context: context,
-                                        builder: (ctx) => DisposalRequestDialog(
-                                          onSubmitted: () {
-                                            ref.invalidate(
-                                                requestableForfeitedPackagesProvider);
-                                            ref.invalidate(
-                                                livePackagesProvider);
-                                          },
-                                        ),
-                                      )
-                                  : null,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              Consumer(
+                builder: (context, ref, child) {
+                  // ⚠️ Counted in SQL, by their own query. Derived from one
+                  // page they would contradict the header they sit in;
+                  // derived from the whole list they would undo the paging.
+                  final counts = ref
+                          .watch(heldGoodsCountsProvider('ABANDONED'))
+                          .valueOrNull ??
+                      (total: 0, inAppeal: 0, actionable: 0);
+                  final total = counts.total;
+                  final actionable = counts.actionable;
+                  return DisposalPageHeader(
+                    title: 'Abandoned Goods',
+                    subtitle: 'Manage abandoned goods and send them for disposal',
+                    trailing: [
+                      _AbandonedStatChip(
+                          label: 'Total',
+                          value: '$total',
+                          color: context.colors.accentLightBlue),
+                      _AbandonedStatChip(
+                          label: 'In Appeal',
+                          value:
+                              '${total - actionable < 0 ? 0 : total - actionable}',
+                          color: context.colors.warningAmber),
+                      _AbandonedStatChip(
+                          label: 'Actionable',
+                          value: '$actionable',
+                          color: context.colors.successGreen),
+                      SendDisposalRequestButton(
+                        actionable: actionable,
+                        onSubmitted: () {
+                          ref.invalidate(
+                              requestableForfeitedPackagesProvider);
+                          ref.invalidate(livePackagesProvider);
+                        },
+                      ),
+                    ],
+                  );
+                },
               ).animate().fadeIn(),
               const Gap(20),
 
@@ -508,67 +428,26 @@ class _AbandonedPackagesScreenState
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<dynamic>(
-                              context: context,
-                              builder: (context) =>
-                                  custom.DateRangePickerDialog(
-                                      initialRange: dateRange),
-                            );
-                            if (picked is DateTimeRange) {
-                              ref
-                                  .read(abandonedPackageDateRangeProvider
-                                      .notifier)
-                                  .state = picked;
-                            } else if (picked == false) {
-                              ref
-                                  .read(abandonedPackageDateRangeProvider
-                                      .notifier)
-                                  .state = null;
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: dateRange != null
-                                  ? context.colors.primaryGold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            dateRange != null
-                                ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                                : 'Date Range',
-                            style: TextStyle(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            onPressed: () => ref
+                        DateFilterButton(
+                          dateRange: dateRange,
+                          year: _yearFilter,
+                          years: srYears(ref
+                                  .watch(heldGoodsYearsProvider('ABANDONED'))
+                                  .valueOrNull ??
+                              const <String>[]),
+                          onChanged: (range, year) {
+                            ref
                                 .read(
                                     abandonedPackageDateRangeProvider.notifier)
-                                .state = null,
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
+                                .state = range;
+                            setState(() {
+                              _yearFilter = year;
+                              _page = 0;
+                            });
+                          },
+                        ),
                         const SizedBox(width: 8),
+                        
                         StyledDropdownButton<String>(
                           value: rFilter == 'all' ? null : rFilter,
                           allLabel: 'Post Status Activity',
@@ -586,16 +465,7 @@ class _AbandonedPackagesScreenState
                                   abandonedPackageReasonFilterProvider.notifier)
                               .state = v ?? 'all',
                         ),
-                        const SizedBox(width: 8),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          years: srYears(_buildRows(
-                                  packages.valueOrNull ??
-                                      const <PackageModel>[],
-                                  sentKeys: sentKeys)
-                              .map((r) => r.package.srNumber)),
-                          onChanged: (v) => setState(() => _yearFilter = v),
-                        ),
+
                       ],
                     ),
                   ],
@@ -613,40 +483,23 @@ class _AbandonedPackagesScreenState
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final rows =
-                        _buildRows(list, sentKeys: sentKeys).where((row) {
-                      if (search.isNotEmpty) {
-                        final s = search.toLowerCase();
-                        final itemName = row.itemName.toLowerCase();
-                        if (!row.package.srNumber.toLowerCase().contains(s) &&
-                            !row.package.consigneeName
-                                .toLowerCase()
-                                .contains(s) &&
-                            !itemName.contains(s)) {
-                          return false;
-                        }
-                      }
+                      onRetry: () =>
+                          ref.refresh(heldGoodsPageProvider(query))),
+                  data: (result) {
+                    // Filtered, sorted and paged by the database.
+                    final rows = _rowsFrom(result);
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
 
-                      if (rFilter != 'all' && row.reason != rFilter)
-                        return false;
-
-                      if (dateRange != null && row.date != null) {
-                        final date = row.date!;
-                        final startOfDay = DateTime(dateRange.start.year,
-                            dateRange.start.month, dateRange.start.day);
-                        final endOfDay = DateTime(dateRange.end.year,
-                            dateRange.end.month, dateRange.end.day, 23, 59, 59);
-                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
-                          return false;
-                      }
-                      if (!srYearMatches(row.package.srNumber, _yearFilter))
-                        return false;
-                      return true;
-                    }).toList();
-
-                    return Container(
+                    return Column(children: [
+                      Expanded(
+                        child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
                           color: context.colors.cardDark,
@@ -673,21 +526,22 @@ class _AbandonedPackagesScreenState
                                 size: ColumnSize.S,
                                 fixedWidth: 110),
                             DataColumn2(
-                                label: Text('Abandoned Qty'),
+                                label: Center(child: Text('No. of Goods')),
                                 size: ColumnSize.S,
-                                fixedWidth: 130),
+                                fixedWidth: 100),
                             DataColumn2(
                                 label: Text('Post Status Activity'),
                                 size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Abandoned Date'),
-                                size: ColumnSize.M),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
                             DataColumn2(
                                 label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Center(child: Text('Appeal')),
                                 size: ColumnSize.S,
-                                fixedWidth: 130),
+                                fixedWidth: 140),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -709,9 +563,9 @@ class _AbandonedPackagesScreenState
                                             : '—',
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontSize: 12))),
-                                    DataCell(Center(child: Text('${row.qty}'))),
-                                    DataCell(TooltipText(row.reason,
-                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(QtyCell(item: row.item, overrideQty: row.qty)),
+                                    DataCell(_PostStatusActivityChip(
+                                        label: row.reason)),
                                     DataCell(TooltipText(row.date != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.date!)
@@ -733,7 +587,7 @@ class _AbandonedPackagesScreenState
                                           color: context.colors.accentLightBlue,
                                           size: 18),
                                       onPressed: () {
-                                        showDialog(
+                                        showAppDialog(
                                           context: context,
                                           builder: (_) => PackageDetailsDialog(
                                             package: row.package,
@@ -757,17 +611,45 @@ class _AbandonedPackagesScreenState
                                                 ? appealOutcomes[row.item.id]!
                                                     .decision
                                                 : null,
-                                            // Every row in this table is an
-                                            // actionable abandoned item — force
-                                            // the Final Disposition button.
-                                            forceFinalDisposition: true,
+                                            // ⚠️ NOT unconditionally true. The
+                                            // comment here used to claim every
+                                            // row in this table is actionable,
+                                            // but the table paints an
+                                            // AppealStateChip above — so a row
+                                            // CAN still be inside its 30-day
+                                            // window, and that combination gave
+                                            // an enabled Final Disposition
+                                            // button beside an "Appealing · 12d"
+                                            // chip. Same gate as the chip.
+                                            forceFinalDisposition:
+                                                canActOnHeldGoods(
+                                                    entryDate: row.package
+                                                            .entryDate ??
+                                                        row.package.createdAt,
+                                                    outcome: appealOutcomes[
+                                                        row.item.id]),
+                                            allowFinalDisposition:
+                                                canActOnHeldGoods(
+                                                    entryDate: row.package
+                                                            .entryDate ??
+                                                        row.package.createdAt,
+                                                    outcome: appealOutcomes[
+                                                        row.item.id]),
                                             onSaleOrDestroyRequest:
-                                                (disposition) =>
-                                                    _requestSingleDisposal(
-                                                        row.package,
-                                                        row.item,
-                                                        disposition,
-                                                        entry: row.entry),
+                                                !canActOnHeldGoods(
+                                                        entryDate: row.package
+                                                                .entryDate ??
+                                                            row.package
+                                                                .createdAt,
+                                                        outcome: appealOutcomes[
+                                                            row.item.id])
+                                                    ? null
+                                                    : (disposition) =>
+                                                        _requestSingleDisposal(
+                                                            row.package,
+                                                            row.item,
+                                                            disposition,
+                                                            entry: row.entry),
                                           ),
                                         );
                                       },
@@ -777,9 +659,19 @@ class _AbandonedPackagesScreenState
                         ),
                       ),
                     )
-                        .animate()
-                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
-                        .fadeIn();
+                            .animate()
+                            .slideY(
+                                begin: 0.1, duration: 400.ms, delay: 300.ms)
+                            .fadeIn(),
+                      ),
+                      TablePager(
+                        // The database's count for this filter.
+                        total: result.total,
+                        page: _page.clamp(0, maxPage),
+                        pageSize: kDispositionPageSize,
+                        onPageChanged: (p) => setState(() => _page = p),
+                      ),
+                    ]);
                   },
                 ),
               ),
@@ -847,4 +739,39 @@ class _AbandonedRow {
   });
 
   String get itemName => item.itemName;
+}
+
+
+class _PostStatusActivityChip extends StatelessWidget {
+  final String label;
+  const _PostStatusActivityChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty || label.trim() == '—') {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final color = context.colors.warningAmber;
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
 }

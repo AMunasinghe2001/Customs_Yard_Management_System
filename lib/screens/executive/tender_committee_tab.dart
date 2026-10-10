@@ -1,19 +1,46 @@
+import '../disposal/disposal_dashboard_screen.dart'
+    show EnterBidsDialog;
+import '../../widgets/table_pager.dart';
+import '../../widgets/storage_charge_note.dart';
+import '../../widgets/page_title.dart';
+import '../../widgets/sealed_valuation.dart';
+import 'executive_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
+import '../../widgets/tender_page_scope.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
-import '../../widgets/styled_dropdown.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'package:intl/intl.dart';
+import '../../widgets/app_dialog.dart';
+
+/// Opens the round-by-round history for one package: every valuation, and
+/// every bid.
+///
+/// ⚠️ READ-ONLY. Recording a bid is Central Disposal's act; Top Management
+/// reads what happened and decides. The same dialog serves both, so the two
+/// portals cannot come to describe one package's history differently.
+void _showHistory(BuildContext context, ReTenderSaleInfo info) {
+  showAppDialog(
+    context: context,
+    builder: (_) => EnterBidsDialog(
+      info: info,
+      readOnly: true,
+      accent: AppTheme.executiveTeal,
+    ),
+  );
+}
+
+
 
 /// True when the signed-in Top Management Directorate officer is the ADG — the post that
 /// submits a committee's valuation as the tender's final price.
@@ -36,19 +63,21 @@ String _cItemName(ForfeitedPackageModel f) {
   return '${items.first.itemName} +${items.length - 1}';
 }
 
-/// Warehouse · zone the item currently sits in (latest entry).
-String _committeeLocation(PackageModel? pkg, String? itemId) {
-  if (pkg == null) return '—';
+/// Warehouse · zone the item currently sits in (latest entry), prefixed by yard.
+String _committeeLocation(PackageModel? pkg, String? itemId, [String? yard]) {
+  final yName = (yard != null && yard.isNotEmpty) ? yardName(yard) : null;
+  if (pkg == null) return yName ?? '—';
   var entries = itemId != null
       ? pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
       : <WarehouseEntryModel>[];
   if (entries.isEmpty) entries = [...pkg.warehouseEntries];
-  if (entries.isEmpty) return '—';
+  if (entries.isEmpty) return yName ?? '—';
   entries.sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
   final w = entries.first;
-  return (w.zone != null && w.zone!.isNotEmpty)
+  final whPart = (w.zone != null && w.zone!.isNotEmpty)
       ? '${w.warehouseName} · ${w.zone}'
       : w.warehouseName;
+  return yName != null ? '$yName · $whPart' : whPart;
 }
 
 /// Small forfeit/source chip (Forfeit / Confiscated / …).
@@ -69,44 +98,139 @@ class _CommitteeSourceChip extends StatelessWidget {
         border: Border.all(color: c.withOpacity(0.3)),
       ),
       child: Text(label,
-          style: TextStyle(
-              color: c, fontSize: 11, fontWeight: FontWeight.w700)),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style:
+              TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 }
 
-/// Valuation cell: unit valuation × qty (matches the Central Disposal tables).
-class _CommitteeValuationCell extends StatelessWidget {
-  final ForfeitedPackageModel f;
+/// Goods value cell (SR form declared value): unit value × qty.
+class _CommitteeGoodsValueCell extends StatelessWidget {
+  final PackageItem? item;
+  final PackageModel? pkg;
   final int? qty;
-  const _CommitteeValuationCell({required this.f, this.qty});
+  const _CommitteeGoodsValueCell({this.item, this.pkg, this.qty});
+
   @override
   Widget build(BuildContext context) {
-    final unit = f.valuationCost;
+    final it = item ?? (pkg?.items.length == 1 ? pkg!.items.first : null);
+    final fmt = NumberFormat('#,##0');
+    if (it != null) {
+      final effQty = (qty != null && qty! > 0) ? qty! : it.quantity;
+      final total = it.unitValue * effQty;
+      if (total <= 0 && it.unitValue <= 0) {
+        return Text('—', style: TextStyle(color: context.colors.textMuted));
+      }
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('LKR ${fmt.format(total)}',
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12)),
+          Text('@ ${fmt.format(it.unitValue)} × $effQty',
+              style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+        ],
+      );
+    }
+    final items = pkg?.items ?? const [];
+    if (items.isNotEmpty) {
+      final total =
+          items.fold<double>(0, (s, i) => s + (i.unitValue * i.quantity));
+      if (total > 0) {
+        return Text('LKR ${fmt.format(total)}',
+            style: TextStyle(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 12));
+      }
+    }
+    return Text('—', style: TextStyle(color: context.colors.textMuted));
+  }
+}
+
+Map<String, TenderRevaluationModel> _revalsFor(
+    BuildContext context, WidgetRef ref, String fpId) {
+  final key = TenderPageScope.of(context);
+  if (key.isEmpty) {
+    return ref.watch(tenderRevaluationsProvider(fpId)).valueOrNull ?? const {};
+  }
+  return ref.watch(pageRevaluationsProvider(key)).valueOrNull?[fpId] ??
+      const {};
+}
+
+TenderRevaluationModel? _latestReval(Map<String, TenderRevaluationModel> m) {
+  TenderRevaluationModel? best;
+  for (final r in m.values) {
+    if (best == null || r.createdAt.isAfter(best.createdAt)) best = r;
+  }
+  return best;
+}
+
+/// Valuation cell: surfaces latest tender re-valuation when available, else original.
+class _CommitteeValuationCell extends ConsumerWidget {
+  final ForfeitedPackageModel f;
+  final int? qty;
+
+  /// True while the package's newest tender round has not yet run. The
+  /// valuation is the reserve price for that round, so it stays sealed here
+  /// too — the committee is appointed while the package can still be
+  /// re-tendered. See [valuationSealed].
+  final bool sealedUntilSale;
+  const _CommitteeValuationCell(
+      {required this.f, this.qty, this.sealedUntilSale = false});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (sealedUntilSale) return const SealedValuation(compact: true);
+    final revals = _revalsFor(context, ref, f.id);
+    final reval = _latestReval(revals);
+    final unit = reval?.valuationCost ?? f.valuationCost;
     if (unit == null) {
       return Text('—', style: TextStyle(color: context.colors.textMuted));
     }
+    final isRevalued = reval != null;
     final effQty = (qty != null && qty! > 0) ? qty! : 1;
     final fmt = NumberFormat('#,##0');
+    final priceColor = isRevalued
+        ? context.colors.accentLightBlue
+        : context.colors.primaryGold;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text('LKR ${fmt.format(unit * effQty)}',
-            style: TextStyle(
-                color: context.colors.primaryGold,
-                fontWeight: FontWeight.w700,
-                fontSize: 12)),
-        Text('@ ${fmt.format(unit)} × $effQty',
-            style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Text('LKR ${fmt.format(unit * effQty)}',
+              style: TextStyle(
+                  color: priceColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12)),
+          if (isRevalued) ...[
+            const Gap(4),
+            Icon(Icons.price_change_rounded,
+                size: 12, color: context.colors.accentLightBlue),
+          ],
+        ]),
+        Text(
+          '@ ${fmt.format(unit)} × $effQty${isRevalued ? ' · re-valued' : ''}',
+          style: TextStyle(color: context.colors.textMuted, fontSize: 10),
+        ),
       ],
     );
   }
 }
 
 final _committeeSearchProvider = StateProvider<String>((ref) => '');
-final _committeeYardProvider = StateProvider<String?>((ref) => null); // null=all
+/// Which page of the committee list is showing.
+final _committeePageProvider = StateProvider<int>((ref) => 0);
+
+final _committeeYardProvider =
+    StateProvider<String?>((ref) => null); // null=all
 
 /// Top Management Directorate tab: packages still unsold after the Valuation Tender plus all
 /// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The DG and the ADG
@@ -118,12 +242,25 @@ class TenderCommitteeTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTheme.executiveTeal;
-    final async = ref.watch(committeeEligibleProvider);
+    // ⚠️ ONE PAGE, chosen in SQL. `committeeEligibleProvider` loaded every
+    // tender sale in every yard with its items and joins to find the handful
+    // on their fourth round -- and this tab had no pager at all, so it drew
+    // however many that was.
+    //
+    // appointedOnly: false because THIS is the page that appoints them. A
+    // package still waiting for a committee is exactly what the DG needs to
+    // see; Central Disposal's copy takes the default, since it can only watch.
+    final query = UnsoldRetenderQuery(
+      page: ref.watch(_committeePageProvider),
+      search: ref.watch(_committeeSearchProvider).trim(),
+      yardFilter: ref.watch(_committeeYardProvider),
+      appointedOnly: false,
+    );
+    final async = ref.watch(committeesPageProvider(query));
     final committees =
         // valueOrNull keeps the last map while re-fetching; asData?.value goes
         // null mid-reload and every row would briefly lose its committee.
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
-    final q = ref.watch(_committeeSearchProvider).trim().toLowerCase();
     final yardFilter = ref.watch(_committeeYardProvider);
     // Both the DG and the ADG appoint committees; the DC only observes.
     final canAppoint = !isExecutiveViewOnly(ref.watch(currentProfileProvider));
@@ -131,64 +268,43 @@ class TenderCommitteeTab extends ConsumerWidget {
         const <DateTime, double>{};
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. These pages are TABLES, and vertical chrome is rows
+      // the officer cannot see. Central Disposal tightened to this for the
+      // same reason; matching it also keeps the two portals looking alike.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Text('Tender Committees',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
-            const Gap(10),
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             Expanded(
-              child: Text(
-                  canAppoint
-                      ? 'Packages still unsold after Tender 3 — appoint a committee'
-                      : 'Packages still unsold after Tender 3 — view only',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 13)),
+              child: PageTitle(
+                'Tender Committees',
+                Icons.groups_rounded,
+                subtitle: canAppoint
+                    ? 'Packages still unsold after Tender 3 — appoint a committee'
+                    : 'Packages still unsold after Tender 3 — view only',
+                accent: accent,
+              ),
+            ),
+            const Gap(16),
+            ExecutiveSearchField(
+              hint: 'Search SR / item / consignee…',
+              onChanged: (v) {
+                ref.read(_committeeSearchProvider.notifier).state = v;
+                ref.read(_committeePageProvider.notifier).state = 0;
+              },
             ),
             const Gap(12),
             SizedBox(
-              width: 300,
-              child: TextField(
+              width: 220,
+              child: ExecutiveYardFilter(
+                value: yardFilter,
                 onChanged: (v) =>
-                    ref.read(_committeeSearchProvider.notifier).state = v,
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Search SR / item / consignee…',
-                  prefixIcon:
-                      Icon(Icons.search_rounded, size: 20, color: accent),
-                  filled: true,
-                  fillColor: accent.withOpacity(0.06),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent, width: 1.5)),
-                ),
+                    ref.read(_committeeYardProvider.notifier).state = v,
               ),
             ),
-            const Gap(12),
-            _CommitteeYardFilter(
-              value: yardFilter,
-              onChanged: (v) =>
-                  ref.read(_committeeYardProvider.notifier).state = v,
-            ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(16),
+          const Gap(12),
           Expanded(
             child: async.when(
               skipLoadingOnReload: true,
@@ -196,30 +312,37 @@ class TenderCommitteeTab extends ConsumerWidget {
                   Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(committeeEligibleProvider)),
-              data: (list) {
-                // A package STAYS on this tab after the committee is appointed:
-                // the committee still has to record its valuation and the ADG
-                // still has to submit it as the tender's final valuation. It
-                // only leaves once the ADG has submitted.
-                var rows = list.where((info) {
-                  final c = committees[info.forfeited.id];
-                  return c == null || !c.isSubmitted;
-                }).toList();
-                if (yardFilter != null) {
-                  rows = rows
-                      .where((info) => info.forfeited.yard == yardFilter)
-                      .toList();
+                  onRetry: () => ref.refresh(committeesPageProvider(query))),
+              data: (result) {
+                // A package STAYS on this tab for the whole committee stage —
+                // appointment, the committee's valuation, AND after the ADG
+                // has submitted it. Dropping it at submission hid the finished
+                // work: the row vanished from here while Central Disposal
+                // still showed the package, so the two tables disagreed about
+                // how many committee cases there were.
+                //
+                // It leaves on its own once the committee-priced tender has
+                // been held and failed — the package is then exhausted and
+                // moves to the DG's Unsold Goods tab.
+                // ⚠️ Filtered and paged by the database: the search and the
+                // yard both reached SQL, so `rows` IS the page.
+                final rows = result.rows;
+                final total = result.total;
+
+                final maxPage =
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                final page =
+                    ref.watch(_committeePageProvider).clamp(0, maxPage);
+                if (page != ref.read(_committeePageProvider)) {
+                  // A filter change can leave the officer past the end.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    ref.read(_committeePageProvider.notifier).state = page;
+                  });
                 }
-                if (q.isNotEmpty) {
-                  rows = rows.where((info) {
-                    final f = info.forfeited;
-                    return f.srNumber.toLowerCase().contains(q) ||
-                        f.consigneeName.toLowerCase().contains(q) ||
-                        _cItemName(f).toLowerCase().contains(q);
-                  }).toList();
-                }
-                return Container(
+
+                return Column(children: [
+                  Expanded(
+                    child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: context.colors.cardDark,
@@ -228,48 +351,51 @@ class TenderCommitteeTab extends ConsumerWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: DataTable2(
-                      columnSpacing: 12,
-                      horizontalMargin: 16,
+                    child: TenderPageScope(
+                      // ⚠️ The page's ids, once, for the bid cell below.
+                      packageKey: TenderPageScope.keyFor(
+                          rows.map((r) => r.forfeited.id)),
+                      child: DataTable2(
+                      columnSpacing: 10,
+                      horizontalMargin: 12,
                       fixedTopRows: 1,
-                      minWidth: 1080,
                       empty: const EmptyTableState(
-                          message:
-                              'No packages unsold after Tender 3 yet'),
+                          message: 'No packages unsold after Tender 3 yet'),
                       headingRowColor:
                           WidgetStateProperty.all(context.colors.surfaceDark),
                       columns: const [
-                        DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('SR Number'), size: ColumnSize.M),
                         DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                        DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Goods Name'), size: ColumnSize.L),
                         DataColumn2(
                             label: Center(child: Text('Source')),
                             size: ColumnSize.S),
                         DataColumn2(
-                            label: Text('Qty'),
+                            label: Center(child: Text('No. of Goods')),
                             size: ColumnSize.S,
-                            fixedWidth: 56),
-                        DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                            fixedWidth: 100),
                         DataColumn2(
-                            label: Text('Valuation'),
-                            size: ColumnSize.S,
-                            fixedWidth: 112),
+                            label: Text('Location'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Goods Value'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Latest Valuation'),
+                            size: ColumnSize.M),
                         DataColumn2(
                             label: Center(child: Text('Times')),
-                            size: ColumnSize.S,
-                            fixedWidth: 70),
+                            size: ColumnSize.S),
                         DataColumn2(
                             label: Center(child: Text('Committee')),
-                            size: ColumnSize.S,
-                            fixedWidth: 175),
+                            size: ColumnSize.M),
                         DataColumn2(
                             label: Center(child: Text('Committee Value')),
-                            size: ColumnSize.S,
-                            fixedWidth: 186),
+                            size: ColumnSize.M),
                         DataColumn2(
                             label: Center(child: Text('Details')),
                             size: ColumnSize.S,
-                            fixedWidth: 64),
+                            fixedWidth: 50),
                       ],
                       rows: rows.map((info) {
                         final f = info.forfeited;
@@ -285,24 +411,43 @@ class TenderCommitteeTab extends ConsumerWidget {
                         return DataRow(cells: [
                           DataCell(TooltipText(f.srNumber,
                               style: TextStyle(
-                                  color: accent,
-                                  fontWeight: FontWeight.w600))),
+                                  color: accent, fontWeight: FontWeight.w600))),
                           DataCell(TooltipText(pkg?.caseNumber ?? '—',
                               overflow: TextOverflow.ellipsis)),
                           DataCell(TooltipText(_cItemName(f),
                               overflow: TextOverflow.ellipsis)),
-                          DataCell(Center(child: _CommitteeSourceChip(source: f.source))),
-                          DataCell(TooltipText('${qty ?? '—'}')),
-                          DataCell(TooltipText(_committeeLocation(pkg, f.itemId),
+                          DataCell(Center(
+                              child: _CommitteeSourceChip(source: f.source))),
+                          DataCell(Center(child: TooltipText('${qty ?? '—'}'))),
+                          DataCell(TooltipText(
+                              _committeeLocation(pkg, f.itemId, f.yard),
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                   color: context.colors.textSecondary,
                                   fontSize: 12))),
-                          DataCell(_CommitteeValuationCell(f: f, qty: qty)),
+                          DataCell(_CommitteeGoodsValueCell(
+                              item: item, pkg: pkg, qty: qty)),
+                          DataCell(_CommitteeValuationCell(
+                              f: f,
+                              qty: qty,
+                              sealedUntilSale:
+                                  info.latestSale?.saleEnded == false)),
                           DataCell(Center(
-                            child: Container(
+                            child: Tooltip(
+                              message: info.tenderCount > 4
+                                  ? 'Central Disposal can run four rounds: '
+                                      'the Valuation Tender and Tenders 1-3. '
+                                      'This package has ${info.tenderCount}, '
+                                      'which predates the limit — click to '
+                                      'see them.'
+                                  : 'See every round: what it was valued at, '
+                                      'and what was bid',
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () => _showHistory(context, info),
+                                child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
+                                  horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: context.colors.warningAmber
                                     .withOpacity(0.14),
@@ -311,10 +456,21 @@ class TenderCommitteeTab extends ConsumerWidget {
                                     color: context.colors.warningAmber
                                         .withOpacity(0.4)),
                               ),
-                              child: Text('${info.tenderCount}×',
-                                  style: TextStyle(
-                                      color: context.colors.warningAmber,
-                                      fontWeight: FontWeight.w800)),
+                              child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('${info.tenderCount}×',
+                                        style: TextStyle(
+                                            color: context.colors.warningAmber,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11)),
+                                    const Gap(3),
+                                    Icon(Icons.history_rounded,
+                                        size: 12,
+                                        color: context.colors.warningAmber),
+                                  ]),
+                                ),
+                              ),
                             ),
                           )),
                           DataCell(Center(
@@ -349,7 +505,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                                           ? 'View ($count)'
                                           : (appointing ? 'Appoint' : 'View'),
                                       style: const TextStyle(fontSize: 12)),
-                                  onPressed: () => showDialog(
+                                  onPressed: () => showAppDialog(
                                     context: context,
                                     builder: (_) => _CommitteeDialog(
                                         info: info, existing: committee),
@@ -363,9 +519,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                           // final valuation. Nothing until a committee exists.
                           DataCell(Center(
                             child: _CommitteeRoundValueCell(
-                                info: info,
-                                qty: qty,
-                                committee: committee),
+                                info: info, qty: qty, committee: committee),
                           )),
                           DataCell(Center(
                             child: IconButton(
@@ -374,7 +528,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                                   size: 18),
                               onPressed: pkg == null
                                   ? null
-                                  : () => showDialog(
+                                  : () => showAppDialog(
                                         context: context,
                                         builder: (_) => PackageDetailsDialog(
                                           package: pkg,
@@ -383,21 +537,39 @@ class TenderCommitteeTab extends ConsumerWidget {
                                           useLegacySummary: true,
                                           highlightItemId: f.itemId,
                                           yardLabel: yardName(f.yard),
+                                          valuationSealedUntilSale:
+                                              info.latestSale?.saleEnded ==
+                                                  false,
                                           valuationUnitCost: f.valuationCost,
-                                          valuationTotalCost:
-                                              f.valuationCost != null
-                                                  ? f.valuationCost! * (qty ?? 1)
-                                                  : null,
+                                          valuationTotalCost: f.valuationCost !=
+                                                  null
+                                              ? f.valuationCost! * (qty ?? 1)
+                                              : null,
                                           valuationQty: qty,
+                                          tenderHistoryFor: f,
+                                          showFinalOutcome: false,
                                         ),
                                       ),
                             ),
                           )),
                         ]);
                       }).toList(),
+                    ),)
+                  ),
                     ),
                   ),
-                );
+                  // ⚠️ The DATABASE's count. `rows.length` is one page, so the
+                  // pager would only ever say "20 of 20" -- and this tab had
+                  // no pager at all, drawing however many packages the yards
+                  // happened to hold.
+                  TablePager(
+                    total: total,
+                    page: page,
+                    accent: accent,
+                    onPageChanged: (p) =>
+                        ref.read(_committeePageProvider.notifier).state = p,
+                  ),
+                ]);
               },
             ),
           ),
@@ -407,50 +579,7 @@ class TenderCommitteeTab extends ConsumerWidget {
   }
 }
 
-/// Yard dropdown with "All Yards" — teal-accented styled menu (executive).
-class _CommitteeYardFilter extends StatelessWidget {
-  final String? value; // null = all
-  final ValueChanged<String?> onChanged;
-  const _CommitteeYardFilter({required this.value, required this.onChanged});
-  @override
-  Widget build(BuildContext context) {
-    final accent = AppTheme.executiveTeal;
-    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: c, width: w));
-    return SizedBox(
-      width: 220,
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          inputDecorationTheme:
-              Theme.of(context).inputDecorationTheme.copyWith(
-                    filled: true,
-                    fillColor: accent.withOpacity(0.06),
-                    border: border(accent.withOpacity(0.4)),
-                    enabledBorder: border(accent.withOpacity(0.4)),
-                    focusedBorder: border(accent, 1.5),
-                  ),
-        ),
-        child: StyledDropdownFormField<String>(
-          value: value ?? '_all',
-          label: 'Yard',
-          helperText: null,
-          isDense: true,
-          menuWidth: 220,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          prefixIcon:
-              Icon(Icons.warehouse_rounded, color: accent, size: 20),
-          options: [
-            const StyledDropdownOption('_all', 'All Yards'),
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
-          ],
-          onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
-        ),
-      ),
-    );
-  }
-}
+
 
 /// Appoint a committee for a package (name + designation + salary no. each).
 /// Usually five officers; 2-10 allowed. Read-only once appointed.
@@ -557,6 +686,14 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
             yard: widget.info.forfeited.yard,
           );
       ref.invalidate(tenderCommitteesProvider);
+      // ⚠️ The by-id map above is what each CELL reads; these decide which
+      // packages belong on the page at all. Appointing a committee moves a
+      // package onto Central Disposal's Committees tab, and pricing one moves
+      // it back into the re-tender pool -- neither showed up until the other
+      // portal was reloaded by hand.
+      ref.invalidate(committeesPageProvider);
+      ref.invalidate(unsoldRetenderPageProvider);
+      ref.invalidate(exhaustedUnsoldPageProvider);
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -565,9 +702,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed: $e'),
-          backgroundColor: context.colors.dangerRed));
+      showErrorSnack(context, e);
     }
   }
 
@@ -633,9 +768,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                     isDense: true,
                     labelText: 'Member ${i + 1} name',
                     filled: true,
-                    fillColor: context.colors.cardDark,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
+                    fillColor: context.colors.fieldFill,
                     border: border(context.colors.borderColor),
                     enabledBorder: border(context.colors.borderColor),
                     focusedBorder: border(accent, 1.4),
@@ -667,9 +800,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                       isDense: true,
                       labelText: 'Designation',
                       filled: true,
-                      fillColor: context.colors.cardDark,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
+                      fillColor: context.colors.fieldFill,
                       border: border(context.colors.borderColor),
                       enabledBorder: border(context.colors.borderColor),
                       focusedBorder: border(accent, 1.4),
@@ -685,9 +816,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                       isDense: true,
                       labelText: 'Salary No.',
                       filled: true,
-                      fillColor: context.colors.cardDark,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
+                      fillColor: context.colors.fieldFill,
                       border: border(context.colors.borderColor),
                       enabledBorder: border(context.colors.borderColor),
                       focusedBorder: border(accent, 1.4),
@@ -702,8 +831,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
           // or more — up to 10.
           Row(children: [
             TextButton.icon(
-              onPressed:
-                  (_saving || _count >= _maxCount) ? null : _addMember,
+              onPressed: (_saving || _count >= _maxCount) ? null : _addMember,
               icon: const Icon(Icons.person_add_alt_1_rounded, size: 17),
               style: TextButton.styleFrom(foregroundColor: accent),
               label: const Text('Add member',
@@ -721,8 +849,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
             maxLines: 4,
             keyboardType: TextInputType.multiline,
             textCapitalization: TextCapitalization.sentences,
-            style: TextStyle(
-                color: context.colors.textPrimary, fontSize: 13),
+            style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               isDense: true,
               labelText: 'Note (optional)',
@@ -731,9 +858,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
               hintStyle:
                   TextStyle(color: context.colors.textMuted, fontSize: 12),
               filled: true,
-              fillColor: context.colors.cardDark,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              fillColor: context.colors.fieldFill,
               border: border(context.colors.borderColor),
               enabledBorder: border(context.colors.borderColor),
               focusedBorder: border(accent, 1.4),
@@ -819,15 +944,16 @@ Widget _memberTile(int no, CommitteeMember m, Color accent) {
   return Builder(builder: (context) {
     final sub = [
       if (m.designation?.trim().isNotEmpty == true) m.designation!.trim(),
-      if (m.salaryNo?.trim().isNotEmpty == true) 'Salary No: ${m.salaryNo!.trim()}',
+      if (m.salaryNo?.trim().isNotEmpty == true)
+        'Salary No: ${m.salaryNo!.trim()}',
     ].join('  ·  ');
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       Container(
         width: 30,
         height: 30,
         alignment: Alignment.center,
-        decoration:
-            BoxDecoration(color: accent.withOpacity(0.12), shape: BoxShape.circle),
+        decoration: BoxDecoration(
+            color: accent.withOpacity(0.12), shape: BoxShape.circle),
         child: Text('$no',
             style: TextStyle(
                 color: accent, fontSize: 13, fontWeight: FontWeight.w800)),
@@ -912,8 +1038,7 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
 
     // 1 ── Nobody appointed yet, so there is nothing to value.
     if (c == null || c.members.isEmpty) {
-      return _waitingChip(
-          context, 'Appoint first', Icons.group_add_rounded,
+      return _waitingChip(context, 'Appoint first', Icons.group_add_rounded,
           context.colors.textSecondary);
     }
 
@@ -921,6 +1046,21 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
     final effQty = (qty != null && qty! > 0) ? qty! : 1;
     final profile = ref.watch(currentProfileProvider);
     final isAdg = _isAdg(profile);
+
+    // 1b ── The committee round has ALREADY RUN. There is nothing left to
+    // value: the round the value would have priced is over.
+    //
+    // ⚠️ CED/GL1/OA/07/2025 sat at five rounds with a committee appointed
+    // AFTER its fifth round and no value, and this cell offered "Enter
+    // Value" as if the round were still to come. A value entered here would
+    // have nothing to attach to. Migration 031 now stops that fifth round
+    // running before the value exists, so this state cannot recur -- but
+    // the one row that already has it must not be handed a dead button.
+    if (info.tenderCount > kMaxBidTenderRounds + 1 &&
+        c.committeeValue == null) {
+      return _waitingChip(context, 'Round already run',
+          Icons.block_rounded, context.colors.dangerRed);
+    }
 
     // 2 ── Committee appointed but has not priced the goods yet.
     if (c.committeeValue == null) {
@@ -932,14 +1072,14 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
       return FilledButton.icon(
         style: FilledButton.styleFrom(
             backgroundColor: accent,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             visualDensity: VisualDensity.compact),
-        icon: const Icon(Icons.price_change_rounded, size: 15),
-        label: const Text('Enter Value', style: TextStyle(fontSize: 12)),
-        onPressed: () => showDialog(
+        icon: const Icon(Icons.price_change_rounded, size: 14),
+        label: const Text('Enter Value', style: TextStyle(fontSize: 11.5)),
+        onPressed: () => showAppDialog(
           context: context,
-          builder: (_) => _CommitteeValuationDialog(
-              info: info, qty: effQty, committee: c),
+          builder: (_) =>
+              _CommitteeValuationDialog(info: info, qty: effQty, committee: c),
         ),
       );
     }
@@ -1009,7 +1149,7 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: () => showDialog(
+          onTap: () => showAppDialog(
             context: context,
             builder: (_) => _CommitteeValuationDialog(
                 info: info, qty: effQty, committee: c),
@@ -1086,6 +1226,14 @@ class _CommitteeValuationDialogState
             note: _noteCtrl.text,
           );
       ref.invalidate(tenderCommitteesProvider);
+      // ⚠️ The by-id map above is what each CELL reads; these decide which
+      // packages belong on the page at all. Appointing a committee moves a
+      // package onto Central Disposal's Committees tab, and pricing one moves
+      // it back into the re-tender pool -- neither showed up until the other
+      // portal was reloaded by hand.
+      ref.invalidate(committeesPageProvider);
+      ref.invalidate(unsoldRetenderPageProvider);
+      ref.invalidate(exhaustedUnsoldPageProvider);
       if (!mounted) return;
       Navigator.pop(context);
       _ok('Committee valuation recorded: Rs. ${_money.format(cost)}');
@@ -1112,13 +1260,29 @@ class _CommitteeValuationDialogState
     try {
       await ref.read(disposalServiceProvider).submitCommitteeValuation(
             forfeitedPackageId: widget.info.forfeited.id,
-            tenderSaleId: round.id,
+            // The committee's figure prices the round the package is about to
+            // be re-tendered in — not the one just held. Writing it to a
+            // finished round overwrote that round's own reserve AND left no
+            // "next round is priced" signal, so the package sat on "Committee
+            // valued" forever and dropped out of the Committees table.
+            tenderSaleId: round.saleEnded ? null : round.id,
             value: cost,
             note: _noteCtrl.text,
             yard: widget.info.forfeited.yard,
           );
       ref.invalidate(tenderCommitteesProvider);
+      // ⚠️ The by-id map above is what each CELL reads; these decide which
+      // packages belong on the page at all. Appointing a committee moves a
+      // package onto Central Disposal's Committees tab, and pricing one moves
+      // it back into the re-tender pool -- neither showed up until the other
+      // portal was reloaded by hand.
+      ref.invalidate(committeesPageProvider);
+      ref.invalidate(unsoldRetenderPageProvider);
+      ref.invalidate(exhaustedUnsoldPageProvider);
       ref.invalidate(tenderRevaluationsProvider(widget.info.forfeited.id));
+      // Submitting makes the package re-tenderable, which these two decide.
+      ref.invalidate(reTenderEligibleProvider);
+      ref.invalidate(valuedCurrentRoundProvider);
       if (!mounted) return;
       Navigator.pop(context);
       _ok('Submitted as the final valuation: Rs. ${_money.format(cost)}');
@@ -1129,8 +1293,8 @@ class _CommitteeValuationDialogState
     }
   }
 
-  void _ok(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(m), backgroundColor: context.colors.successGreen));
+  void _ok(String m) => ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), backgroundColor: context.colors.successGreen));
   void _err(String m) => ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(m), backgroundColor: context.colors.dangerRed));
 
@@ -1200,6 +1364,16 @@ class _CommitteeValuationDialogState
                         color: context.colors.textMuted, fontSize: 11)),
               ]),
               const Gap(8),
+              // ⚠️ The committee is pricing goods that have been in the
+              // yard through four or more failed tenders, and the storage
+              // bill has been running the whole time. It is the single
+              // largest thing the figure has to answer for, and the form
+              // did not show it.
+              StorageChargeNote(
+                packageId: widget.info.forfeited.packageId,
+                packageItemId: widget.info.forfeited.itemId,
+              ),
+              const Gap(8),
               Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                 Expanded(
                   flex: 3,
@@ -1244,8 +1418,8 @@ class _CommitteeValuationDialogState
               TextField(
                 controller: _noteCtrl,
                 enabled: isAdg,
-                style: TextStyle(
-                    color: context.colors.textPrimary, fontSize: 13),
+                style:
+                    TextStyle(color: context.colors.textPrimary, fontSize: 13),
                 minLines: 2,
                 maxLines: 4,
                 keyboardType: TextInputType.multiline,
@@ -1258,9 +1432,7 @@ class _CommitteeValuationDialogState
                   hintStyle:
                       TextStyle(color: context.colors.textMuted, fontSize: 12),
                   filled: true,
-                  fillColor: context.colors.cardDark,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  fillColor: context.colors.fieldFill,
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide:
@@ -1320,8 +1492,7 @@ class _CommitteeValuationDialogState
           FilledButton(
             onPressed: (_saving || _typed == null) ? null : _submitAsFinal,
             style: FilledButton.styleFrom(
-                backgroundColor: accent,
-                visualDensity: VisualDensity.compact),
+                backgroundColor: accent, visualDensity: VisualDensity.compact),
             child: _saving
                 ? const SizedBox(
                     width: 16,

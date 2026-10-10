@@ -10,12 +10,15 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/table_pager.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/year_filter.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
   const PackagesScreen({super.key});
@@ -31,9 +34,16 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tableSearchCtrl.text = ref.read(packageSearchProvider);
-    });
+    // ⚠️ SYNCHRONOUS, not in a post-frame callback.
+    //
+    // The search box is an Autocomplete, which builds its own controller. The
+    // fieldViewBuilder copies _tableSearchCtrl into it, but a post-frame
+    // callback runs AFTER that first build and calls no setState -- so leaving
+    // the page and coming back left the table filtered by the remembered query
+    // while the box showed nothing. The filter was on and invisible.
+    //
+    // Assigning here means the first build already has the text.
+    _tableSearchCtrl.text = ref.read(packageSearchProvider);
   }
 
   @override
@@ -127,7 +137,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               ).animate().fadeIn(),
               const Gap(20),
 
-              // â”€â”€ Unified Search & Filter Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Unified Search & Filter Bar ──────────────────────
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -281,117 +291,25 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        // One control for both "when" questions. Goods
+                        // History pages on the SERVER, so the year list
+                        // cannot be read off the loaded rows (only one page
+                        // is ever loaded) — packageYearSourceProvider
+                        // fetches the SR numbers alone for exactly this.
                         Consumer(builder: (context, ref, _) {
-                          final dateRange = ref.watch(packageDateRangeProvider);
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  final picked = await showDialog<dynamic>(
-                                    context: context,
-                                    builder: (context) =>
-                                        custom.DateRangePickerDialog(
-                                            initialRange: dateRange),
-                                  );
-                                  if (picked is DateTimeRange) {
-                                    ref
-                                        .read(packageDateRangeProvider.notifier)
-                                        .state = picked;
-                                  } else if (picked == false) {
-                                    ref
-                                        .read(packageDateRangeProvider.notifier)
-                                        .state = null;
-                                  }
-                                },
-                                icon: Icon(Icons.date_range_rounded,
-                                    size: 16,
-                                    color: dateRange != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.textSecondary),
-                                label: Text(
-                                  dateRange != null
-                                      ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                                      : 'Date Range',
-                                  style: TextStyle(
-                                      color: dateRange != null
-                                          ? context.colors.primaryGold
-                                          : context.colors.textSecondary,
-                                      fontSize: 12,
-                                      fontWeight: dateRange != null
-                                          ? FontWeight.bold
-                                          : FontWeight.normal),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(
-                                      color: dateRange != null
-                                          ? context.colors.primaryGold
-                                          : context.colors.borderColor),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8)),
-                                ),
-                              ),
-                              if (dateRange != null) ...[
-                                const Gap(8),
-                                IconButton(
-                                  icon: Icon(Icons.clear_rounded,
-                                      size: 16,
-                                      color: context.colors.dangerRed),
-                                  onPressed: () => ref
-                                      .read(packageDateRangeProvider.notifier)
-                                      .state = null,
-                                  tooltip: 'Clear Date Filter',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                              ],
-                            ],
-                          );
-                        }),
-                        // Year Filter Dropdown
-                        Consumer(builder: (context, ref, _) {
-                          final selectedYear = ref.watch(packageYearFilterProvider);
-                          // Recent years (newest first). Avoids loading every
-                          // package just to list years — the server filters by
-                          // the chosen year via the SR-number suffix.
-                          final thisYear = DateTime.now().year;
-                          final years = [
-                            for (var y = thisYear; y >= thisYear - 6; y--)
-                              y.toString()
-                          ];
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              StyledDropdownButton<String>(
-                                value: selectedYear,
-                                allLabel: 'All Years',
-                                icon: Icons.calendar_today_rounded,
-                                columns: 2,
-                                options: years
-                                    .map((y) =>
-                                        StyledDropdownOption(y, y))
-                                    .toList(),
-                                onChanged: (val) => ref
-                                    .read(packageYearFilterProvider.notifier)
-                                    .state = val,
-                              ),
-                              if (selectedYear != null) ...[
-                                const Gap(8),
-                                IconButton(
-                                  icon: Icon(Icons.clear_rounded,
-                                      size: 16,
-                                      color: context.colors.dangerRed),
-                                  onPressed: () => ref
-                                      .read(packageYearFilterProvider.notifier)
-                                      .state = null,
-                                  tooltip: 'Clear Year Filter',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                              ],
-                            ],
+                          final srNumbers =
+                              ref.watch(packageYearSourceProvider).valueOrNull ??
+                                  const <String>[];
+                          return DateFilterButton(
+                            dateRange: ref.watch(packageDateRangeProvider),
+                            year: ref.watch(packageYearFilterProvider),
+                            years: srYears(srNumbers),
+                            onChanged: (range, year) {
+                              ref.read(packageDateRangeProvider.notifier).state =
+                                  range;
+                              ref.read(packageYearFilterProvider.notifier).state =
+                                  year;
+                            },
                           );
                         }),
                       ],
@@ -407,7 +325,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                 const Gap(16),
                 _SrResultCard(
                     package: _srResult!,
-                    onDetails: () => showDialog(
+                    onDetails: () => showAppDialog(
                           context: context,
                           builder: (_) => PackageDetailsDialog(
                               package: _srResult!,
@@ -428,12 +346,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     // Rows come pre-filtered + pre-paged from the server.
                     final filteredList = page.rows;
                     final currentPage = ref.watch(packagePageProvider);
-                    final from = page.total == 0
-                        ? 0
-                        : currentPage * kPackagePageSize + 1;
-                    final to = currentPage * kPackagePageSize + filteredList.length;
-                    final hasPrev = currentPage > 0;
-                    final hasNext = to < page.total;
+                    // The from/to/hasPrev/hasNext arithmetic moved into
+                    // TablePager, which every table now shares.
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -456,6 +370,14 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           isVerticalScrollBarVisible: true,
                           isHorizontalScrollBarVisible: false,
                             columns: const [
+                            // ⚠️ No fixedWidth on the text columns. Pinning
+                            // them made every one of them exactly as wide as
+                            // its content and dumped ALL the leftover space
+                            // into the last flexible column, so the table
+                            // ended in one long empty gap. Proportional
+                            // sizes share the slack instead: each column
+                            // grows a little, and the widest content —
+                            // Consignee and Declarant — grows most.
                             DataColumn2(
                               label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(
@@ -474,9 +396,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               size: ColumnSize.S,
                               fixedWidth: 110),
                             DataColumn2(
-                              label: Text('Consignee'), size: ColumnSize.M),
+                              label: Text('Consignee'), size: ColumnSize.L),
                             DataColumn2(
-                              label: Text('Declarant'), size: ColumnSize.M),
+                              label: Text('Declarant'), size: ColumnSize.L),
                             DataColumn2(
                               label: Text('Declarant Phone'),
                               size: ColumnSize.M),
@@ -492,9 +414,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                DataCell(TooltipText(p.cusdecNo ?? 'â€”',
+                                DataCell(TooltipText(p.cusdecNo ?? '—',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(TooltipText(p.cusdecDate ?? 'â€”',
+                                DataCell(TooltipText(p.cusdecDate ?? '—',
                                   overflow: TextOverflow.ellipsis)),
                                 DataCell(TooltipText(p.entryDate != null
                                     ? DateFormat('yyyy-MM-dd')
@@ -503,16 +425,16 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                         .format(p.createdAt))),
                                 DataCell(TooltipText(p.consigneeName,
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(TooltipText(p.declarantName ?? 'â€”',
+                                DataCell(TooltipText(p.declarantName ?? '—',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(TooltipText(p.consigneePhone ?? 'â€”',
+                                DataCell(TooltipText(p.consigneePhone ?? '—',
                                   overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
                                           color: context.colors.accentLightBlue,
                                           size: 18),
-                                      onPressed: () => showDialog(
+                                      onPressed: () => showAppDialog(
                                         context: context,
                                         builder: (_) => PackageDetailsDialog(
                                             package: p,
@@ -527,44 +449,15 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           ),
                         ),
                         // ── Pager bar ──
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Row(
-                            children: [
-                              Text(
-                                  page.total == 0
-                                      ? 'No packages'
-                                      : 'Showing $from–$to of ${page.total}',
-                                  style: TextStyle(
-                                      color: context.colors.textSecondary,
-                                      fontSize: 13)),
-                              const Spacer(),
-                              IconButton(
-                                tooltip: 'Previous page',
-                                icon: const Icon(Icons.chevron_left_rounded),
-                                color: context.colors.primaryGold,
-                                onPressed: hasPrev
-                                    ? () => ref
-                                        .read(packagePageProvider.notifier)
-                                        .state = currentPage - 1
-                                    : null,
-                              ),
-                              Text('Page ${currentPage + 1}',
-                                  style: TextStyle(
-                                      color: context.colors.textPrimary,
-                                      fontWeight: FontWeight.w600)),
-                              IconButton(
-                                tooltip: 'Next page',
-                                icon: const Icon(Icons.chevron_right_rounded),
-                                color: context.colors.primaryGold,
-                                onPressed: hasNext
-                                    ? () => ref
-                                        .read(packagePageProvider.notifier)
-                                        .state = currentPage + 1
-                                    : null,
-                              ),
-                            ],
-                          ),
+                        // The app's one pager, so this page numbers its
+                        // pages exactly like every other table.
+                        TablePager(
+                          total: page.total,
+                          page: currentPage,
+                          pageSize: kPackagePageSize,
+                          onPageChanged: (p) => ref
+                              .read(packagePageProvider.notifier)
+                              .state = p,
                         ),
                       ],
                     )
@@ -582,7 +475,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   }
 }
 
-// â”€â”€ SR Search Result Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SR Search Result Card ──────────────────────────────────────
 
 class _SrResultCard extends ConsumerWidget {
   final PackageModel package;
@@ -756,7 +649,7 @@ class _SrResultCard extends ConsumerWidget {
   }
 }
 
-// â”€â”€ Warehouse Pill (for table) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Warehouse Pill (for table) ──────────────────────────────────
 
 class _WarehousePill extends StatelessWidget {
   final List<WarehouseEntryModel> warehouseEntries;
@@ -779,7 +672,7 @@ class _WarehousePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = warehouseEntries.where((e) => !e.isReturned).toList();
     if (active.isEmpty)
-      return Text('â€”', style: TextStyle(color: context.colors.textMuted));
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
     return Wrap(
         spacing: 4,
         children: active

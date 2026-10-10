@@ -37,9 +37,9 @@ returns text
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
-  select yard from public.profiles where id = auth.uid();
+  select yard from public.profiles where id = sr_auth.uid();
 $$;
 
 -- 4. ── Enable RLS and add per-yard policies ────────────────────────────────
@@ -50,13 +50,13 @@ $$;
 alter table public.profiles enable row level security;
 drop policy if exists yard_profiles_select on public.profiles;
 create policy yard_profiles_select on public.profiles
-  for select using (id = auth.uid() or yard = public.auth_user_yard());
+  for select using (id = sr_auth.uid() or yard = public.auth_user_yard());
 drop policy if exists yard_profiles_update on public.profiles;
 create policy yard_profiles_update on public.profiles
-  for update using (id = auth.uid());
+  for update using (id = sr_auth.uid());
 drop policy if exists yard_profiles_insert on public.profiles;
 create policy yard_profiles_insert on public.profiles
-  for insert with check (id = auth.uid());
+  for insert with check (id = sr_auth.uid());
 
 -- Generic per-yard policy generator for the data tables
 do $$

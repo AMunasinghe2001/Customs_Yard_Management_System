@@ -1,11 +1,16 @@
+import '../../widgets/sealed_valuation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
 import 'package:intl/intl.dart';
+import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
+import '../../widgets/error_view.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/destruction_status_pill.dart';
 
 /// ONE definition of the Unsold Packages table, shared by all three portals —
 /// the yard's Unsold page, Central Disposal's Unsold tab and the Top Management Directorate's
@@ -40,28 +45,58 @@ int unsoldQty(ForfeitedPackageModel f) {
   return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
 }
 
-String? unsoldHsCode(ForfeitedPackageModel f) {
-  final items = f.packageDetails?.items ?? const [];
-  if (f.itemId != null) {
-    final m = items.where((i) => i.id == f.itemId).firstOrNull;
-    if (m != null) return m.hsCode;
+/// A forfeited row's HS code.
+///
+/// ⚠️ Delegates, so there is ONE rule. This had its own copy with an
+/// `items.first` fallback -- on a package of three items with no item_id
+/// that stamped every row with the first item's code, which is a wrong
+/// answer where the shared version gives none.
+String? unsoldHsCodeOf(ForfeitedPackageModel f) =>
+    unsoldHsCode(f.packageDetails, f.itemId);
+
+/// This row's HS code, resolved from ITS OWN item.
+///
+/// ⚠️ Forfeiture is recorded per item, so a three-item package makes
+/// three rows -- falling through to `items.first` would stamp all three
+/// with one code. Several items and no way to say which returns null: a
+/// code that might be wrong is worse than none.
+String? unsoldHsCode(PackageModel? pkg, String? itemId) {
+  final items = pkg?.items ?? const <PackageItem>[];
+  if (itemId != null) {
+    final match = items.where((i) => i.id == itemId).firstOrNull;
+    if (match != null) return match.hsCode;
   }
-  return items.isNotEmpty ? items.first.hsCode : null;
+  if (items.length == 1) return items.first.hsCode;
+  return null;
 }
 
-/// Warehouse · zone the item currently sits in (latest entry).
-String unsoldLocation(PackageModel? pkg, String? itemId) {
-  if (pkg == null) return '—';
+/// This row's consignee, straight off the package.
+String unsoldConsignee(PackageModel? pkg, String? fallback) {
+  final name = (pkg?.consigneeName ?? '').trim();
+  if (name.isNotEmpty) return name;
+  final f = (fallback ?? '').trim();
+  return f.isEmpty ? '\u2014' : f;
+}
+
+/// Yard · Warehouse · zone the item currently sits in (latest entry).
+///
+/// [yard] is the forfeited package's yard code — prepended so the
+/// directorate tables (which show packages from every yard) identify
+/// where each one is.
+String unsoldLocation(PackageModel? pkg, String? itemId, [String? yard]) {
+  final yName = (yard != null && yard.isNotEmpty) ? yardName(yard) : null;
+  if (pkg == null) return yName ?? '—';
   var entries = itemId != null
       ? pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
       : <WarehouseEntryModel>[];
   if (entries.isEmpty) entries = [...pkg.warehouseEntries];
-  if (entries.isEmpty) return '—';
+  if (entries.isEmpty) return yName ?? '—';
   entries.sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
   final w = entries.first;
-  return (w.zone != null && w.zone!.isNotEmpty)
+  final whPart = (w.zone != null && w.zone!.isNotEmpty)
       ? '${w.warehouseName} · ${w.zone}'
       : w.warehouseName;
+  return yName != null ? '$yName · $whPart' : whPart;
 }
 
 /// Icon + colour per final outcome, identical on every portal.
@@ -72,11 +107,6 @@ String unsoldLocation(PackageModel? pkg, String? itemId) {
       return (
         icon: Icons.delete_forever_rounded,
         colour: context.colors.dangerRed
-      );
-    case 'remand':
-      return (
-        icon: Icons.reply_all_rounded,
-        colour: context.colors.accentLightBlue
       );
     case 'government_use':
       return (
@@ -119,16 +149,22 @@ const double kUnsoldTableMinWidth = 945;
 ///
 /// The same reasoning governs the last data column. On the Unsold Goods page
 /// the outcome varies row to row, so **Final Outcome** earns its place. On a
-/// single-outcome page (Government Use, Remanded, Auction, Converted, Removed)
+/// single-outcome page (Government Use, Auction, Converted, Removed)
 /// every row carries the SAME chip — it is the page's own title repeated — so
 /// those pages show **Decided On** instead, which does differ per row.
 const List<DataColumn2> kUnsoldColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
   DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
-  DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 120),
+  // "Latest Valuation": these rows carry the committee's figure when one
+  // exists, not the original — see unsoldCells.
+  DataColumn2(
+      label: Text('Latest Valuation'), size: ColumnSize.S, fixedWidth: 130),
   DataColumn2(
       label: Center(child: Text('Final Outcome')),
       size: ColumnSize.M,
@@ -146,14 +182,84 @@ const List<DataColumn2> kUnsoldColumns = [
 const List<DataColumn2> kUnsoldDecidedColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
   DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
-  DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 120),
+  // "Latest Valuation": these rows carry the committee's figure when one
+  // exists, not the original — see unsoldCells.
+  DataColumn2(
+      label: Text('Latest Valuation'), size: ColumnSize.S, fixedWidth: 130),
   DataColumn2(
       label: Center(child: Text('Decided On')),
       size: ColumnSize.M,
       fixedWidth: 235),
+  // ⚠️ A decision is not a hand-over. These goods are still in the yard until
+  // someone comes for them, and this column is what says so — the same
+  // Pending/Mark Delivered/Delivered pill the Sold table uses.
+  DataColumn2(
+      label: Center(child: Text('Delivery')),
+      size: ColumnSize.M,
+      fixedWidth: kStatusPillWidth + 24),
+  DataColumn2(
+      label: Center(child: Text('Details')),
+      size: ColumnSize.S,
+      fixedWidth: 66),
+];
+
+/// [kUnsoldColumns] for PERISHABLE goods. Perishables only get one valuation
+/// (from the Valuation Directorate), never a committee re-valuation, so the
+/// column says **Valuation** rather than "Latest Valuation".
+const List<DataColumn2> kUnsoldPerishableColumns = [
+  DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+  DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
+  DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+  DataColumn2(label: Text('Location'), size: ColumnSize.M),
+  DataColumn2(
+      label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 130),
+  DataColumn2(
+      label: Center(child: Text('Final Outcome')),
+      size: ColumnSize.M,
+      fixedWidth: 235),
+  DataColumn2(
+      label: Center(child: Text('Details')),
+      size: ColumnSize.S,
+      fixedWidth: 66),
+];
+
+/// [kUnsoldPerishableColumns] with **Decided On** + **Delivery** instead of
+/// **Final Outcome**, for a perishable page that already filters to one outcome.
+///
+/// ⚠️ NOT WIRED UP YET. No perishable table filters to a single outcome
+/// today -- Central Disposal's perishable tab shows them all -- so nothing
+/// passes this. It is kept because it is the matching half of a pair: the
+/// moment a perishable outcome tab exists, using [kUnsoldPerishableColumns]
+/// there would put nine cells against eight columns, and data_table_2 throws.
+const List<DataColumn2> kUnsoldPerishableDecidedColumns = [
+  DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+  DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+  DataColumn2(
+      label: Center(child: Text('No. of Goods')),
+      size: ColumnSize.S,
+      fixedWidth: 100),
+  DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+  DataColumn2(label: Text('Location'), size: ColumnSize.M),
+  DataColumn2(
+      label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 130),
+  DataColumn2(
+      label: Center(child: Text('Decided On')),
+      size: ColumnSize.M,
+      fixedWidth: 235),
+  DataColumn2(
+      label: Center(child: Text('Delivery')),
+      size: ColumnSize.M,
+      fixedWidth: kStatusPillWidth + 24),
   DataColumn2(
       label: Center(child: Text('Details')),
       size: ColumnSize.S,
@@ -198,6 +304,26 @@ List<DataCell> unsoldCells(
   required Widget outcome,
   required VoidCallback? onDetails,
 
+  /// The hand-over cell, for the decided tables. Null on the undecided table,
+  /// where the column does not exist — pass one exactly when the columns are
+  /// [kUnsoldDecidedColumns], or the cells and columns will not line up.
+  Widget? delivery,
+
+  /// The price this package was LAST TENDERED AT by the committee round —
+  /// the ADG's **submitted** value, not the committee's bare recommendation.
+  ///
+  /// ⚠️ Pass `submittedValue`, never `committeeValue` on its own. A recorded
+  /// committee figure with no submission is a reserve price that has not been
+  /// tendered yet, and printing it here would leak it. Every row in this table
+  /// comes from `exhaustedUnsoldProvider`, which already requires the ADG's
+  /// submission, so the submitted value is always the one to show.
+  ///
+  /// It supersedes the original: by the time a package is unsold it has been
+  /// through the Valuation tender, up to three re-valued rounds and then the
+  /// committee round, and the committee's figure is the last price it was
+  /// actually offered at.
+  double? committeeUnitValue,
+
   /// Colour of the Valuation figure. The directorate tables highlight it in
   /// green because the money is what they act on; the yard is only being told
   /// what happened, so it reads as ordinary body text there.
@@ -206,7 +332,24 @@ List<DataCell> unsoldCells(
   final f = info.forfeited;
   final pkg = f.packageDetails;
   final qty = unsoldQty(f);
-  final value = f.valuationCost != null ? f.valuationCost! * qty : null;
+  // Committee figure first, then the original. Both are PER UNIT.
+  final unit = committeeUnitValue ?? f.valuationCost;
+  final value = unit != null ? unit * qty : null;
+  final isCommittee = committeeUnitValue != null;
+  // Sealed while the newest round is still to be held: its reserve price is
+  // live until bidding closes. Derived from `info` rather than passed in, so
+  // no caller can forget it. Ordered by the sale MOMENT — `latestSale` is
+  // newest-by-created_at, and those two can disagree.
+  final currentSale = info.sales.isEmpty
+      ? null
+      : (info.sales.toList()
+            ..sort((a, b) {
+              final am = a.saleMoment, bm = b.saleMoment;
+              if (am == null || bm == null) return 0;
+              return am.compareTo(bm);
+            }))
+          .last;
+  final sealed = currentSale != null && !currentSale.saleEnded;
   // The yard belongs in the row's tooltip, not its own column: the yard page
   // shows one yard only, and the other two portals have a Yard dropdown.
   final srTip = '${f.srNumber} · ${yardName(f.yard)}'
@@ -221,17 +364,41 @@ List<DataCell> unsoldCells(
           style: TextStyle(color: srColor, fontWeight: FontWeight.w700)),
     )),
     DataCell(TooltipText(unsoldItemName(f), overflow: TextOverflow.ellipsis)),
-    DataCell(TooltipText('$qty')),
+    DataCell(Center(child: TooltipText('$qty'))),
     DataCell(TooltipText(f.consigneeName, overflow: TextOverflow.ellipsis)),
-    DataCell(TooltipText(unsoldLocation(pkg, f.itemId),
+    DataCell(TooltipText(unsoldLocation(pkg, f.itemId, f.yard),
         overflow: TextOverflow.ellipsis,
         style: TextStyle(color: context.colors.textSecondary, fontSize: 12))),
-    DataCell(TooltipText(
-        value == null ? '—' : 'LKR ${NumberFormat('#,##0').format(value)}',
-        style: TextStyle(
-            color: valuationColor ?? context.colors.successGreen,
-            fontWeight: FontWeight.w700))),
+    if (sealed)
+      const DataCell(SealedValuation(compact: true))
+    else
+      DataCell(Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          TooltipText(
+              value == null
+                  ? '—'
+                  : 'LKR ${NumberFormat('#,##0').format(value)}',
+              style: TextStyle(
+                  color: valuationColor ?? context.colors.successGreen,
+                  fontWeight: FontWeight.w700)),
+          // Says WHOSE figure this is, so a committee price cannot be mistaken
+          // for the original valuation.
+          if (value != null)
+            Text(
+                isCommittee
+                    ? 'committee · @ ${NumberFormat('#,##0').format(unit)} × $qty'
+                    : '@ ${NumberFormat('#,##0').format(unit)} × $qty',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(fontSize: 10, color: context.colors.textMuted)),
+        ],
+      )),
     DataCell(outcome),
+    if (delivery != null) DataCell(Center(child: delivery)),
     DataCell(Center(
       child: IconButton(
         icon: Icon(Icons.info_outline_rounded,
@@ -240,6 +407,85 @@ List<DataCell> unsoldCells(
       ),
     )),
   ];
+}
+
+/// Hand-over for a package whose final outcome is already decided.
+///
+/// The mirror of the Sold table's delivery cell, and deliberately the same
+/// pill: an officer reading the two tables side by side is reading one
+/// question -- have these goods actually left the yard -- and it should not
+/// look like two.
+///
+/// ⚠️ Marking delivered CLOSES THE WAREHOUSE ENTRY, inside the same statement
+/// (see `disposal_toggle_outcome_delivery`). Goods that have gone must stop
+/// counting against zone capacity and stop accruing storage, so this is not a
+/// display flag -- it is the moment the yard stops holding them.
+class UnsoldDeliveryCell extends ConsumerStatefulWidget {
+  /// Null while the DG has not decided: nothing to hand over yet.
+  final UnsoldProposalModel? proposal;
+
+  const UnsoldDeliveryCell({super.key, required this.proposal});
+
+  @override
+  ConsumerState<UnsoldDeliveryCell> createState() => _UnsoldDeliveryCellState();
+}
+
+class _UnsoldDeliveryCellState extends ConsumerState<UnsoldDeliveryCell> {
+  bool _saving = false;
+
+  Future<void> _markDelivered(UnsoldProposalModel p) async {
+    setState(() => _saving = true);
+    try {
+      await ref.read(disposalServiceProvider).toggleOutcomeDelivery(p.id, true);
+      // ⚠️ Both proposal providers, not just the one this page reads. Central
+      // Disposal's outcome tabs read the SAME row through the by-item map, so
+      // refreshing one would leave the two portals disagreeing about whether
+      // the goods had been handed over -- which is the exact bug the sold
+      // flow's comment warns about.
+      ref.invalidate(unsoldProposalsProvider);
+      ref.invalidate(unsoldProposalsByItemProvider);
+      // The hand-over closed the warehouse entry, so every page that asks
+      // "where is this now" has to be told.
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Marked as Delivered'),
+          backgroundColor: context.colors.successGreen,
+        ));
+      }
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e, action: 'Confirming delivery');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.proposal;
+    if (p == null) {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    // Only a yard hands goods over; Central Disposal and the DG watch.
+    final profile = ref.watch(currentProfileProvider);
+    final canEdit = profile != null && !profile.isDisposal && !profile.isExecutive;
+
+    return Tooltip(
+      message: p.delivered
+          ? (p.deliveredAt != null
+              ? 'Handed over on '
+                  '${DateFormat('yyyy-MM-dd').format(p.deliveredAt!)}'
+              : 'The goods have left the yard')
+          : (canEdit
+              ? 'Confirm the goods have left the yard'
+              : 'Awaiting the yard to confirm hand-over'),
+      child: DeliveryStatusPill(
+        delivered: p.delivered,
+        busy: _saving,
+        onMark: canEdit ? () => _markDelivered(p) : null,
+      ),
+    );
+  }
 }
 
 /// The DG's decision, read-only. Shown on the yard page, on Central Disposal's
@@ -253,10 +499,23 @@ class UnsoldOutcomeChip extends StatelessWidget {
   /// the ADG's view passes [kAwaitingDg] to name the officer instead.
   final String pendingLabel;
 
+  /// The price it fetched, when the goods SOLD at tender instead.
+  ///
+  /// ⚠️ A sale is a different ending from a proposal, and the two must not be
+  /// confused: a perishable that sells never reaches the DG at all. Reading
+  /// the outcome from unsold_proposals alone left CED/GL1/SR/30/2026 sold for
+  /// Rs 5,533,000 and still showing "Awaiting Top Management".
+  final double? soldPrice;
+
   const UnsoldOutcomeChip({
     super.key,
     required this.proposal,
-    this.pendingLabel = 'Awaiting Top Management Directorate',
+    this.soldPrice,
+    // ⚠️ Short enough to READ in the pill. The full
+    // "Awaiting Top Management Directorate" was always clipped, so the word
+    // that mattered -- who is being waited for -- was the part cut off. The
+    // tooltip carries the full wording.
+    this.pendingLabel = 'Awaiting Top Management',
   });
 
   /// Pending label for use inside the Top Management Directorate portal itself.
@@ -264,58 +523,45 @@ class UnsoldOutcomeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ Sold is checked FIRST. Selling is the outcome; there is nothing left
+    // for anyone to decide, so a pending label here would be wrong even if a
+    // proposal row somehow existed alongside it.
+    final sold = soldPrice;
+    if (sold != null) {
+      return statusPill(
+        context,
+        color: context.colors.successGreen,
+        icon: Icons.sell_rounded,
+        label: 'Sold',
+        tooltip: 'Sold at tender for Rs ${sold.toStringAsFixed(2)} — these '
+            'goods never went to the Top Management Directorate',
+      );
+    }
+
     final p = proposal;
+    // ⚠️ The SAME fixed box the Destroyed and Delivered columns use. Sizing
+    // each pill to its own text made a column of them ragged -- "Convert"
+    // came out half the width of "Remove from the Premises", so the eye
+    // could not scan down the column, and the three tables that show these
+    // side by side did not line up.
     if (p == null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: context.colors.warningAmber.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(8),
-          border:
-              Border.all(color: context.colors.warningAmber.withOpacity(0.4)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.hourglass_bottom_rounded,
-              size: 13, color: context.colors.warningAmber),
-          const Gap(5),
-          Flexible(
-            child: Text(pendingLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: context.colors.warningAmber,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700)),
-          ),
-        ]),
+      return statusPill(
+        context,
+        color: context.colors.warningAmber,
+        icon: Icons.hourglass_bottom_rounded,
+        label: pendingLabel,
+        tooltip: pendingLabel,
       );
     }
     final st = unsoldOutcomeStyle(context, p.proposal);
-    return Tooltip(
-      message: p.note?.trim().isNotEmpty == true
+    return statusPill(
+      context,
+      color: st.colour,
+      icon: st.icon,
+      label: p.label,
+      tooltip: p.note?.trim().isNotEmpty == true
           ? p.note!.trim()
           : 'Decided ${DateFormat('yyyy-MM-dd').format(p.decidedAt)}',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: st.colour.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: st.colour.withOpacity(0.45)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(st.icon, size: 13, color: st.colour),
-          const Gap(5),
-          Flexible(
-            child: Text(p.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: st.colour,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800)),
-          ),
-        ]),
-      ),
     );
   }
 }

@@ -11,13 +11,18 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
-import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/disposal_page_header.dart';
 import '../../widgets/appeal_state_chip.dart';
 import 'disposal_request_dialog.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/table_pager.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/date_filter_button.dart';
+import '../../widgets/send_disposal_request_button.dart';
+import '../../widgets/qty_cell.dart';
 
 class _StatChip extends StatelessWidget {
   final String label;
@@ -63,47 +68,15 @@ class ForfeitedPackagesScreen extends ConsumerStatefulWidget {
       _ForfeitedPackagesScreenState();
 }
 
-/// One forfeiture line — a single item (or disposition event) within a
-/// forfeited package. The same SR can yield several rows.
-class _ForfeitRow {
-  final ForfeitedPackageModel forfeited;
-  final String itemName;
-  final String? hsCode;
-  final int qty;
-  final DateTime forfeitedDate;
-  final String officer;
-  // The specific item + its forfeit warehouse entry this row represents, so
-  // the details dialog can highlight exactly this item (like the Abandoned page).
-  final PackageItem? item;
-  final WarehouseEntryModel? entry;
-
-  const _ForfeitRow({
-    required this.forfeited,
-    required this.itemName,
-    this.hsCode,
-    required this.qty,
-    required this.forfeitedDate,
-    required this.officer,
-    this.item,
-    this.entry,
-  });
-
-  /// The Post Status Activity recorded for these goods — "Supposed to be Sold
-  /// / Auction", "Supposed to be Destroyed", and so on.
-  ///
-  /// It is stored in `warehouse_entries.hold_reason`, with the item's own
-  /// `reasons` as a fallback for rows that have no entry. Must be spelled
-  /// exactly as [kDisposalActivities] does, or the filter cannot match it.
-  String get reason {
-    final fromEntry = (entry?.holdReason ?? '').trim();
-    if (fromEntry.isNotEmpty) return fromEntry;
-    final fromItem = (item?.reasons ?? '').trim();
-    if (fromItem.isNotEmpty) return fromItem;
-    // Fall back to the forfeited row's own reason so the column is never blank.
-    final fromFp = forfeited.reason.trim();
-    return fromFp.isNotEmpty ? fromFp : '—';
-  }
-}
+// ⚠️ `_ForfeitRow` lived here, holding a forfeited record, an item and
+// a warehouse entry per line -- so a table of 48 rows kept all 42 records in
+// memory. `ForfeitRowData` replaces it: flat, one row of what the table
+// shows, with the records fetched for the page that needs them.
+//
+// Its `reason` getter is now the view's `reason` column, with the same
+// fallback chain: the entry's hold reason, then the item's, then the
+// forfeited record's -- spelled exactly as kDisposalActivities does, or the
+// filter cannot match it.
 
 class _ForfeitedPackagesScreenState
     extends ConsumerState<ForfeitedPackagesScreen> {
@@ -113,6 +86,10 @@ class _ForfeitedPackagesScreenState
 
   /// Post Status Activity filter — 'all', or one of [kDisposalActivities].
   String _activityFilter = 'all';
+
+  /// ⚠️ The page. This table had no pager at all -- every forfeited row
+  /// in the yard rendered at once, and the count grows with the yard.
+  int _page = 0;
 
   /// Submits a single-package disposal request (Sale / Destruction) to the
   /// Central Disposal Directorate — used by the details popup's Final
@@ -148,177 +125,46 @@ class _ForfeitedPackagesScreenState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.dangerRed,
-          content: Text('Error: $e'),
-        ));
+        showErrorSnack(context, e);
       }
     }
   }
 
-  bool _isForfeitStatus(String? status) {
-    if (status == null) return false;
-    final normalized = status.trim().toLowerCase();
-    return normalized == 'forfiet' ||
-        normalized == 'forfeit' ||
-        normalized == 'forfeited';
-  }
-
-  /// A warehouse entry tagged as a FORFEIT disposition event in returnNotes.
-  bool _isForfeitEntry(WarehouseEntryModel e) {
-    if (!e.isReturned) return false;
-    final notes = (e.returnNotes ?? '').trim().toUpperCase();
-    return notes.startsWith('[FORFEIT') || notes.startsWith('[CONFISCATED');
-  }
-
-  /// True if the item has moved on to a final disposition — it should no
-  /// longer appear in the Forfeit table.
-  bool _itemHasFinalDisposition(PackageModel p, String itemId) {
-    return p.warehouseEntries.any((e) =>
-        e.packageItemId == itemId &&
-        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
-  }
+  // ⚠️ Three helpers went with the row builder: _isForfeitStatus,
+  // _isForfeitEntry (a `[FORFEIT…` / `[CONFISCATED…` warehouse note) and
+  // _itemHasFinalDisposition (a `[FINAL:…` one). All three are clauses in
+  // postgres/49 now.
 
   /// Builds one row per forfeited item / per forfeit disposition event.
   /// A single SR can appear on multiple lines.
-  List<_ForfeitRow> _buildForfeitRows(List<ForfeitedPackageModel> packages) {
-    final rows = <_ForfeitRow>[];
-    for (final fp in packages) {
-      final pkg = fp.packageDetails;
-      final items = pkg?.items ?? [];
-      bool addedAny = false;
-      // True once at least one item has been resolved to a final disposition
-      // (sold / destroyed / re-exported / …). Such a package has left the
-      // forfeit lifecycle, so we must NOT fall back to a summary row for it.
-      bool anyItemFinalized = false;
-
-      for (final item in items) {
-        // Does this forfeit FP cover this item? A per-item FP names it directly.
-        // A package-level FP (item_id == null) is legacy and must NOT blanket
-        // every item — items are disposed individually, so one can be forfeited
-        // while a sibling stays on Detain. A package-level FP therefore only
-        // covers items with genuine forfeit evidence (isItemForfeited).
-        final fpCoversThisItem = fp.itemId == item.id ||
-            (fp.itemId == null && (pkg?.isItemForfeited(item.id) ?? false));
-        // The item's live status is still "held" (detain/held) — i.e. it has NOT
-        // genuinely reached a final disposition. 'other' is terminal too (a
-        // final "Other" disposition sets status='other'), so a finalised-Other
-        // item leaves the Forfeited table like Sold/Destroyed/etc.
-        final st = (item.status ?? '').trim().toLowerCase();
-        final itemStatusLive = !({
-              'sold',
-              'destroyed',
-              'released',
-              'returned',
-              're-export',
-              're-exported',
-              'cleared',
-              'other',
-            }.contains(st) ||
-            st.startsWith('other:'));
-        // A held item of a forfeit FP still inside the appeal lifecycle (on hold,
-        // window open, or a decision in but no request sent) must stay on the
-        // table — even if a stale [FINAL:…] entry lingers from earlier testing.
-        final stillInAppealLifecycle = fpCoversThisItem &&
-            itemStatusLive &&
-            (fp.appealHold ||
-                !fp.isAppealExpired ||
-                fp.hasAppealDecisionForItem(item.id));
-
-        // Skip items that have moved to a final disposition — unless a held item
-        // of this forfeit FP is still inside the appeal lifecycle (above).
-        if (pkg != null &&
-            _itemHasFinalDisposition(pkg, item.id) &&
-            !stillInAppealLifecycle) {
-          anyItemFinalized = true;
-          continue;
-        }
-
-        final itemEntries = pkg!.warehouseEntries
-            .where((e) => e.packageItemId == item.id)
-            .toList();
-
-        // 1. Forfeit disposition events (detain → forfeit, partial/full)
-        final forfeitEntries = itemEntries.where(_isForfeitEntry).toList();
-        for (final entry in forfeitEntries) {
-          rows.add(_ForfeitRow(
-            forfeited: fp,
-            itemName: item.itemName,
-            hsCode: item.hsCode,
-            qty: entry.itemCount,
-            // Forfeited date is anchored to the SR Entry Date (fp.forfeitedAt is
-            // set to the package entry date on forfeiture), not the warehouse
-            // return date, so the 30-day appeal window counts from entry.
-            forfeitedDate: fp.forfeitedAt,
-            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
-            item: item,
-            entry: entry,
-          ));
-          addedAny = true;
-        }
-
-        // 2. Form-level forfeit, OR a forfeit FP row that covers THIS item
-        //    (per-item or package-level) — with no forfeit disposition event.
-        //    The second case covers a held / pending item whose item.status may
-        //    still read 'detain' yet belongs to a genuine forfeit FP, so it must
-        //    stay on the Forfeited table until the yard sends a disposal request.
-        //    Only LIVE (not finalised) items qualify, so genuinely sold/destroyed
-        //    items aren't resurrected by a package-level FP.
-        if ((_isForfeitStatus(item.status) ||
-                (fpCoversThisItem && itemStatusLive)) &&
-            forfeitEntries.isEmpty) {
-          rows.add(_ForfeitRow(
-            forfeited: fp,
-            itemName: item.itemName,
-            hsCode: item.hsCode,
-            qty: item.quantity,
-            forfeitedDate: fp.forfeitedAt,
-            officer: '—',
-            item: item,
-            // No forfeit disposition event — fall back to any warehouse entry
-            // for this item so the dialog can still show its details.
-            entry: itemEntries.firstOrNull,
-          ));
-          addedAny = true;
-        }
-      }
-
-      // The Appeal Directorate decided one or more items should be Sold /
-      // Destroyed but the yard admin hasn't sent the disposal request yet — it
-      // is still pending an admin action. Keep it on the table (even if some
-      // items carry an unrelated [FINAL:…] tag) so the admin can see and act.
-      // Per-item aware: any item with a sale/destruction decision counts; the
-      // package-level fallback covers legacy rows.
-      final pendingAppealAction =
-          items.any((i) => fp.appealRequestDispositionForItem(i.id) != null) ||
-              fp.appealRequestDisposition != null;
-
-      // 3. Legacy / no item detail — show a single summary row. Skipped when an
-      //    item has already been finalized (sold / destroyed / …) AND there's no
-      //    pending appeal action: such a package now lives on its outcome page,
-      //    not the Forfeited list.
-      if (!addedAny && (!anyItemFinalized || pendingAppealAction)) {
-        rows.add(_ForfeitRow(
-          forfeited: fp,
-          itemName:
-              items.isNotEmpty ? items.first.itemName : 'Multiple/Unspecified',
-          hsCode: items.isNotEmpty ? items.first.hsCode : null,
-          item: items.isNotEmpty ? items.first : null,
-          entry: pkg?.warehouseEntries.firstOrNull,
-          qty: items.fold<int>(0, (s, i) => s + i.quantity),
-          forfeitedDate: fp.forfeitedAt,
-          officer: '—',
-        ));
-      }
-    }
-    return rows;
-  }
+  // ⚠️ `_buildForfeitRows` lived here: 122 lines deciding which forfeited
+  // records become which table rows. It is `forfeit_rows` (postgres/49)
+  // now, transcribed clause by clause and checked row-for-row against this
+  // code on the live data before it was removed.
+  //
+  // Its doc comment is worth keeping: one row per forfeited ITEM or per
+  // forfeit DISPOSITION EVENT, so a single SR can appear on several lines.
 
   @override
   Widget build(BuildContext context) {
-    final forfeitedAsync = ref.watch(forfeitedPackagesProvider);
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
+
+    // ⚠️ One page from SQL. This screen fetched every forfeited package
+    // with its items and warehouse entries, ran 122 lines of row-building over
+    // it, filtered the result four ways, and rendered all of it -- there was
+    // no pager at all. `forfeit_rows` (postgres/49) carries the lot.
+    final query = ForfeitQuery(
+      page: _page,
+      search: _searchQuery.trim().isEmpty ? null : _searchQuery.trim(),
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+      activity: _activityFilter,
+    );
+    final forfeitedAsync = ref.watch(forfeitPageProvider(query));
+    // ⚠️ Counted over the whole table, not the page.
+    final counts = ref.watch(forfeitCountsProvider).valueOrNull;
 
     return AppShell(
       currentRoute: '/forfeited-packages',
@@ -330,118 +176,40 @@ class _ForfeitedPackagesScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Header ──────────────────────────────────────────
-              forfeitedAsync.when(
-                data: (packages) {
-                  // Count the SAME rows the table renders (one per forfeited
-                  // item / disposition event) so the header stats always match
-                  // the list below — not the raw package count, which includes
-                  // packages that produce no forfeit rows (e.g. fully sold).
-                  final headerRows = _buildForfeitRows(packages);
-                  final totalCount = headerRows.length;
-                  // The Send-Disposal button enables once ANY package is
-                  // actionable: window passed OR an appeal decision is in.
-                  final actionableCount =
-                      headerRows.where((r) => r.forfeited.isActionable).length;
-
-                  return SizedBox(
-                    width: double.infinity,
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      runSpacing: 16,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Forfeited Goods',
-                                style:
-                                    Theme.of(context).textTheme.headlineLarge),
-                            const Gap(4),
-                            Text(
-                              'Manage forfeited packages and their 30-day appeal periods',
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 14),
-                            ),
-                          ],
-                        )
-                            .animate()
-                            .slideY(begin: 0.1, duration: 400.ms)
-                            .fadeIn(),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _StatChip(
-                                    label: 'Total',
-                                    value: totalCount.toString(),
-                                    color: context.colors.accentLightBlue)
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 100.ms)
-                                .fadeIn(),
-                            const Gap(8),
-                            // "In Appeal" counts what is BLOCKED, so it must
-                            // exclude rows an appeal decision already freed —
-                            // otherwise the two chips overlap.
-                            _StatChip(
-                                    label: 'In Appeal',
-                                    value: (totalCount - actionableCount)
-                                        .toString(),
-                                    color: context.colors.warningAmber)
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
-                                .fadeIn(),
-                            const Gap(8),
-                            _StatChip(
-                                    label: 'Actionable',
-                                    value: actionableCount.toString(),
-                                    color: context.colors.successGreen)
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 300.ms)
-                                .fadeIn(),
-                            const Gap(16),
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.local_shipping_rounded,
-                                  size: 16),
-                              label: const Text('Send Disposal Request'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: actionableCount > 0
-                                    ? context.colors.primaryGold
-                                    : context.colors.textMuted.withOpacity(0.2),
-                                foregroundColor: actionableCount > 0
-                                    ? Colors.white
-                                    : context.colors.textMuted,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 20, vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                                elevation: actionableCount > 0 ? 2 : 0,
-                              ),
-                              onPressed: actionableCount > 0
-                                  ? () => showDialog(
-                                        context: context,
-                                        builder: (ctx) => DisposalRequestDialog(
-                                          onSubmitted: () => ref.invalidate(
-                                              forfeitedPackagesProvider),
-                                        ),
-                                      )
-                                  : null,
-                            )
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 400.ms)
-                                .fadeIn(),
-                          ],
-                        ),
-                      ],
-                    ),
+              Builder(builder: (context) {
+                final totalCount = counts?.total ?? 0;
+                final actionableCount = counts?.actionable ?? 0;
+                  return DisposalPageHeader(
+                    title: 'Forfeited Goods',
+                    subtitle:
+                        'Manage forfeited packages and their 30-day appeal periods',
+                    trailing: [
+                      _StatChip(
+                          label: 'Total',
+                          value: totalCount.toString(),
+                          color: context.colors.accentLightBlue),
+                      // "In Appeal" counts what is BLOCKED, so it must exclude
+                      // rows an appeal decision already freed — otherwise the
+                      // two chips overlap.
+                      _StatChip(
+                          label: 'In Appeal',
+                          value: (totalCount - actionableCount).toString(),
+                          color: context.colors.warningAmber),
+                      _StatChip(
+                          label: 'Actionable',
+                          value: actionableCount.toString(),
+                          color: context.colors.successGreen),
+                      SendDisposalRequestButton(
+                        actionable: actionableCount,
+                        onSubmitted: () {
+                          ref.invalidate(forfeitedPackagesProvider);
+                          ref.invalidate(
+                              requestableForfeitedPackagesProvider);
+                        },
+                      ),
+                    ],
                   );
-                },
-                loading: () => const SizedBox(),
-                error: (_, __) => const SizedBox(),
-              ),
+              }),
               const Gap(24),
 
               // ── Search Bar ──────────────────────────────────────
@@ -466,7 +234,10 @@ class _ForfeitedPackagesScreenState
                         border: InputBorder.none,
                       ),
                       onChanged: (value) =>
-                          setState(() => _searchQuery = value.toLowerCase()),
+                          setState(() {
+                            _searchQuery = value.toLowerCase();
+                            _page = 0;
+                          }),
                     ),
                     const Gap(8),
                     Wrap(
@@ -474,58 +245,20 @@ class _ForfeitedPackagesScreenState
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<dynamic>(
-                              context: context,
-                              builder: (context) =>
-                                  custom.DateRangePickerDialog(
-                                      initialRange: _dateRange),
-                            );
-                            if (picked is DateTimeRange) {
-                              setState(() => _dateRange = picked);
-                            } else if (picked == false) {
-                              setState(() => _dateRange = null);
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded,
-                              size: 16,
-                              color: _dateRange != null
-                                  ? context.colors.primaryGold
-                                  : context.colors.textSecondary),
-                          label: Text(
-                            _dateRange != null
-                                ? '${DateFormat('MMM d').format(_dateRange!.start)} - ${DateFormat('MMM d').format(_dateRange!.end)}'
-                                : 'Date Range',
-                            style: TextStyle(
-                                color: _dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: _dateRange != null
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                                color: _dateRange != null
-                                    ? context.colors.primaryGold
-                                    : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
+                        DateFilterButton(
+                          dateRange: _dateRange,
+                          year: _yearFilter,
+                          years: srYears(
+                              ref.watch(forfeitRowYearsProvider).valueOrNull ??
+                                  const <String>[]),
+                          onChanged: (range, year) => setState(() {
+                            _dateRange = range;
+                            _yearFilter = year;
+                            _page = 0;
+                          }),
                         ),
-                        if (_dateRange != null)
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded,
-                                size: 16, color: context.colors.dangerRed),
-                            onPressed: () => setState(() => _dateRange = null),
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
                         const SizedBox(width: 8),
+                        
                         StyledDropdownButton<String>(
                           value:
                               _activityFilter == 'all' ? null : _activityFilter,
@@ -539,16 +272,9 @@ class _ForfeitedPackagesScreenState
                               .map((a) => StyledDropdownOption(a, a))
                               .toList(),
                           onChanged: (v) =>
-                              setState(() => _activityFilter = v ?? 'all'),
+                              setState(() { _activityFilter = v ?? 'all'; _page = 0; }),
                         ),
-                        const SizedBox(width: 8),
-                        YearFilterButton(
-                          value: _yearFilter,
-                          years: srYears((forfeitedAsync.valueOrNull ??
-                                  const <ForfeitedPackageModel>[])
-                              .map((p) => p.srNumber)),
-                          onChanged: (v) => setState(() => _yearFilter = v),
-                        ),
+
                       ],
                     ),
                   ],
@@ -570,58 +296,17 @@ class _ForfeitedPackagesScreenState
                     error: error.toString(),
                     onRetry: () => ref.refresh(forfeitedPackagesProvider),
                   ),
-                  data: (packages) {
-                    final filtered = packages.where((pkg) {
-                      final srLower = pkg.srNumber.toLowerCase();
-                      // Token match so a partial SR like "GL1/13" still finds
-                      // "GL1/SR/13/2026" (every "/"- or space-separated piece of
-                      // the query must appear somewhere in the SR number).
-                      final srTokens = _searchQuery
-                          .split(RegExp(r'[\s/]+'))
-                          .where((t) => t.isNotEmpty);
-                      final srMatch = srLower.contains(_searchQuery) ||
-                          srTokens.every((t) => srLower.contains(t));
-                      final consigneeMatch = pkg.consigneeName
-                          .toLowerCase()
-                          .contains(_searchQuery);
-                      if (!srMatch && !consigneeMatch) return false;
-                      if (_dateRange != null) {
-                        final date = pkg.forfeitedAt;
-                        final startOfDay = DateTime(_dateRange!.start.year,
-                            _dateRange!.start.month, _dateRange!.start.day);
-                        final endOfDay = DateTime(
-                            _dateRange!.end.year,
-                            _dateRange!.end.month,
-                            _dateRange!.end.day,
-                            23,
-                            59,
-                            59);
-                        if (date.isBefore(startOfDay) ||
-                            date.isAfter(endOfDay)) {
-                          return false;
-                        }
-                      }
-                      if (!srYearMatches(pkg.srNumber, _yearFilter))
-                        return false;
-                      return true;
-                    }).toList();
-
-                    // The Post Status Activity is a per-ROW value (it comes
-                    // from the item's warehouse entry), so it can only be
-                    // applied once the rows exist.
-                    final rows = _buildForfeitRows(filtered)
-                        .where((r) =>
-                            _activityFilter == 'all' ||
-                            r.reason == _activityFilter)
-                        .toList();
-                    // Most-recently forfeited first: use the actual forfeit
-                    // moment (the warehouse entry's returned date) when we have
-                    // it, else the anchored forfeited date.
-                    rows.sort((a, b) {
-                      final da = a.entry?.returnedAt ?? a.forfeitedDate;
-                      final db = b.entry?.returnedAt ?? b.forfeitedDate;
-                      return db.compareTo(da);
-                    });
+                  data: (data) {
+                    // ⚠️ Nothing is built, filtered or sorted here any more.
+                    //
+                    // `_buildForfeitRows` walked every forfeited package with
+                    // its items and warehouse entries -- 122 lines of rules --
+                    // and the search, dates, year and activity chip then
+                    // filtered the result. All of it is `forfeit_rows`
+                    // (postgres/49) now, checked row-for-row against that code
+                    // on the live data, and the table takes a page.
+                    final rows = data.rows;
+                    final packagesById = data.packages;
 
                     return Container(
                       decoration: BoxDecoration(
@@ -646,38 +331,52 @@ class _ForfeitedPackagesScreenState
                             DataColumn2(
                                 label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Goods Name'), size: ColumnSize.L),
+                                label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('HS Code'),
                                 size: ColumnSize.S,
                                 fixedWidth: 110),
                             DataColumn2(
-                                label: Text('Qty'),
+                                label: Center(child: Text('No. of Goods')),
                                 size: ColumnSize.S,
-                                fixedWidth: 70),
+                                fixedWidth: 100),
                             DataColumn2(
                                 label: Text('Post Status Activity'),
                                 size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Consignee'), size: ColumnSize.M),
-                            DataColumn2(
                                 label: Text('Forfeited Date'),
-                                size: ColumnSize.M),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
                             DataColumn2(
-                                label: Text('Appeal Deadline'),
-                                size: ColumnSize.M),
+                                label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Center(child: Text('Appeal')),
                                 size: ColumnSize.S,
-                                fixedWidth: 130),
+                                fixedWidth: 140),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
-                                fixedWidth: 70),
+                                fixedWidth: 55),
                           ],
                           rows: rows.map((row) {
-                            final pkg = row.forfeited;
-                            final isExpired = pkg.isAppealExpired;
+                            // ⚠️ The record, the item and the entry, resolved
+                            // from THIS page's records rather than held on the
+                            // row. A row that cannot find its record is a row
+                            // the view built from data the fetch did not
+                            // return -- skipped rather than crashed, since a
+                            // half-drawn table is worse than a shorter one.
+                            final pkg = packagesById[row.forfeitedPackageId];
+                            if (pkg == null) return const DataRow(cells: []);
+                            final rowItem = row.itemId == null
+                                ? null
+                                : pkg.packageDetails?.items
+                                    .where((i) => i.id == row.itemId)
+                                    .firstOrNull;
+                            final rowEntry = row.entryId == null
+                                ? null
+                                : pkg.packageDetails?.warehouseEntries
+                                    .where((e) => e.id == row.entryId)
+                                    .firstOrNull;
                             // Appeal holds are PER ITEM: the directorate can hold
                             // one item of a package while its siblings stay in the
                             // normal appeal window. heldItemIds names the specific
@@ -685,27 +384,34 @@ class _ForfeitedPackagesScreenState
                             // appealHold flag for legacy rows that have no per-item
                             // list. So this row shows "APPEAL HOLD" only when THIS
                             // item is the one held — not every row of the package.
-                            final rowItemId = row.item?.id;
                             final rowOnAppealHold = pkg.heldItemIds.isNotEmpty
-                                ? (rowItemId != null &&
-                                    pkg.heldItemIds.contains(rowItemId))
+                                ? (row.itemId != null &&
+                                    pkg.heldItemIds.contains(row.itemId))
                                 : pkg.appealHold;
                             // Appeal decisions are PER ITEM too — resolve this
                             // row's item against the per-item decision map so
                             // deciding one item doesn't mark its siblings.
                             final rowHasDecision =
-                                pkg.hasAppealDecisionForItem(rowItemId);
+                                pkg.hasAppealDecisionForItem(row.itemId);
                             final rowDecisionLabel =
-                                pkg.appealDecisionLabelForItem(rowItemId);
+                                pkg.appealDecisionLabelForItem(row.itemId);
 
                             return DataRow(
-                              color: WidgetStateProperty.resolveWith<Color?>(
-                                  (states) {
-                                if (isExpired)
-                                  return context.colors.dangerRed
-                                      .withOpacity(0.04);
-                                return null;
-                              }),
+                              // ⚠️ An EDGE, not a wash.
+                              //
+                              // This said "the appeal window has closed" in
+                              // dangerRed at 4%. Perishable rows on the
+                              // disposal tables say "different kind of
+                              // goods" in warningAmber at 6% — and a red
+                              // and an orange both diluted to a few percent
+                              // over white are the same pale rose to the
+                              // eye. Two unrelated meanings became one
+                              // colour a reader had to guess at, so goods
+                              // whose appeal had run out looked perishable.
+                              //
+                              // The bar keeps the signal on the row without
+                              // competing: nothing else on these pages
+                              // marks a row from its left edge.
                               cells: [
                                 DataCell(TooltipText(pkg.srNumber,
                                     style: TextStyle(
@@ -722,28 +428,14 @@ class _ForfeitedPackagesScreenState
                                         : '—',
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 12))),
-                                DataCell(TooltipText('${row.qty}')),
-                                DataCell(TooltipText(row.reason,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        color: context.colors.textSecondary,
-                                        fontSize: 12,
-                                        fontStyle: FontStyle.italic))),
-                                DataCell(TooltipText(pkg.consigneeName,
-                                    overflow: TextOverflow.ellipsis)),
+                                DataCell(QtyCell(
+                                    item: rowItem, overrideQty: row.qty)),
+                                DataCell(_PostStatusActivityChip(
+                                    label: row.reason)),
                                 DataCell(TooltipText(DateFormat('yyyy-MM-dd')
                                     .format(row.forfeitedDate))),
-                                DataCell(TooltipText(
-                                  DateFormat('yyyy-MM-dd')
-                                      .format(pkg.appealDeadline),
-                                  style: TextStyle(
-                                      color: isExpired
-                                          ? context.colors.dangerRed
-                                          : context.colors.textPrimary,
-                                      fontWeight: isExpired
-                                          ? FontWeight.bold
-                                          : FontWeight.normal),
-                                )),
+                                DataCell(TooltipText(pkg.consigneeName,
+                                    overflow: TextOverflow.ellipsis)),
                                 DataCell(Center(
                                   child: rowOnAppealHold
                                       // Appeal Directorate has placed a hold on
@@ -858,18 +550,18 @@ class _ForfeitedPackagesScreenState
                                     tooltip: 'View details',
                                     onPressed: pkg.packageDetails == null
                                         ? null
-                                        : () => showDialog(
+                                        : () => showAppDialog(
                                               context: context,
                                               builder: (_) =>
                                                   PackageDetailsDialog(
                                                 package: pkg.packageDetails!,
                                                 storageRate: storageRate,
-                                                highlightEntry: row.entry,
+                                                highlightEntry: rowEntry,
                                                 // Pin the exact item this row is
                                                 // about so the popup shows only
                                                 // it (not every sibling) even
                                                 // when the item has no entry.
-                                                highlightItemId: rowItemId,
+                                                highlightItemId: row.itemId,
                                                 useLegacySummary: true,
                                                 appealDecisionLabel:
                                                     rowHasDecision
@@ -879,7 +571,7 @@ class _ForfeitedPackagesScreenState
                                                 // dialog to the decided action.
                                                 appealDecisionCode: rowHasDecision
                                                     ? pkg.appealDecisionForItem(
-                                                        rowItemId)
+                                                        row.itemId)
                                                     : null,
                                                 // Final disposition once the
                                                 // window has passed OR a per-item
@@ -893,8 +585,8 @@ class _ForfeitedPackagesScreenState
                                                     (disposition) =>
                                                         _requestSingleDisposal(
                                                             pkg, disposition,
-                                                            item: row.item,
-                                                            entry: row.entry),
+                                                            item: rowItem,
+                                                            entry: rowEntry),
                                               ),
                                             ),
                                   ),
@@ -911,7 +603,53 @@ class _ForfeitedPackagesScreenState
                   },
                 ),
               ),
+              // ⚠️ The pager this table never had. Against the SERVER's
+              // count: `rows.length` is the page size.
+              forfeitedAsync.maybeWhen(
+                data: (data) => TablePager(
+                  total: data.total,
+                  page: _page,
+                  pageSize: kDispositionPageSize,
+                  onPageChanged: (v) => setState(() => _page = v),
+                ),
+                orElse: () => const SizedBox.shrink(),
+              ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _PostStatusActivityChip extends StatelessWidget {
+  final String label;
+  const _PostStatusActivityChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.trim().isEmpty || label.trim() == '—') {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final color = context.colors.warningAmber;
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),

@@ -1,5 +1,65 @@
 import 'dart:convert';
-import '../core/holidays.dart';
+
+/// Reads a timestamp column that may arrive as either a `DateTime` or a String.
+///
+/// ⚠️ This is the seam between the two database layers. Supabase returned JSON,
+/// so every timestamp arrived as an ISO **String** and the models cast it with
+/// `json['x'] as String`. The local PostgreSQL driver decodes `timestamptz`
+/// into a real **DateTime** — so that cast throws
+/// `type 'DateTime' is not a subtype of type 'String'`, and it throws at
+/// SIGN-IN, before any screen renders.
+///
+/// Returns local time, matching the `.toLocal()` the models always applied.
+DateTime? parseDbDate(Object? value) {
+  if (value == null) return null;
+  if (value is DateTime) return value.toLocal();
+  if (value is String) {
+    if (value.trim().isEmpty) return null;
+    return DateTime.tryParse(value)?.toLocal();
+  }
+  return null;
+}
+
+/// [parseDbDate] for a NOT NULL column, falling back to the epoch rather than
+/// throwing — a row that somehow lacks a created_at should still render.
+DateTime parseDbDateRequired(Object? value) =>
+    parseDbDate(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+/// Reads a numeric column that may arrive as a num OR a String.
+///
+/// ⚠️ The same seam as [parseDbDate]. Supabase serialised `numeric` to a JSON
+/// number, so the models cast `json['x'] as num?`. The PostgreSQL driver
+/// returns `numeric` as a **String** — deliberately, since a `numeric(12,2)`
+/// cannot always survive a round trip through a double — so that cast throws
+/// `type 'String' is not a subtype of type 'num?'`.
+///
+/// Money here is rupees to two decimals, well inside a double's exact range,
+/// so converting is safe. Returns null when the value is absent or unparseable
+/// rather than throwing, so one odd row cannot blank a whole screen.
+double? parseDbNum(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) {
+    final t = value.trim();
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+  return null;
+}
+
+/// [parseDbNum] for an integer column (`int4`, `int8`, and counts stored as
+/// `numeric`). Truncates toward zero, matching the old `as int?` behaviour.
+int? parseDbInt(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) {
+    final t = value.trim();
+    if (t.isEmpty) return null;
+    return int.tryParse(t) ?? double.tryParse(t)?.toInt();
+  }
+  return null;
+}
 
 class PackageModel {
   final String id;
@@ -99,12 +159,12 @@ class PackageModel {
       oldSrNumber: json['old_sr_number'] as String?,
       caseNumber: json['case_number'] as String?,
       originCountry: json['origin_country'] as String? ?? '',
-      declaredValue: (json['declared_value'] as num?)?.toDouble() ?? 0,
-      weightKg: (json['weight_kg'] as num?)?.toDouble() ?? 0,
-      totalItemCount: json['total_item_count'] as int? ?? 1,
+      declaredValue: parseDbNum(json['declared_value']) ?? 0,
+      weightKg: parseDbNum(json['weight_kg']) ?? 0,
+      totalItemCount: parseDbInt(json['total_item_count']) ?? 1,
       description: json['description'] as String?,
       containerNumber: json['container_number'] as String?,
-      destroyingDeposit: (json['destroying_deposit'] as num?)?.toDouble(),
+      destroyingDeposit: parseDbNum(json['destroying_deposit']),
       consigneeName: json['consignee_name'] as String,
       consigneeNic: json['consignee_nic'] as String?,
       consigneeAddress: json['consignee_address'] as String?,
@@ -112,9 +172,7 @@ class PackageModel {
       declarantName: json['declarant_name'] as String?,
       cusdecNo: json['cusdec_no'] as String?,
       cusdecDate: json['cusdec_date'] as String?,
-      entryDate: json['entry_date'] != null
-          ? DateTime.parse(json['entry_date'] as String)
-          : null,
+      entryDate: parseDbDate(json['entry_date']),
       reason: json['reason'] as String?,
       status: json['status'] as String? ?? 'pending',
       inspectedBy: json['inspected_by'] as String?,
@@ -124,15 +182,11 @@ class PackageModel {
       inspectedByBadge: json['profiles'] != null
           ? json['profiles']['badge_number'] as String?
           : null,
-      inspectedAt: json['inspected_at'] != null
-          ? DateTime.parse(json['inspected_at'] as String)
-          : null,
-      clearedAt: json['cleared_at'] != null
-          ? DateTime.parse(json['cleared_at'] as String)
-          : null,
+      inspectedAt: parseDbDate(json['inspected_at']),
+      clearedAt: parseDbDate(json['cleared_at']),
       notes: json['notes'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
+      updatedAt: parseDbDateRequired(json['updated_at']),
       items: (json['package_items'] as List<dynamic>?)
               ?.map((e) => PackageItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -174,6 +228,7 @@ class PackageModel {
   }
 
   PackageModel copyWith({
+    String? id,
     String? srNumber,
     String? oldSrNumber,
     String? caseNumber,
@@ -204,7 +259,7 @@ class PackageModel {
     List<WarehouseEntryModel>? warehouseEntries,
   }) {
     return PackageModel(
-      id: id,
+      id: id ?? this.id,
       srNumber: srNumber ?? this.srNumber,
       oldSrNumber: oldSrNumber ?? this.oldSrNumber,
       caseNumber: caseNumber ?? this.caseNumber,
@@ -290,6 +345,9 @@ class PackageItem {
   final String packageId;
   final String itemName;
   final String? goodsDescription;
+
+  /// [kNatureNormal] or [kNaturePerishable] -- see [kGoodsNatures].
+  final String nature;
   final int quantity;
   final String unitOfMeasure;
   final String? unitOther;
@@ -309,6 +367,7 @@ class PackageItem {
     required this.packageId,
     required this.itemName,
     this.goodsDescription,
+    this.nature = kNatureNormal,
     required this.quantity,
     this.unitOfMeasure = 'Pieces',
     this.unitOther,
@@ -351,12 +410,17 @@ class PackageItem {
       packageId: json['package_id'] as String,
       itemName: json['item_name'] as String,
       goodsDescription: json['goods_description'] as String?,
-      quantity: json['quantity'] as int,
+      // Defaulted rather than required: a row written before the column
+      // existed carries no nature, and it is a normal one.
+      nature: (json['nature'] as String?)?.trim().isNotEmpty == true
+          ? json['nature'] as String
+          : kNatureNormal,
+      quantity: (parseDbInt(json['quantity']) ?? 0),
       unitOfMeasure: json['unit_of_measure'] as String? ?? 'Pieces',
       unitOther: json['unit_other'] as String?,
       innerUnit: json['inner_unit'] as String?,
-      innerQuantity: json['inner_quantity'] as int?,
-      unitValue: (json['unit_value'] as num?)?.toDouble() ?? 0,
+      innerQuantity: parseDbInt(json['inner_quantity']),
+      unitValue: parseDbNum(json['unit_value']) ?? 0,
       hsCode: json['hs_code'] as String?,
       category: json['category'] as String?,
       isProhibited: json['is_prohibited'] as bool? ?? false,
@@ -372,6 +436,7 @@ class PackageItem {
       'package_id': pkgId,
       'item_name': itemName,
       'goods_description': goodsDescription,
+      'nature': nature,
       'quantity': quantity,
       'unit_of_measure': unitOfMeasure,
       'unit_other': unitOther,
@@ -392,6 +457,7 @@ class PackageItem {
     String? packageId,
     String? itemName,
     String? goodsDescription,
+    String? nature,
     int? quantity,
     String? unitOfMeasure,
     String? unitOther,
@@ -410,6 +476,7 @@ class PackageItem {
       packageId: packageId ?? this.packageId,
       itemName: itemName ?? this.itemName,
       goodsDescription: goodsDescription ?? this.goodsDescription,
+      nature: nature ?? this.nature,
       quantity: quantity ?? this.quantity,
       unitOfMeasure: unitOfMeasure ?? this.unitOfMeasure,
       unitOther: unitOther ?? this.unitOther,
@@ -458,6 +525,32 @@ class WarehouseEntryModel {
   final String? itemName;
   final String? hsCode;
 
+  /// Were these goods put here because their proper home was FULL?
+  ///
+  /// ⚠️ Recorded at admission (migration 042), never inferred by comparing
+  /// [warehouseId] against the category's target. Targets are editable, so a
+  /// yard that retargets a category afterwards would make every ordinary row
+  /// look displaced, and retargeting TO the overflow warehouse would hide a
+  /// real one.
+  final bool movedForSpace;
+
+  /// Where the category said these goods belonged, when they were displaced.
+  final String? intendedWarehouseId;
+  final String? intendedWarehouseName;
+  final String? intendedZone;
+
+  /// What was full, in the words the officer was shown.
+  final String? movedReason;
+
+  /// Have goods disposed under an "Other" status actually left the yard?
+  ///
+  /// ⚠️ A separate flag from the re-export and release ones, because the
+  /// three are separate events on three kinds of disposition — writing one
+  /// against another would file the goods under the wrong outcome. False
+  /// until the yard confirms the hand-over; the disposition itself is only
+  /// the ruling.
+  final bool otherDelivered;
+
   const WarehouseEntryModel({
     required this.id,
     required this.packageId,
@@ -479,6 +572,7 @@ class WarehouseEntryModel {
     this.returnedByBadge,
     this.returnNotes,
     this.dailyRate,
+    this.otherDelivered = false,
     this.accumulatedCharge,
     this.srNumber,
     this.caseNumber,
@@ -486,6 +580,11 @@ class WarehouseEntryModel {
     this.packageStatus,
     this.itemName,
     this.hsCode,
+    this.movedForSpace = false,
+    this.intendedWarehouseId,
+    this.intendedWarehouseName,
+    this.intendedZone,
+    this.movedReason,
   });
 
   factory WarehouseEntryModel.fromJson(Map<String, dynamic> json) {
@@ -515,32 +614,60 @@ class WarehouseEntryModel {
       warehouseCode: warehouse?['code'] as String? ?? '',
       zone: json['zone'] as String?,
       holdReason: json['hold_reason'] as String,
-      itemCount: json['item_count'] as int,
+      itemCount: (parseDbInt(json['item_count']) ?? 0),
       admittedBy: json['admitted_by'] as String?,
       admittedByName: (json['admitted_profile']
           as Map<String, dynamic>?)?['full_name'] as String?,
       admittedByBadge: (json['admitted_profile']
           as Map<String, dynamic>?)?['badge_number'] as String?,
-      admittedAt: DateTime.parse(json['admitted_at'] as String),
+      admittedAt: parseDbDateRequired(json['admitted_at']),
       isReturned: json['is_returned'] as bool? ?? false,
-      returnedAt: json['returned_at'] != null
-          ? DateTime.parse(json['returned_at'] as String)
-          : null,
+      returnedAt: parseDbDate(json['returned_at']),
       returnedBy: json['returned_by'] as String?,
       returnedByName: (json['returned_profile']
           as Map<String, dynamic>?)?['full_name'] as String?,
       returnedByBadge: (json['returned_profile']
           as Map<String, dynamic>?)?['badge_number'] as String?,
       returnNotes: json['return_notes'] as String?,
-      dailyRate: (json['daily_rate'] as num?)?.toDouble() ?? 0,
-      accumulatedCharge:
-          (json['accumulated_storage_charge'] as num?)?.toDouble() ?? 0,
+      dailyRate: parseDbNum(json['daily_rate']) ?? 0,
+      otherDelivered: json['other_delivered'] as bool? ?? false,
+      accumulatedCharge: parseDbNum(json['accumulated_storage_charge']) ?? 0,
       srNumber: package?['sr_number'] as String?,
       consigneeName: package?['consignee_name'] as String?,
       packageStatus: package?['status'] as String?,
       itemName: matchedItem?['item_name'] as String?,
       hsCode: matchedItem?['hs_code'] as String?,
+      movedForSpace: json['moved_for_space'] as bool? ?? false,
+      intendedWarehouseId: json['intended_warehouse_id'] as String?,
+      intendedWarehouseName: json['intended_warehouse_name'] as String?,
+      intendedZone: json['intended_zone'] as String?,
+      movedReason: json['moved_reason'] as String?,
     );
+  }
+
+  /// One line naming where these goods were meant to be, for a tooltip.
+  ///
+  /// Null when they were not displaced, so a caller can branch on it directly.
+  ///
+  /// [intendedName] lets a caller supply the warehouse's name from a list it
+  /// has already loaded — see DisplacedBadge, and the note there about why
+  /// this is not a second embed in the query.
+  String? displacementNoteWith(String? intendedName) {
+    if (!movedForSpace) return null;
+    final name = intendedWarehouseName ?? intendedName;
+    final home = [
+      if ((name ?? '').trim().isNotEmpty) name!.trim(),
+      if ((intendedZone ?? '').trim().isNotEmpty) 'Zone ${intendedZone!.trim()}',
+    ].join(' · ');
+    final why = (movedReason ?? '').trim();
+    if (home.isEmpty) {
+      return why.isEmpty
+          ? 'Moved here because the intended location was full'
+          : 'Moved here — $why';
+    }
+    return why.isEmpty
+        ? 'Meant for $home, moved here because it was full'
+        : 'Meant for $home — $why';
   }
 
   bool get isPackageConfiscated => packageStatus == 'confiscated';
@@ -599,33 +726,72 @@ class WarehouseEntryModel {
     final endDateTime = returnedAt ?? DateTime.now();
     final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
 
-    double totalCharge = 0;
-
-    // Loop through each day from entry to exit/today
-    for (int i = 0; i <= end.difference(start).inDays; i++) {
-      final currentDay = start.add(Duration(days: i));
-      final dayAtMidnight =
-          DateTime(currentDay.year, currentDay.month, currentDay.day);
-
-      // Find the active rate for this specific day
-      // Rates are matched based on the latest effective_from that is NOT AFTER current day
-      double activeRate = 50; // default fallback
-
-      // Rates are expected to be sorted by date ascending from the provider
-      historicalRates.forEach((effectiveFrom, rate) {
-        final effectiveAtMidnight = DateTime(
-            effectiveFrom.year, effectiveFrom.month, effectiveFrom.day);
-        if (!dayAtMidnight.isBefore(effectiveAtMidnight)) {
-          activeRate = rate;
-        }
-      });
-
-      // Daily charge = total packages in the SR * that specific day's rate
-      totalCharge += (totalUnits * activeRate);
-    }
-
-    return totalCharge;
+    return totalUnits * chargeableRateDays(start, end, historicalRates);
   }
+}
+
+/// Sum of the daily rate over every day from [start] to [end] inclusive.
+///
+/// ⚠️ Closed-form over RATE PERIODS, not a loop over days. The old version
+/// walked every single day and, for each one, scanned every rate to find the
+/// one in force — so an entry 506 days old cost 506 × (number of rates)
+/// DateTime constructions, and the ledger runs this for every warehouse entry
+/// of every package. Measured: the ledger's four queries finished in 33ms and
+/// the frame that followed took 1,546ms with build at 1ms — the missing 1.5s
+/// was this arithmetic holding the UI thread. Flutter delivers a click only
+/// BETWEEN frames, so the officer's tap on Details or Costs was simply not
+/// received until it ended; pressed again later, both taps were honoured at
+/// once and two popups opened.
+///
+/// A rate is in force from its effective date until the next rate's, so the
+/// answer is Σ over periods of (days in period ∩ [start, end]) × rate. Same
+/// result to the rupee, in a handful of operations however old the entry.
+///
+/// A day before the first rate takes effect uses the same 50/day fallback the
+/// loop used, so existing figures do not move.
+double chargeableRateDays(
+    DateTime start, DateTime end, Map<DateTime, double> rates) {
+  if (end.isBefore(start)) return 0;
+  const fallback = 50.0;
+
+  // Normalise to midnight and sort ascending once.
+  final periods = rates.entries
+      .map((e) => (DateTime(e.key.year, e.key.month, e.key.day), e.value))
+      .toList()
+    ..sort((a, b) => a.$1.compareTo(b.$1));
+
+  int daysBetween(DateTime a, DateTime b) => b.difference(a).inDays + 1;
+  DateTime dayBefore(DateTime d) => d.subtract(const Duration(days: 1));
+  DateTime dayAfter(DateTime d) => d.add(const Duration(days: 1));
+
+  double total = 0;
+  var cursor = start;
+
+  // Days before the first rate takes effect.
+  if (periods.isEmpty || cursor.isBefore(periods.first.$1)) {
+    final until = periods.isEmpty
+        ? end
+        : (dayBefore(periods.first.$1).isBefore(end)
+            ? dayBefore(periods.first.$1)
+            : end);
+    total += daysBetween(cursor, until) * fallback;
+    cursor = dayAfter(until);
+    if (cursor.isAfter(end)) return total;
+  }
+
+  for (var i = 0; i < periods.length; i++) {
+    final from = periods[i].$1;
+    final rate = periods[i].$2;
+    // This period runs until the day before the next one starts.
+    final to = i + 1 < periods.length ? dayBefore(periods[i + 1].$1) : end;
+    final lo = cursor.isAfter(from) ? cursor : from;
+    final hi = to.isBefore(end) ? to : end;
+    if (hi.isBefore(lo)) continue;
+    total += daysBetween(lo, hi) * rate;
+    cursor = dayAfter(hi);
+    if (cursor.isAfter(end)) break;
+  }
+  return total;
 }
 
 /// One zone inside a warehouse, with its own capacity.
@@ -660,7 +826,7 @@ class WarehouseZoneModel {
         name: (json['name'] ?? '').toString(),
         code: json['code'] as String?,
         description: json['description'] as String?,
-        capacity: (json['capacity'] as num?)?.toInt() ?? 500,
+        capacity: parseDbInt(json['capacity']) ?? 500,
       );
 
   Map<String, dynamic> toJson() => {
@@ -702,6 +868,16 @@ class WarehouseModel {
   final String? location;
   final int capacity;
 
+  /// The yard this warehouse physically stands in.
+  ///
+  /// ⚠️ Warehouses used to be global, so every yard was shown every other
+  /// yard's storage — a yard that had never had one added reported four
+  /// warehouses and 72,000 units of capacity that did not exist there. RLS
+  /// now scopes reads to the caller's yard, so in practice this always
+  /// matches the signed-in yard. Null only for a legacy row no yard has ever
+  /// stored goods in, which belongs to no yard until an admin assigns it.
+  final String? yard;
+
   const WarehouseModel({
     required this.id,
     required this.name,
@@ -709,6 +885,7 @@ class WarehouseModel {
     this.description,
     this.location,
     this.capacity = 500,
+    this.yard,
   });
 
   factory WarehouseModel.fromJson(Map<String, dynamic> json) {
@@ -718,7 +895,8 @@ class WarehouseModel {
       code: json['code'] as String,
       description: json['description'] as String?,
       location: json['location'] as String?,
-      capacity: json['capacity'] as int? ?? 500,
+      capacity: parseDbInt(json['capacity']) ?? 500,
+      yard: json['yard'] as String?,
     );
   }
 }
@@ -744,6 +922,14 @@ class ProfileModel {
   final DateTime createdAt;
   final DateTime? passwordUpdatedAt;
 
+  /// Why [isActive] is false: 'dormant' (switched off automatically after the
+  /// unused period) or 'manual' (ICT's decision). Null while active.
+  ///
+  /// ⚠️ The two are not interchangeable. Waking a dormant account is routine;
+  /// re-enabling one ICT turned off deliberately undoes somebody's decision,
+  /// and without this the button looks identical in both cases.
+  final String? deactivatedReason;
+
   const ProfileModel({
     required this.id,
     required this.fullName,
@@ -761,6 +947,7 @@ class ProfileModel {
     this.lastSeenAt,
     required this.createdAt,
     this.passwordUpdatedAt,
+    this.deactivatedReason,
   });
 
   factory ProfileModel.fromJson(Map<String, dynamic> json) {
@@ -778,17 +965,44 @@ class ProfileModel {
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
       isOnline: json['is_online'] as bool? ?? false,
-      lastSeenAt: json['last_seen_at'] != null
-          ? DateTime.parse(json['last_seen_at'] as String).toLocal()
-          : null,
-      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
-      passwordUpdatedAt: json['password_updated_at'] != null
-          ? DateTime.parse(json['password_updated_at'] as String).toLocal()
-          : null,
+      lastSeenAt: parseDbDate(json['last_seen_at']),
+      createdAt: parseDbDateRequired(json['created_at']),
+      passwordUpdatedAt: parseDbDate(json['password_updated_at']),
+      deactivatedReason: json['deactivated_reason'] as String?,
     );
   }
 
   bool get isAdmin => role == 'admin';
+
+  /// The officer's POST, as shown on their profile and in ICT's staff table.
+  ///
+  /// `role` is the permission level and has only two yard values -- 'admin'
+  /// and 'officer'. DC and SDDC are two DIFFERENT posts that happen to share
+  /// the admin permission, so which one an officer holds lives in `job_role`,
+  /// set by ICT at provisioning. Falls back to the role's own name for an
+  /// account created before ICT recorded a post.
+  String get postTitle {
+    final j = jobRole?.trim();
+    if (j != null && j.isNotEmpty) {
+      return kPostTitles[j] ?? j;
+    }
+    return isAdmin ? 'SDDC / DDC' : 'Officer';
+  }
+
+  /// [postTitle] shortened for a chip or badge.
+  ///
+  /// The full title carries the expansion ("DDC (Deputy Director of Customs)"),
+  /// which overflows a table row. Falls back to the same "SDDC / DDC" as
+  /// [postTitle]
+  /// for an account with no post recorded -- the two cannot be told apart
+  /// without one.
+  String get postShortTitle {
+    final j = jobRole?.trim();
+    if (j != null && j.isNotEmpty) {
+      return kPostShortTitles[j] ?? kPostTitles[j] ?? j;
+    }
+    return isAdmin ? 'SDDC / DDC' : 'Officer';
+  }
 
   /// Yard officer (front-line yard staff, not a directorate account).
   bool get isOfficer => role == 'officer';
@@ -800,9 +1014,9 @@ class ProfileModel {
   /// Central Disposal Directorate user (cross-yard sold-package visibility).
   bool get isDisposal => role == 'disposal';
 
-  /// Accounts automatically deactivate 8 months after they were created.
-  /// (Applies to admins and officers alike.)
-  DateTime get expiresAt => DateTime(createdAt.year, createdAt.month + 8,
+  /// Auto-deactivation is disabled — accounts remain active until explicitly
+  /// deactivated by ICT.
+  DateTime get expiresAt => DateTime(createdAt.year + 20, createdAt.month,
       createdAt.day, createdAt.hour, createdAt.minute, createdAt.second);
 
   /// Appeal Directorate (AD/ADD) user — cross-yard forfeited-package review +
@@ -821,32 +1035,18 @@ class ProfileModel {
   /// user provisioning, administration, and system management. Institutional, never auto-expires.
   bool get isIct => role == 'ict';
 
-  /// True once the account is past its 8-month lifetime. Directorate accounts
-  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC, ICT) are institutional and
-  /// never auto-expire (officers transfer in/out of the post).
-  bool get isExpired =>
-      !isDisposal &&
-      !isAppeal &&
-      !isValuation &&
-      !isExecutive &&
-      !isIct &&
-      DateTime.now().isAfter(expiresAt);
+  /// Accounts do not auto-expire; status is managed manually by ICT.
+  bool get isExpired => false;
 
-  /// Whether the account may currently sign in: explicitly active AND not
-  /// past its 8-month auto-deactivation window.
-  bool get isEffectivelyActive => isActive && !isExpired;
+  /// Whether the account may currently sign in.
+  bool get isEffectivelyActive => isActive;
 
-  /// Whole days until the account auto-deactivates (its 8-month lifetime).
-  /// Negative once already expired. `null` for institutional directorate
-  /// accounts (Disposal / Appeal / Valuation) that never auto-expire.
-  int? get daysUntilExpiry {
-    if (isDisposal || isAppeal || isValuation || isExecutive) return null;
-    return expiresAt.difference(DateTime.now()).inDays;
-  }
+  /// Days until account expiry — null as auto-expiration is disabled.
+  int? get daysUntilExpiry => null;
 
   // ── Password expiry (90-day rotation policy) ───────────────────────────
   /// Passwords must be rotated every 90 days. The clock starts from
-  /// [passwordUpdatedAt] (set by the auth.users trigger), falling back to
+  /// [passwordUpdatedAt] (set by the sr_auth.users trigger), falling back to
   /// [createdAt] for accounts that pre-date the column.
   static const int passwordMaxAgeDays = 90;
 
@@ -855,15 +1055,38 @@ class ProfileModel {
 
   DateTime get _passwordAnchor => passwordUpdatedAt ?? createdAt;
 
-  /// Whole days until the current password expires (negative once expired).
+  /// The instant the current password stops being valid.
+  DateTime get passwordExpiresAt =>
+      _passwordAnchor.add(const Duration(days: passwordMaxAgeDays));
+
+  /// Whole days until the current password expires.
+  ///
+  /// ⚠️ Rounded DOWN toward the past (`floor`), not truncated toward zero.
+  /// `Duration.inDays` truncates, so 16 hours before expiry and 16 hours
+  /// AFTER it both came back as `0` — the two states this number exists to
+  /// tell apart. Displayed as "expires in 0 days" either way, while
+  /// [isPasswordExpired] read `0 < 0` and stayed false, so an account a day
+  /// past its 90 days was still offered "Skip for now".
+  ///
+  /// Negative once expired, which is what the callers assume.
   int get daysUntilPasswordExpiry {
-    final expiry =
-        _passwordAnchor.add(const Duration(days: passwordMaxAgeDays));
-    return expiry.difference(DateTime.now()).inDays;
+    final remaining = passwordExpiresAt.difference(DateTime.now());
+    if (remaining.isNegative) {
+      // -0.7 days must read as -1, not 0: it is past, and the caller's
+      // `< 0` test is the whole rotation rule.
+      return -((-remaining.inMicroseconds + Duration.microsecondsPerDay - 1) ~/
+          Duration.microsecondsPerDay);
+    }
+    return remaining.inDays;
   }
 
   /// True once the password is past its 90-day life — a change is mandatory.
-  bool get isPasswordExpired => daysUntilPasswordExpiry < 0;
+  ///
+  /// ⚠️ Compares the INSTANT, not the day count. The day count is for
+  /// display; this is the gate that decides whether the officer may skip,
+  /// and it must flip the moment the 90 days are up rather than whenever
+  /// a truncated number happens to cross zero.
+  bool get isPasswordExpired => !DateTime.now().isBefore(passwordExpiresAt);
 
   /// True in the final [passwordWarnDays] before expiry (not yet expired).
   bool get isPasswordExpiringSoon =>
@@ -887,8 +1110,189 @@ class ProfileModel {
       lastSeenAt: seenAt,
       createdAt: createdAt,
       passwordUpdatedAt: passwordUpdatedAt,
+      // ⚠️ Copied like every other field. Omitting it would silently reset
+      // the reason to null on each presence update, and a dormant account
+      // would start reading as a manual deactivation.
+      deactivatedReason: deactivatedReason,
     );
   }
+}
+
+/// One page of the audit log, and how many rows the filters matched in all.
+///
+/// ⚠️ [total] is the count of the WHOLE filtered set, not [rows].length. The
+/// pager needs both: the rows to draw, and the total to say how many pages
+/// there are and where this one sits in them.
+class AuditLogPage {
+  final List<AuditLogModel> rows;
+  final int total;
+  const AuditLogPage({required this.rows, required this.total});
+}
+
+/// One row of a disposition page, as the `disposition_rows` view returns it.
+///
+/// ⚠️ A row here is an ITEM or a warehouse ENTRY, never a package: one SR can
+/// produce several rows, from three different sources, and the page shows them
+/// interleaved by date. The screens used to build this shape in Dart from
+/// every package in the yard; the view builds it in SQL so a page can be asked
+/// for by number.
+class DispositionRow {
+  /// Unique across all three sources ('E:<id>' / 'I:<id>' / 'P:<id>'), so a
+  /// list of these can be keyed without colliding.
+  final String rowKey;
+
+  /// Whether these goods are PERISHABLE.
+  ///
+  /// ⚠️ Resolved in the view (`item_is_perishable`), not here. A perishable
+  /// runs ONE special tender sale — no re-valuation, no second round, no
+  /// committee — so a reader scanning a mixed table cannot otherwise tell
+  /// why one row has a single tender behind it and its neighbour has four.
+  final bool isPerishable;
+
+  /// 'entry' | 'item' | 'proposal' — which route recorded this disposition.
+  /// The Re-exported page shows it as a Decided By pill (Yard vs Top
+  /// Management), since the two carry quite different histories.
+  final String source;
+
+  final String packageId;
+  final String srNumber;
+  final String consigneeName;
+  final String? yard;
+  final String? itemId;
+  final String? entryId;
+  final String? proposalId;
+  final String finalTag;
+  final String itemName;
+  final String? hsCode;
+  final int quantity;
+  final String? note;
+  final String? officer;
+
+  /// Why the goods were held — the Reason column on Released Goods.
+  final String? holdReason;
+
+  /// Parsed out of the note by the view, so it can be searched in SQL.
+  final String? receiptNo;
+
+  /// Destruction has a MIDDLE state, and only Destroyed Goods has it.
+  ///
+  /// ⚠️ Null on every other page. False there would read as "awaiting
+  /// destruction" on goods that were sold or released. True means the yard
+  /// confirmed it; false means it is marked for destruction and waiting.
+  final bool? isDestroyed;
+
+  /// Has this been handed over? Null where there is no hand-over step.
+  ///
+  /// ⚠️ The VIEW decides which of four sources answers it -- a sale's
+  /// `is_delivered`, a destruction's `delivered`, a DG proposal's, or a
+  /// yard re-export entry's `re_export_delivered`. Recomputing it in Dart
+  /// would be a second story to keep in step with the first, and the pages
+  /// already filter on this column in SQL.
+  ///
+  /// ⚠️ Null is not false. A row with no hand-over step -- an entry tagged
+  /// final with nothing behind it -- has nobody coming to collect, and
+  /// reading null as pending would put it in the Pending filter forever.
+  final bool? delivered;
+
+  /// The day the goods were handed over, when one was recorded.
+  ///
+  /// ⚠️ Resolved from the same source as [delivered] and GATED ON IT --
+  /// a date beside a false flag is a leftover, not a hand-over.
+  /// `tender_sale_items` and `destruction_items` carry no consistency
+  /// check (only `unsold_proposals` does), and 20 rows in this database
+  /// hold a date while reading not-delivered.
+  ///
+  /// ⚠️ Null on a DELIVERED row too: 20 more were marked delivered before
+  /// anything asked for a date. "Delivered" with no day is the whole of
+  /// what is known about those, and inventing one would be worse.
+  final DateTime? deliveredAt;
+
+  /// The one date the page sorts on, whichever source the row came from.
+  final DateTime happenedAt;
+
+  /// The hand-over recorded on the ITEM, for goods that never had a warehouse
+  /// entry to carry one.
+  ///
+  /// ⚠️ A perishable released or destroyed straight out of the yard skips
+  /// warehousing by design, so [delivered] -- which the view resolves from a
+  /// warehouse entry, a sale or a destruction -- is null for it, and there is
+  /// no row anywhere to flip. `package_item_handovers` (migration 041) is
+  /// that row, and this is its answer. False, never null: the table starts
+  /// empty and an absent record means "not yet handed over", which is exactly
+  /// what the officer needs to see a button for.
+  final bool itemHandoverDone;
+
+  /// The day that item-level hand-over was recorded, and its receipt.
+  final DateTime? itemHandoverAt;
+  final String? itemHandoverReceipt;
+
+  const DispositionRow({
+    required this.rowKey,
+    this.isPerishable = false,
+    required this.source,
+    required this.packageId,
+    required this.srNumber,
+    required this.consigneeName,
+    required this.yard,
+    required this.itemId,
+    required this.entryId,
+    required this.proposalId,
+    required this.finalTag,
+    required this.itemName,
+    required this.hsCode,
+    required this.quantity,
+    required this.note,
+    required this.officer,
+    this.holdReason,
+    this.receiptNo,
+    this.isDestroyed,
+    this.delivered,
+    this.deliveredAt,
+    this.itemHandoverDone = false,
+    this.itemHandoverAt,
+    this.itemHandoverReceipt,
+    required this.happenedAt,
+  });
+
+  factory DispositionRow.fromJson(Map<String, dynamic> json) => DispositionRow(
+        rowKey: json['row_key'].toString(),
+        isPerishable: json['is_perishable'] as bool? ?? false,
+        source: json['source']?.toString() ?? 'entry',
+        packageId: json['package_id'].toString(),
+        srNumber: json['sr_number']?.toString() ?? '',
+        consigneeName: json['consignee_name']?.toString() ?? '',
+        yard: json['yard']?.toString(),
+        itemId: json['item_id']?.toString(),
+        entryId: json['entry_id']?.toString(),
+        proposalId: json['proposal_id']?.toString(),
+        finalTag: json['final_tag']?.toString() ?? '',
+        itemName: json['item_name']?.toString() ?? '—',
+        hsCode: json['hs_code']?.toString(),
+        quantity: (parseDbNum(json['quantity']) ?? 0).round(),
+        note: json['note']?.toString(),
+        officer: json['officer']?.toString(),
+        holdReason: json['hold_reason']?.toString(),
+        receiptNo: json['receipt_no']?.toString(),
+        isDestroyed: json['is_destroyed'] as bool?,
+        delivered: json['delivered'] as bool?,
+        deliveredAt: parseDbDate(json['delivered_at']),
+        itemHandoverDone: json['item_handover_done'] as bool? ?? false,
+        itemHandoverAt: parseDbDate(json['item_handover_at']),
+        itemHandoverReceipt: json['item_handover_receipt']?.toString(),
+        happenedAt: parseDbDate(json['happened_at']) ?? DateTime(1970),
+      );
+
+  /// True when Top Management ruled this, rather than the yard recording it.
+  bool get isTopManagement => source == 'proposal';
+}
+
+/// One page of [DispositionRow], with the total the pager needs.
+class DispositionPage {
+  final List<DispositionRow> rows;
+  final int total;
+  const DispositionPage({required this.rows, required this.total});
+
+  static const empty = DispositionPage(rows: [], total: 0);
 }
 
 class AuditLogModel {
@@ -899,8 +1303,19 @@ class AuditLogModel {
   final String entityId;
   final Map<String, dynamic>? details;
   final DateTime createdAt;
-  // Joined field
+
+  /// The yard the action was performed under, stamped at write time.
+  final String? yard;
+
+  // Joined fields — the actor's name and role.
   final String? userFullName;
+
+  /// The actor's role ('officer', 'admin', 'disposal', 'ict', …).
+  ///
+  /// A yard admin's log view filters this OUT (head-office staff are not the
+  /// yard's own activity); ICT's cross-office view filters BY it, so the role
+  /// has to travel with the row rather than being dropped on parse.
+  final String? userRole;
 
   const AuditLogModel({
     required this.id,
@@ -910,20 +1325,30 @@ class AuditLogModel {
     required this.entityId,
     this.details,
     required this.createdAt,
+    this.yard,
     this.userFullName,
+    this.userRole,
   });
 
   factory AuditLogModel.fromJson(Map<String, dynamic> json) {
+    final profile = json['profiles'] as Map<String, dynamic>?;
     return AuditLogModel(
-      id: json['id'] as String,
-      userId: json['user_id'] as String,
-      action: json['action'] as String,
-      entityType: json['entity_type'] as String,
-      entityId: json['entity_id'] as String,
+      id: (json['id'] as String?) ?? '',
+      userId: (json['user_id'] as String?) ?? '',
+      action: (json['action'] as String?) ?? '',
+      entityType: (json['entity_type'] as String?) ?? '',
+      entityId: (json['entity_id'] as String?) ?? '',
       details: json['details'] as Map<String, dynamic>?,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      userFullName:
-          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      createdAt: json['created_at'] != null
+          ? parseDbDateRequired(json['created_at'])
+          : DateTime.now(),
+      yard: json['yard'] as String?,
+      userFullName: profile?['full_name'] as String?,
+      // ⚠️ The role stamped on the ROW, falling back to the joined profile
+      // only for rows written before migration 029 added the column. Reading
+      // the profile first renamed every past action after a promotion: an
+      // officer made SDDC had their whole history relabelled as SDDC work.
+      userRole: (json['actor_role'] as String?) ?? profile?['role'] as String?,
     );
   }
 }
@@ -944,6 +1369,126 @@ const Map<String, String> kExpenseKinds = {
 /// The kinds Central Disposal actually RECORDS. A refund is not typed in — it
 /// is what is left of the goods' destroying deposit once these are paid, so it
 /// is derived (see [SrFinancials.refund]) rather than entered.
+/// What kind of goods an item is, which decides the whole path it takes.
+///
+/// Asked once on the SR form, then read everywhere downstream:
+///
+///   normal      -- warehouse, the 30-day appeal window, the existing flow
+///   perishable  -- neither. Food, chemicals and the like spoil, so by the
+///                  time an appeal window expired there would be nothing left
+///                  to dispose of. They go straight to a disposal request.
+///
+/// ⚠️ 'normal' is the default in the database too, which is what leaves every
+/// item registered before this behaving exactly as it did.
+const String kNatureNormal = 'normal';
+const String kNaturePerishable = 'perishable';
+
+const Map<String, String> kGoodsNatures = {
+  kNatureNormal: 'Normal Goods',
+  kNaturePerishable: 'Perishable Goods',
+};
+
+/// The roles that belong to a head-office DIRECTORATE rather than a yard.
+///
+/// These accounts are institutional: they belong to a POST, and whoever holds
+/// it next may never have signed in. That is why they never auto-expire (see
+/// ProfileModel.isExpired) and why ICT reissues their credentials rather than
+/// emailing a self-service reset link.
+///
+/// ⚠️ Keep in step with the exemptions in [ProfileModel.isExpired] and
+/// [ProfileModel.daysUntilExpiry]: the same accounts, for the same reason.
+const List<String> kDirectorateRoles = [
+  'disposal',
+  'appeal',
+  'valuation',
+  'executive',
+  'ict',
+];
+
+/// The portal each directorate role signs in to, for a picker or a message.
+const Map<String, String> kDirectorateRoleNames = {
+  'disposal': 'Central Disposal Directorate',
+  'appeal': 'Appeal Directorate',
+  'valuation': 'Valuation Directorate',
+  'executive': 'Top Management Directorate',
+  'ict': 'ICT Directorate',
+};
+
+/// The posts ICT can assign to a yard account, keyed by what is stored in
+/// `profiles.job_role`.
+///
+/// ⚠️ Two GROUPS, not one list:
+///
+///   Yard Administration — SDDC and DDC (Senior Deputy / Deputy Director of
+///                         Customs). These run the yard. There is no plain
+///                         DC in a yard; that post belongs to the
+///                         directorates.
+///   Yard Staff          — SC, DSC and ASC (Superintendent of Customs and
+///                         its deputy and assistant grades).
+///
+/// The administration posts share the 'admin' permission role and the staff
+/// posts share 'officer', so the role alone cannot tell any of them apart --
+/// which is why the post is its own field rather than derived from the role.
+///
+/// ⚠️ The KEYS are what sits in `profiles.job_role` on live accounts and must
+/// not be renamed. 'officer' is kept as the legacy key for a plain yard
+/// officer; accounts created before the Superintendent grades existed carry
+/// it, and it still reads as Yard Staff.
+const Map<String, String> kPostTitles = {
+  // Yard Administration
+  //
+  // ⚠️ The KEY is 'dc' but the post is DDC — Deputy Director of Customs.
+  // A yard holds no plain DC; that title belongs to the directorates. The
+  // key predates the rename and is what live accounts store in
+  // `profiles.job_role`, so it stays while the label reads correctly.
+  'sddc': 'SDDC (Senior Deputy Director of Customs)',
+  'dc': 'DDC (Deputy Director of Customs)',
+  // Yard Staff
+  'sc': 'SC (Superintendent of Customs)',
+  'dsc': 'DSC (Deputy Superintendent of Customs)',
+  'asc': 'ASC (Assistant Superintendent of Customs)',
+  // ⚠️ Legacy. Live accounts still store this; it is not offered for new
+  // ones (see [kAssignablePostKeys]) but must keep rendering.
+  'officer': 'Officer',
+};
+
+/// The SHORT form of each post, for a table chip or a badge where the full
+/// title would overflow the row.
+const Map<String, String> kPostShortTitles = {
+  'sddc': 'SDDC',
+  // ⚠️ DDC, not DC — see kPostTitles. The key is legacy; the post is not.
+  'dc': 'DDC',
+  'sc': 'SC',
+  'dsc': 'DSC',
+  'asc': 'ASC',
+  'officer': 'Officer',
+};
+
+/// The permission role each post carries.
+const Map<String, String> kPostRoles = {
+  'sddc': 'admin',
+  'dc': 'admin',
+  'sc': 'officer',
+  'dsc': 'officer',
+  'asc': 'officer',
+  'officer': 'officer',
+};
+
+/// The two posts that RUN a yard, in seniority order.
+const List<String> kYardAdminPostKeys = ['sddc', 'dc'];
+
+/// The posts that STAFF a yard, in seniority order.
+///
+/// ⚠️ 'officer' is absent on purpose: it is the legacy key, still rendered
+/// for the accounts that carry it but no longer offered for a new one.
+const List<String> kYardStaffPostKeys = ['sc', 'dsc', 'asc'];
+
+/// Everything ICT may assign to a NEW yard account, administration first.
+const List<String> kAssignablePostKeys = [
+  ...kYardAdminPostKeys,
+  ...kYardStaffPostKeys,
+];
+
 const Map<String, String> kRecordableExpenseKinds = {
   'destruction_expense': 'Destruction Expenses',
   'advertising_expense': 'Advertising Expenses',
@@ -988,7 +1533,7 @@ class FinancialExpenseModel {
       FinancialExpenseModel(
         id: j['id'].toString(),
         kind: (j['kind'] ?? '').toString(),
-        amount: (j['amount'] as num?)?.toDouble() ?? 0,
+        amount: parseDbNum(j['amount']) ?? 0,
         description: j['description'] as String?,
         yard: j['yard'] as String?,
         srNumber: j['sr_number'] as String?,
@@ -1192,6 +1737,281 @@ class SrFinancials {
   bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
 }
 
+/// The ten figures the Financials page's header strip shows.
+///
+/// ⚠️ A MODEL, not a provider. It lived in providers.dart, which
+/// services.dart cannot import -- providers imports services, and the other
+/// direction would be a cycle. Moving it here is what lets the service
+/// return the totals SQL computed instead of the page folding them in Dart.
+/// Every figure the Financials tab shows, computed in one place.
+///
+/// INCOME is derived from records the system already holds:
+///   SR (storage) charges  — accrued on every warehouse entry
+///   Destroying deposits   — packages.destroying_deposit, one per SR
+///   Sale proceeds         — tender_sale_items.sold_price
+///   Taxes                 — the applied_taxes attached to those sales
+///
+/// EXPENSES are the hand-entered rows above.
+///
+/// The sale-proceeds split is NOT part of income/expenditure — it says where
+/// the proceeds go afterwards, so it is reported separately.
+class FinancialSummary {
+  final double srCharges;
+  final double destroyingDeposits;
+  final double saleProceeds;
+  final double taxes;
+
+  final double destructionExpenses;
+  final double advertisingExpenses;
+  final double labourExpenses;
+  final double transportExpenses;
+  final double auctionExpenses;
+  final double refunds;
+
+  const FinancialSummary({
+    this.srCharges = 0,
+    this.destroyingDeposits = 0,
+    this.saleProceeds = 0,
+    this.taxes = 0,
+    this.destructionExpenses = 0,
+    this.advertisingExpenses = 0,
+    this.labourExpenses = 0,
+    this.transportExpenses = 0,
+    this.auctionExpenses = 0,
+    this.refunds = 0,
+  });
+
+  double get totalIncome =>
+      srCharges + destroyingDeposits + saleProceeds + taxes;
+
+  double get totalExpenditure =>
+      destructionExpenses +
+      advertisingExpenses +
+      labourExpenses +
+      transportExpenses +
+      auctionExpenses +
+      refunds;
+
+  double get netBalance => totalIncome - totalExpenditure;
+
+  /// Where the sale proceeds are distributed. Independent of the net balance.
+  SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
+}
+
+/// One row of the Financials ledger, read straight from the `sr_financials`
+/// view.
+///
+/// ⚠️ Deliberately NOT [SrFinancials]. That class derives every figure by
+/// folding a per-goods list, which is what makes it right for a dialog showing
+/// the split across an SR's items -- and what made the page load every
+/// package, item and warehouse entry in the system to render a table of
+/// twenty rows.
+///
+/// This carries the figures the view already computed. The two agree to the
+/// cent, asserted against live data by the view's own verify block and by a
+/// test comparing the ten totals both ways.
+class SrLedgerRow {
+  final String srNumber;
+  final String? yard;
+  final String? consigneeName;
+  final String goodsName;
+  final int quantity;
+  final int packageCount;
+  final DateTime? date;
+
+  final double srCharges;
+  final double destroyingDeposit;
+  final double saleProceeds;
+  final double taxes;
+
+  /// The per-tax breakdown, one entry per tax NAME.
+  ///
+  /// ⚠️ The names are data, not a fixed list: the table draws a column per
+  /// tax, and a tax added tomorrow must appear without a migration. These are
+  /// the amounts STORED on each sale -- the taxes that were enabled at the
+  /// moment of sale, not the ones enabled today.
+  final Map<String, double> taxesByName;
+
+  final double destructionExpense;
+  final double advertisingExpense;
+  final double labourExpense;
+  final double transportExpense;
+  final double auctionExpense;
+  final double refund;
+
+  const SrLedgerRow({
+    required this.srNumber,
+    this.yard,
+    this.consigneeName,
+    this.goodsName = '',
+    this.quantity = 0,
+    this.packageCount = 0,
+    this.date,
+    this.srCharges = 0,
+    this.destroyingDeposit = 0,
+    this.saleProceeds = 0,
+    this.taxes = 0,
+    this.taxesByName = const {},
+    this.destructionExpense = 0,
+    this.advertisingExpense = 0,
+    this.labourExpense = 0,
+    this.transportExpense = 0,
+    this.auctionExpense = 0,
+    this.refund = 0,
+  });
+
+  factory SrLedgerRow.fromJson(Map<String, dynamic> json) {
+    final rawTaxes = json['taxes_by_name'];
+    return SrLedgerRow(
+      srNumber: json['sr_number']?.toString() ?? '',
+      yard: json['yard'] as String?,
+      consigneeName: json['consignee_name'] as String?,
+      goodsName: json['goods_name']?.toString() ?? '',
+      quantity: parseDbInt(json['quantity']) ?? 0,
+      packageCount: parseDbInt(json['package_count']) ?? 0,
+      date: parseDbDate(json['activity_date']),
+      srCharges: parseDbNum(json['sr_charges']) ?? 0,
+      destroyingDeposit: parseDbNum(json['destroying_deposit']) ?? 0,
+      saleProceeds: parseDbNum(json['sale_proceeds']) ?? 0,
+      taxes: parseDbNum(json['taxes']) ?? 0,
+      // ⚠️ jsonb reaches the driver as a Map already, but a driver that
+      // hands it back as a String must not crash the page -- the ledger has
+      // been bitten by exactly that seam before, with numeric.
+      taxesByName: switch (rawTaxes) {
+        Map<String, dynamic> m => {
+            for (final e in m.entries) e.key: parseDbNum(e.value) ?? 0,
+          },
+        String s when s.trim().isNotEmpty => () {
+            try {
+              final decoded = jsonDecode(s);
+              if (decoded is Map) {
+                return <String, double>{
+                  for (final e in decoded.entries)
+                    e.key.toString(): parseDbNum(e.value) ?? 0,
+                };
+              }
+            } catch (_) {
+              // Unreadable JSON is no taxes, not a broken page.
+            }
+            return const <String, double>{};
+          }(),
+        _ => const <String, double>{},
+      },
+      destructionExpense: parseDbNum(json['destruction_expense']) ?? 0,
+      advertisingExpense: parseDbNum(json['advertising_expense']) ?? 0,
+      labourExpense: parseDbNum(json['labour_expense']) ?? 0,
+      transportExpense: parseDbNum(json['transport_expense']) ?? 0,
+      auctionExpense: parseDbNum(json['auction_expense']) ?? 0,
+      refund: parseDbNum(json['refund']) ?? 0,
+    );
+  }
+
+  /// Every cost charged against the deposit.
+  double get depositSpent =>
+      destructionExpense +
+      advertisingExpense +
+      labourExpense +
+      transportExpense +
+      auctionExpense;
+
+  /// Costs beyond what the deposit covered. Zero when the deposit was enough.
+  double get deficit => (depositSpent - destroyingDeposit) > 0
+      ? depositSpent - destroyingDeposit
+      : 0;
+
+  double get totalIncome =>
+      srCharges + destroyingDeposit + saleProceeds + taxes;
+
+  double get totalExpenditure => depositSpent + refund;
+
+  double get netBalance => totalIncome - totalExpenditure;
+
+  /// Where this SR's sale proceeds are distributed.
+  SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
+
+  bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
+}
+
+/// One row of the yard's Forfeited table, straight from `forfeit_rows`.
+///
+/// ⚠️ Deliberately flat. The screen built these from a fetch of every
+/// forfeited package with its items and warehouse entries, then held three
+/// live objects per row -- the forfeited record, the item and the entry -- so
+/// a table of 48 lines needed all 42 records in memory.
+///
+/// The row carries what the TABLE shows; the popup fetches the package it
+/// needs, for the one row an officer opened.
+class ForfeitRowData {
+  final String forfeitedPackageId;
+  final String packageId;
+  final String? itemId;
+
+  /// The forfeit warehouse entry this row is the record of, when it is one.
+  final String? entryId;
+
+  final String srNumber;
+  final String consigneeName;
+  final String? yard;
+  final String itemName;
+  final String? hsCode;
+  final int qty;
+  final DateTime forfeitedDate;
+  final String officer;
+  final String? itemStatus;
+  final String? itemDecision;
+
+  /// The Post Status Activity: the entry's hold reason, else the item's, else
+  /// the forfeited record's -- so the column is never blank.
+  final String reason;
+
+  /// 1 = a forfeit EVENT, 2 = a covered live item with no event, 3 = the
+  /// legacy summary row.
+  ///
+  /// ⚠️ Kept because the three are genuinely different rows, not a display
+  /// detail: an event names a quantity and an officer, an item row names
+  /// neither, and a summary row stands for a record with no item detail at
+  /// all.
+  final int rowKind;
+
+  const ForfeitRowData({
+    required this.forfeitedPackageId,
+    required this.packageId,
+    this.itemId,
+    this.entryId,
+    required this.srNumber,
+    this.consigneeName = '',
+    this.yard,
+    this.itemName = '',
+    this.hsCode,
+    this.qty = 0,
+    required this.forfeitedDate,
+    this.officer = '—',
+    this.itemStatus,
+    this.itemDecision,
+    this.reason = '—',
+    this.rowKind = 2,
+  });
+
+  factory ForfeitRowData.fromJson(Map<String, dynamic> json) => ForfeitRowData(
+        forfeitedPackageId: json['forfeited_package_id'].toString(),
+        packageId: json['package_id'].toString(),
+        itemId: json['item_id']?.toString(),
+        entryId: json['entry_id']?.toString(),
+        srNumber: json['sr_number']?.toString() ?? '',
+        consigneeName: json['consignee_name']?.toString() ?? '',
+        yard: json['yard'] as String?,
+        itemName: json['item_name']?.toString() ?? '',
+        hsCode: json['hs_code'] as String?,
+        qty: parseDbInt(json['qty']) ?? 0,
+        forfeitedDate: parseDbDateRequired(json['forfeited_date']),
+        officer: json['officer']?.toString() ?? '—',
+        itemStatus: json['item_status'] as String?,
+        itemDecision: json['item_decision'] as String?,
+        reason: json['reason']?.toString() ?? '—',
+        rowKind: parseDbInt(json['row_kind']) ?? 2,
+      );
+}
+
 /// What the Appeal Directorate has ruled about one goods item.
 ///
 /// A DECISION ends the 30-day wait: once the directorate has ruled, the yard
@@ -1233,6 +2053,9 @@ class ItemAppealOutcome {
   }
 }
 
+/// How much of a custom 'OTHER' decision note fits in a decision chip.
+const kAppealDecisionLabelMaxChars = 28;
+
 // ── Appeal window (shared by EVERY status) ───────────────────
 //
 // The 30-day appeal window is NOT a forfeit-only rule: a Detain, Abandoned or
@@ -1257,6 +2080,34 @@ DateTime appealDeadlineFrom(DateTime entryDate) {
 bool isWithinAppealWindow(DateTime? entryDate) {
   if (entryDate == null) return false;
   return DateTime.now().isBefore(appealDeadlineFrom(entryDate));
+}
+
+/// Whether the yard may act on these goods yet — record a final disposition,
+/// or send a disposal request.
+///
+/// ⚠️ Both actions were gated on "is this row already completed" ALONE, so an
+/// item still inside its 30-day appeal window showed "Appealing · 12d" in the
+/// table and an ENABLED Final Disposition button in its popup. The yard could
+/// decide the fate of goods whose owner still had time to appeal, and could
+/// send them to Central Disposal in the same state.
+///
+/// This is the same rule [AppealStateChip] paints, expressed once so the
+/// button and the chip cannot disagree:
+///
+///   * a RULING releases the goods for action immediately, whatever the
+///     calendar says — the Directorate has spoken;
+///   * an appeal ON HOLD blocks action even after the window closes;
+///   * otherwise the 30 days must have run out.
+bool canActOnHeldGoods({
+  DateTime? entryDate,
+  DateTime? deadline,
+  ItemAppealOutcome? outcome,
+}) {
+  if (outcome?.onHold ?? false) return false;
+  if (outcome?.unblocksAction ?? false) return true;
+  final end = deadline ?? (entryDate == null ? null : appealDeadlineFrom(entryDate));
+  if (end == null) return false;
+  return !DateTime.now().isBefore(end);
 }
 
 /// Whole days left in the appeal window; 0 once it has closed.
@@ -1401,6 +2252,19 @@ class ForfeitedPackageModel {
     return appealDecisionNote;
   }
 
+  /// Per-item decisions carry their own timestamp in [itemAppealDecisions].
+  /// Legacy, package-level decisions use [appealDecidedAt].
+  DateTime? appealDecidedAtForItem(String? id) {
+    if (id != null) {
+      final entry = itemAppealDecisions[id];
+      if (entry is Map) {
+        final decidedAt = parseDbDate(entry['decided_at']);
+        if (decidedAt != null) return decidedAt;
+      }
+    }
+    return appealDecidedAt;
+  }
+
   bool hasAppealDecisionForItem(String? id) =>
       appealDecisionForItem(id) != null;
 
@@ -1433,6 +2297,13 @@ class ForfeitedPackageModel {
 
   /// Human-friendly label for a specific item's decision (falls back to the
   /// custom note for 'OTHER').
+  ///
+  /// ⚠️ The label goes inside a CHIP, so it has to stay short. An 'OTHER'
+  /// decision shows its custom note -- which is free text an officer typed, and
+  /// a sentence-long one ("Referred back to the yard for further inquiry")
+  /// overflowed the chip and was clipped mid-word. Long notes are trimmed here;
+  /// the full text stays available through [appealDecisionNoteForItem], which
+  /// is what the tooltip and the details dialog read.
   String? appealDecisionLabelForItem(String? id) {
     final dec = appealDecisionForItem(id);
     switch ((dec ?? '').toUpperCase()) {
@@ -1445,8 +2316,11 @@ class ForfeitedPackageModel {
       case 'RE-EXPORT':
         return 'Re-export';
       case 'OTHER':
-        final note = appealDecisionNoteForItem(id);
-        return (note?.trim().isNotEmpty == true) ? note!.trim() : 'Other';
+        final note = appealDecisionNoteForItem(id)?.trim();
+        if (note == null || note.isEmpty) return 'Other';
+        return note.length <= kAppealDecisionLabelMaxChars
+            ? note
+            : '${note.substring(0, kAppealDecisionLabelMaxChars - 1).trimRight()}…';
       default:
         return dec;
     }
@@ -1461,24 +2335,20 @@ class ForfeitedPackageModel {
       packageId: json['package_id'] as String,
       srNumber: json['sr_number'] as String,
       consigneeName: json['consignee_name'] as String,
-      forfeitedAt: DateTime.parse(json['forfeited_at'] as String),
-      appealDeadline: DateTime.parse(json['appeal_deadline'] as String),
+      forfeitedAt: parseDbDateRequired(json['forfeited_at']),
+      appealDeadline: parseDbDateRequired(json['appeal_deadline']),
       reason: json['reason'] as String? ?? '',
       yard: json['yard'] as String?,
       source: json['source'] as String? ?? 'forfeit',
       appealHold: json['appeal_hold'] as bool? ?? false,
       appealHoldNote: json['appeal_hold_note'] as String?,
-      appealHeldAt: json['appeal_held_at'] != null
-          ? DateTime.parse(json['appeal_held_at'] as String).toLocal()
-          : null,
+      appealHeldAt: parseDbDate(json['appeal_held_at']),
       heldItemIds:
           (json['held_item_ids'] as List?)?.map((e) => e.toString()).toList() ??
               const [],
       appealDecision: json['appeal_decision'] as String?,
       appealDecisionNote: json['appeal_decision_note'] as String?,
-      appealDecidedAt: json['appeal_decided_at'] != null
-          ? DateTime.parse(json['appeal_decided_at'] as String).toLocal()
-          : null,
+      appealDecidedAt: parseDbDate(json['appeal_decided_at']),
       itemAppealDecisions:
           (json['item_appeal_decisions'] as Map?)?.cast<String, dynamic>() ??
               const {},
@@ -1489,19 +2359,19 @@ class ForfeitedPackageModel {
       // package-level forfeits). Lets request rows show exactly their item.
       itemId: json['item_id'] as String?,
       // Exact abandoned qty for per-entry abandoned rows (null otherwise).
-      entryQty: json['entry_qty'] as int?,
+      entryQty: parseDbInt(json['entry_qty']),
       // valuation_cost lives on disposal_request_items, not forfeited_packages.
       // When this model is hydrated from a nested join (getTenderSales /
       // getDestructions), the disposal_request_items list is included; pick the
       // first non-null cost from it. Fall back to the direct column in case the
       // column is ever added to the table in future.
       valuationCost: (() {
-        final direct = (json['valuation_cost'] as num?)?.toDouble();
+        final direct = parseDbNum(json['valuation_cost']);
         if (direct != null) return direct;
         final items = json['disposal_request_items'] as List?;
         if (items == null) return null;
         for (final row in items) {
-          final cost = (row['valuation_cost'] as num?)?.toDouble();
+          final cost = parseDbNum(row['valuation_cost']);
           if (cost != null) return cost;
         }
         return null;
@@ -1553,13 +2423,13 @@ class TenderModel {
     return TenderModel(
       id: json['id'] as String,
       tenderNumber: json['tender_number'] as String,
-      tenderDate: DateTime.parse(json['tender_date'] as String),
+      tenderDate: parseDbDateRequired(json['tender_date']),
       saleDate: json['sale_date'] != null
           ? DateTime.tryParse(json['sale_date'].toString())
           : null,
       saleTime: json['sale_time'] as String?,
       forfeitedPackageIds: ids,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -1607,14 +2477,31 @@ class TenderBidModel {
         id: json['id'] as String,
         forfeitedPackageId: json['forfeited_package_id'] as String,
         tenderSaleId: json['tender_sale_id'] as String?,
-        amount: (json['amount'] as num).toDouble(),
-        createdAt: DateTime.parse(json['created_at'] as String),
+        amount: (parseDbNum(json['amount']) ?? 0),
+        createdAt: parseDbDateRequired(json['created_at']),
       );
 }
 
 /// How many bid-driven tender rounds a package gets after its first
 /// (valuation-driven) attempt. Once these are exhausted and it is still
 /// unsold, it goes to the Top Management Directorate's Tender Committees.
+/// Combine a sale DATE with an "HH:mm" / "HH:mm:ss" time. Null time ⇒ the
+/// date's midnight; null date ⇒ null.
+DateTime? combineSaleMoment(DateTime? date, String? time) {
+  if (date == null) return null;
+  final t = time?.trim();
+  if (t == null || t.isEmpty) return date;
+  final parts = t.split(':');
+  return DateTime(
+    date.year,
+    date.month,
+    date.day,
+    int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0,
+    int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0,
+    int.tryParse(parts.length > 2 ? parts[2] : '') ?? 0,
+  );
+}
+
 const int kMaxBidTenderRounds = 3;
 
 /// Human label for a tender attempt, 1-based.
@@ -1655,9 +2542,9 @@ class TenderRevaluationModel {
         id: json['id'] as String,
         forfeitedPackageId: json['forfeited_package_id'] as String,
         tenderSaleId: json['tender_sale_id'] as String?,
-        valuationCost: (json['valuation_cost'] as num).toDouble(),
+        valuationCost: (parseDbNum(json['valuation_cost']) ?? 0),
         note: json['note'] as String?,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: parseDbDateRequired(json['created_at']),
       );
 }
 
@@ -1668,11 +2555,23 @@ class UnsoldProposalModel {
   final String id;
   final String forfeitedPackageId;
 
-  /// destroy | remand | government_use | auction
+  /// destroy | government_use | auction | re_export | convert |
+  /// remove_from_premises
   final String proposal;
   final String? note;
   final String? yard;
   final DateTime decidedAt;
+
+  /// ⚠️ Whether anyone has actually TAKEN the goods.
+  ///
+  /// A final outcome is a decision, not a hand-over. A package ruled
+  /// "Government Use" on 3 July is decided — but it sits in Warehouse 01,
+  /// accruing storage, until somebody comes for it. Sold goods have carried
+  /// this distinction all along (`tender_sale_items.is_delivered`); the four
+  /// outcome pages had no way to record it, so the yard could not say what it
+  /// still held and Central Disposal could not see whether it had gone.
+  final bool delivered;
+  final DateTime? deliveredAt;
 
   const UnsoldProposalModel({
     required this.id,
@@ -1681,6 +2580,8 @@ class UnsoldProposalModel {
     required this.note,
     required this.yard,
     required this.decidedAt,
+    this.delivered = false,
+    this.deliveredAt,
   });
 
   String get label => unsoldProposalLabel(proposal);
@@ -1692,14 +2593,21 @@ class UnsoldProposalModel {
         proposal: json['proposal'] as String,
         note: json['note'] as String?,
         yard: json['yard'] as String?,
-        decidedAt: DateTime.parse(json['decided_at'].toString()),
+        decidedAt: parseDbDateRequired(json['decided_at']),
+        delivered: json['delivered'] as bool? ?? false,
+        deliveredAt: parseDbDate(json['delivered_at']),
       );
 }
 
 /// The outcomes, in the order the Top Management Directorate sees them.
+///
+/// ⚠️ There is no 'remand' here. Remand is a COURT's act, not a disposal --
+/// no yard action stands behind it, and nothing carries it out. Offering it
+/// made it a dead end: the goods left Unsold Goods, appeared on a page named
+/// Remanded, and stayed there for ever because nothing acts on them. See
+/// postgres/08_drop_remand_outcome.sql.
 const List<String> kUnsoldProposals = [
   'destroy',
-  'remand',
   'government_use',
   'auction',
   're_export',
@@ -1707,12 +2615,25 @@ const List<String> kUnsoldProposals = [
   'remove_from_premises',
 ];
 
+/// The Final Outcome filter's value for "nobody has ruled yet".
+///
+/// ⚠️ A sentinel, not an outcome: it is deliberately not in
+/// [kUnsoldProposals], because no package is ever DECIDED to be awaiting. It
+/// exists so one filter can offer "awaiting" alongside the six real outcomes
+/// without a second nullable flag beside it.
+const String kOutcomeAwaiting = '__awaiting__';
+
+/// The Final Outcome filter's value for "sold at tender".
+///
+/// ⚠️ Only Perishable Goods offers this. A perishable that sells ends there
+/// and never reaches the DG, so on that page a sale IS a final outcome -- but
+/// it is not a proposal and must never be stored as one.
+const String kOutcomeSold = '__sold__';
+
 String unsoldProposalLabel(String? p) {
   switch (p) {
     case 'destroy':
       return 'Destroy';
-    case 'remand':
-      return 'Remand';
     case 'government_use':
       return 'Government Use';
     case 'auction':
@@ -1799,13 +2720,13 @@ class TenderCommitteeModel {
             .where((m) => m.name.isNotEmpty)
             .toList(),
         note: json['note'] as String?,
-        createdAt: DateTime.parse(json['created_at'] as String),
-        committeeValue: (json['committee_value'] as num?)?.toDouble(),
+        createdAt: parseDbDateRequired(json['created_at']),
+        committeeValue: parseDbNum(json['committee_value']),
         committeeValuedAt: json['committee_valued_at'] != null
             ? DateTime.tryParse(json['committee_valued_at'].toString())
             : null,
         committeeNote: json['committee_note'] as String?,
-        submittedValue: (json['submitted_value'] as num?)?.toDouble(),
+        submittedValue: parseDbNum(json['submitted_value']),
         submittedAt: json['submitted_at'] != null
             ? DateTime.tryParse(json['submitted_at'].toString())
             : null,
@@ -1843,7 +2764,7 @@ class TenderDisposalModel {
       disposalType: json['disposal_type'] as String,
       receiptNumber: json['receipt_number'] as String?,
       otherDetails: json['other_details'] as String?,
-      disposedAt: DateTime.parse(json['disposed_at'] as String),
+      disposedAt: parseDbDateRequired(json['disposed_at']),
       disposedByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -1854,8 +2775,8 @@ class TenderDisposalModel {
 // Two institutional head-office accounts only (not personal). Whoever holds
 // the post logs in with the shared branch email + password.
 const Map<String, String> kDisposalPositions = {
-  'DC': 'DC (Director)',
-  'SDDC': 'SDDC (Senior Deputy Director)',
+  'DC': 'DC (Director of Customs)',
+  'SDDC': 'SDDC (Senior Deputy Director of Customs)',
 };
 
 String disposalPositionLabel(String? code) =>
@@ -1866,8 +2787,8 @@ String disposalPositionLabel(String? code) =>
 // (profiles.username is globally unique), so the Appeal Directorate uses the
 // `adc` / `asddc` usernames while displaying the same DC / SDDC titles.
 const Map<String, String> kAppealPositions = {
-  'ADC': 'DC (Director)',
-  'ASDDC': 'SDDC (Senior Deputy Director)',
+  'ADC': 'DC (Director of Customs)',
+  'ASDDC': 'SDDC (Senior Deputy Director of Customs)',
 };
 
 String appealPositionLabel(String? code) =>
@@ -1878,31 +2799,41 @@ String appealPositionLabel(String? code) =>
 // so the Valuation Directorate uses the `vdc` / `vsddc` usernames while
 // displaying the same DC / SDDC titles.
 const Map<String, String> kValuationPositions = {
-  'VDC': 'DC (Director)',
-  'VSDDC': 'SDDC (Senior Deputy Director)',
+  'VDC': 'DC (Director of Customs)',
+  'VSDDC': 'SDDC (Senior Deputy Director of Customs)',
 };
 
 String valuationPositionLabel(String? code) =>
     kValuationPositions[code] ?? (code ?? 'Valuation Directorate');
 
-// ── Executive Office positions (DG / ADG — Customs' two highest posts) ───────
+// ── Top Management Directorate positions ────────────────────────────────────
 // Keys are the *usernames* (globally unique in profiles.username).
+//
+// ⚠️ 'DG' and 'ADG' are LIVE usernames (exec.dg, exec.adg) -- the keys stay
+// as they are even though the titles they render have changed to DGC and
+// ADGC. Renaming a key here would orphan the account that carries it.
 const Map<String, String> kExecutivePositions = {
-  'DG': 'DG (Director General)',
-  'ADG': 'ADG (Additional Director General)',
+  'DG': 'DGC (Director General of Customs)',
+  'ADG': 'ADGC (Additional Director General of Customs)',
+  'SDC': 'SDC (Senior Director of Customs)',
   // Sits on the Top Management Directorate to observe. VIEW-ONLY: no committee appointment,
   // no committee valuation, no final outcome — see [isExecutiveViewOnly].
-  'DC': 'DC (Deputy Commissioner)',
+  'DC': 'DC (Director of Customs)',
 };
 
 String executivePositionLabel(String? code) =>
     kExecutivePositions[code] ?? (code ?? "Director General's Office");
 
 // ── ICT Directorate positions ──────────────────────────────────────────────
+// ⚠️ ICT is the ONE directorate with a third post. Every other directorate
+// holds a DC and an SDDC; ICT also has the System Administrator, because
+// somebody has to provision the accounts the other posts sign in with.
 const Map<String, String> kIctPositions = {
-  'IDC': 'DC (Director ICT)',
-  'ISDDC': 'SDDC (Senior Deputy Director ICT)',
-  'ICT_ADMIN': 'Chief ICT Officer / System Admin',
+  'IDC': 'DC (Director of Customs)',
+  'ISDDC': 'SDDC (Senior Deputy Director of Customs)',
+  'ICT_ADMIN': 'System Administrator',
+  // ⚠️ Legacy key. ict.admin carries it on the live database; kept so that
+  // account keeps rendering, not offered for a new one.
   'ICT_OFFICER': 'ICT Officer',
 };
 
@@ -1938,7 +2869,7 @@ class DirectorateModel {
         code: json['code'] as String,
         name: json['name'] as String,
         srPrefix: json['sr_prefix'] as String,
-        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 100,
+        sortOrder: parseDbInt(json['sort_order']) ?? 100,
         isActive: json['is_active'] as bool? ?? true,
       );
 }
@@ -1963,11 +2894,10 @@ class YardModel {
         code: json['code'] as String,
         name: json['name'] as String,
         srPrefix: json['sr_prefix'] as String,
-        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 100,
+        sortOrder: parseDbInt(json['sort_order']) ?? 100,
         isActive: json['is_active'] as bool? ?? true,
       );
 }
-
 
 /// True when the signed-in Top Management Directorate officer holds [code].
 ///
@@ -2015,11 +2945,26 @@ class TenderSaleItemModel {
   final String yard;
   final bool sold;
   final DateTime? soldAt;
+  final bool unsold;
+  final DateTime? unsoldAt;
   final String? receiptNumber;
   final ForfeitedPackageModel? forfeited;
   final double soldPrice;
   final List<dynamic> appliedTaxes;
   final bool isDelivered;
+
+  /// The receipt written for the storage charge at hand-over.
+  ///
+  /// ⚠️ Null on every row delivered BEFORE the form existed -- those
+  /// hand-overs happened, and inventing a receipt number for them would
+  /// put a fiction in the record. A delivered row with no receipt is
+  /// expected; a receipt with no delivery is impossible, and migration 61
+  /// enforces that half.
+  final String? handoverReceiptNo;
+
+  /// What was collected at hand-over -- the figure ON the receipt, stored
+  /// rather than recomputed, because rates are a history ICT edits.
+  final double? handoverCharge;
   final DateTime? deliveredAt;
 
   const TenderSaleItemModel({
@@ -2029,11 +2974,15 @@ class TenderSaleItemModel {
     required this.yard,
     this.sold = false,
     this.soldAt,
+    this.unsold = false,
+    this.unsoldAt,
     this.receiptNumber,
     this.forfeited,
     this.soldPrice = 0.0,
     this.appliedTaxes = const [],
     this.isDelivered = false,
+    this.handoverReceiptNo,
+    this.handoverCharge,
     this.deliveredAt,
   });
 
@@ -2047,14 +2996,20 @@ class TenderSaleItemModel {
       soldAt: json['sold_at'] != null
           ? DateTime.tryParse(json['sold_at'].toString())
           : null,
+      unsold: json['unsold'] as bool? ?? false,
+      unsoldAt: json['unsold_at'] != null
+          ? DateTime.tryParse(json['unsold_at'].toString())
+          : null,
       receiptNumber: json['receipt_number'] as String?,
       forfeited: json['forfeited_packages'] != null
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)
           : null,
-      soldPrice: (json['sold_price'] as num?)?.toDouble() ?? 0.0,
+      soldPrice: parseDbNum(json['sold_price']) ?? 0.0,
       appliedTaxes: json['applied_taxes'] as List<dynamic>? ?? const [],
       isDelivered: json['is_delivered'] as bool? ?? false,
+      handoverReceiptNo: json['handover_receipt_no'] as String?,
+      handoverCharge: parseDbNum(json['handover_charge']),
       deliveredAt: json['delivered_at'] != null
           ? DateTime.tryParse(json['delivered_at'].toString())
           : null,
@@ -2066,6 +3021,37 @@ class TenderSaleItemModel {
   String? get effectiveYard => yard.isNotEmpty ? yard : forfeited?.yard;
 }
 
+/// The stage a tender sale has reached, in order.
+///
+/// Read off the sale's own two moments -- it opens when it is created, starts
+/// at [TenderSaleModel.saleMoment] and closes at
+/// [TenderSaleModel.saleEndMoment].
+///
+/// ⚠️ There is no fourth, "lapsed" stage any more. Items used to fall to
+/// Unsold on their own once a working-day window closed, so a CLOCK decided
+/// the outcome and a package could land on the DG's desk because a public
+/// holiday had passed rather than because anyone had looked at it. Central
+/// Disposal now marks every item by hand, and awaitingDecision is where a sale
+/// stays until it does.
+enum TenderStage {
+  /// Announced, bidding not yet started.
+  open('Tender Open', 'Bidding has not started yet'),
+
+  /// Bidding is under way.
+  running('Tender Started', 'Bidding is open'),
+
+  /// Bidding has closed; Central Disposal is marking each item sold or unsold.
+  awaitingDecision('Awaiting Decision', 'Central Disposal is deciding');
+
+  /// The chip's label.
+  final String label;
+
+  /// What it means, for a tooltip.
+  final String description;
+
+  const TenderStage(this.label, this.description);
+}
+
 class TenderSaleModel {
   final String id;
   final String? saleNumber;
@@ -2075,6 +3061,7 @@ class TenderSaleModel {
   final String? tenderType; // special | general_cargo | motor_vehicle
   final String? yard;
   final String? saleTime;
+  final String? saleEndTime;
   final DateTime createdAt;
   final String? createdByName;
   final List<TenderSaleItemModel> items;
@@ -2088,12 +3075,22 @@ class TenderSaleModel {
     this.tenderType,
     this.yard,
     this.saleTime,
+    this.saleEndTime,
     required this.createdAt,
     this.createdByName,
     this.items = const [],
   });
 
   String get typeLabel => tenderSaleTypeLabel(tenderType);
+
+  /// A Special Tender Sale -- the round PERISHABLE goods go to.
+  ///
+  /// ⚠️ These get ONE round. Normal goods run the Valuation Tender plus
+  /// Tenders 1-3, a committee valuation and one more chance; goods that spoil
+  /// do not have months, so a failed special sale is the end of the road and
+  /// the decision cannot wait. Anything showing a sale is worth marking as
+  /// urgent should read this rather than testing the string again.
+  bool get isPerishableSale => tenderType == 'special';
 
   /// The exact moment the tender sale is scheduled to run — [saleDate] combined
   /// with [saleTime] ("HH:mm" / "HH:mm:ss"). Falls back to the date's midnight
@@ -2118,14 +3115,54 @@ class TenderSaleModel {
     return DateTime.now().isAfter(moment);
   }
 
-  /// The moment the package leaves this sale as UNSOLD: the END of the next
-  /// WORKING day after the sale date (weekends & public holidays are skipped so
-  /// the officer always has an office day to mark it). After this, an item not
-  /// yet marked sold drops to the Unsold Tenders pool. Null when no date.
-  DateTime? get unsoldDeadline {
+  /// The moment the sale CLOSES — [saleDate] with [saleEndTime]. Falls back to
+  /// [saleMoment] when no end time was recorded, so rows created before the
+  /// column existed behave exactly as they did.
+  DateTime? get saleEndMoment =>
+      combineSaleMoment(saleDate, saleEndTime) ?? saleMoment;
+
+  /// True once the sale has ENDED. This — not [saleTimePassed] — is what
+  /// unseals the valuation: the figure is the reserve price, so it may only be
+  /// shown after bidding has closed, never while it is open.
+  bool get saleEnded {
+    final moment = saleEndMoment;
+    if (moment == null) return false;
+    return DateTime.now().isAfter(moment);
+  }
+
+  /// Where this sale has got to, for a watcher who cannot act on it.
+  ///
+  /// "Pending" said nothing about which of four quite different situations the
+  /// item was in, and read as an action the viewer owed. These do not: each
+  /// names what the SALE is doing, and the last one names who is being waited
+  /// on.
+  TenderStage get stage {
+    // ⚠️ There is no longer a "lapsed" stage. An item used to fall to
+    // Unsold on its own once a working-day window closed, which meant a clock
+    // -- not an officer -- decided the outcome, and a package could reach the
+    // DG's desk because a holiday had passed rather than because anyone had
+    // looked at it. Central Disposal marks every item Sold or Unsold by hand,
+    // and the action stays available for as long as the sale exists.
+    if (saleEnded) return TenderStage.awaitingDecision;
+    if (saleTimePassed) return TenderStage.running;
+    return TenderStage.open;
+  }
+
+  /// How long Central Disposal has had this sale, measured from the moment
+  /// bidding STARTED.
+  ///
+  /// This replaces the deadline: nothing expires, but the header says how long
+  /// the decision has been outstanding, so an item nobody has marked is
+  /// visible as such instead of silently lapsing.
+  Duration? get sinceSaleStarted {
     final d = saleDate;
     if (d == null) return null;
-    return workingDeadline(d);
+    final parts = (saleTime ?? '00:00').split(':');
+    final h = int.tryParse(parts.first) ?? 0;
+    final m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    final start = DateTime(d.year, d.month, d.day, h, m);
+    final now = DateTime.now();
+    return now.isAfter(start) ? now.difference(start) : null;
   }
 
   /// De-duplicated items: same (forfeited_package_id, fp.item_id) combination
@@ -2152,6 +3189,19 @@ class TenderSaleModel {
   int get soldCount => dedupedItems.where((i) => i.sold).length;
   int get totalCount => dedupedItems.length;
 
+  /// Items whose outcome is settled — Sold OR Unsold.
+  ///
+  /// ⚠️ Not the same question as [soldCount]. A sale where every item went
+  /// UNSOLD is finished: nobody has anything left to decide on it. Counting
+  /// only the sold ones said such a sale was still outstanding, so the yard's
+  /// "since bidding started" clock kept climbing on a sale that had been
+  /// closed for days.
+  int get decidedCount => dedupedItems.where((i) => i.sold || i.unsold).length;
+
+  /// Every item has an outcome, so nothing on this sale is awaiting a
+  /// decision. An empty sale is NOT decided — there is nothing to decide.
+  bool get allDecided => totalCount > 0 && decidedCount == totalCount;
+
   factory TenderSaleModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['tender_sale_items'] as List? ?? const [];
     return TenderSaleModel(
@@ -2161,11 +3211,12 @@ class TenderSaleModel {
           ? DateTime.tryParse(json['sale_date'].toString())
           : null,
       serial: json['serial'] as String?,
-      year: (json['year'] as num?)?.toInt(),
+      year: parseDbInt(json['year']),
       tenderType: json['tender_type'] as String?,
       yard: json['yard'] as String?,
       saleTime: json['sale_time'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      saleEndTime: json['sale_end_time'] as String?,
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
       items: itemsJson
@@ -2193,6 +3244,8 @@ class DestructionItemModel {
   final String yard;
   final bool destroyed;
   final DateTime? destroyedAt;
+  final bool undestroyed;
+  final DateTime? undestroyedAt;
   final bool delivered;
   final DateTime? deliveredAt;
   final String? notes;
@@ -2215,6 +3268,8 @@ class DestructionItemModel {
     required this.yard,
     this.destroyed = false,
     this.destroyedAt,
+    this.undestroyed = false,
+    this.undestroyedAt,
     this.delivered = false,
     this.deliveredAt,
     this.notes,
@@ -2234,13 +3289,17 @@ class DestructionItemModel {
       destroyedAt: json['destroyed_at'] != null
           ? DateTime.tryParse(json['destroyed_at'].toString())
           : null,
+      undestroyed: json['undestroyed'] as bool? ?? false,
+      undestroyedAt: json['undestroyed_at'] != null
+          ? DateTime.tryParse(json['undestroyed_at'].toString())
+          : null,
       delivered: json['delivered'] as bool? ?? false,
       deliveredAt: json['delivered_at'] != null
           ? DateTime.tryParse(json['delivered_at'].toString())
           : null,
       notes: json['notes'] as String?,
-      destroyedPrice: (json['destroyed_price'] as num?)?.toDouble() ?? 0,
-      appliedTaxes: (json['applied_taxes'] as List?) ?? const [],
+      destroyedPrice: parseDbNum(json['destroyed_price']) ?? 0,
+      appliedTaxes: json['applied_taxes'] as List<dynamic>? ?? const [],
       receiptNumber: json['receipt_number'] as String?,
       forfeited: json['forfeited_packages'] != null
           ? ForfeitedPackageModel.fromJson(
@@ -2265,6 +3324,7 @@ class DestructionModel {
   final String? tenderType;
   final String? yard;
   final String? saleTime;
+  final String? saleEndTime;
   final DateTime createdAt;
   final String? createdByName;
   final List<DestructionItemModel> items;
@@ -2278,6 +3338,7 @@ class DestructionModel {
     this.tenderType,
     this.yard,
     this.saleTime,
+    this.saleEndTime,
     required this.createdAt,
     this.createdByName,
     this.items = const [],
@@ -2309,14 +3370,19 @@ class DestructionModel {
     return DateTime.now().isAfter(moment);
   }
 
-  /// The moment the package leaves this destruction as UNDESTROYED: the END of
-  /// the next WORKING day after the destruction date (weekends & public holidays
-  /// skipped). After this, an item not yet marked destroyed drops to the
-  /// Undestroyed pool. Null when no date.
-  DateTime? get unsoldDeadline {
-    final d = saleDate;
-    if (d == null) return null;
-    return workingDeadline(d);
+  /// The moment the sale CLOSES — [saleDate] with [saleEndTime]. Falls back to
+  /// [saleMoment] when no end time was recorded, so rows created before the
+  /// column existed behave exactly as they did.
+  DateTime? get saleEndMoment =>
+      combineSaleMoment(saleDate, saleEndTime) ?? saleMoment;
+
+  /// True once the sale has ENDED. This — not [saleTimePassed] — is what
+  /// unseals the valuation: the figure is the reserve price, so it may only be
+  /// shown after bidding has closed, never while it is open.
+  bool get saleEnded {
+    final moment = saleEndMoment;
+    if (moment == null) return false;
+    return DateTime.now().isAfter(moment);
   }
 
   factory DestructionModel.fromJson(Map<String, dynamic> json) {
@@ -2328,11 +3394,12 @@ class DestructionModel {
           ? DateTime.tryParse(json['sale_date'].toString())
           : null,
       serial: json['serial']?.toString(),
-      year: (json['year'] as num?)?.toInt(),
+      year: parseDbInt(json['year']),
       tenderType: json['tender_type'] as String?,
       yard: json['yard'] as String?,
       saleTime: json['sale_time'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      saleEndTime: json['sale_end_time'] as String?,
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
       items: itemsJson
@@ -2359,13 +3426,23 @@ class ReDestructionInfo {
 // ── Disposal Requests (Yard → Central Disposal Directorate) ──────────────
 //
 // A yard submits a request listing forfeited packages whose 30-day appeal
-// window has passed. Each package is tagged for either DESTRUCTION or SALE.
+// window has passed. Every requested package is for SALE.
+//
+// Destruction is NOT a disposal request. A yard destroying goods records it as
+// a Final Disposition, which writes the item's destruction tag directly and
+// puts it on the Destroyed Goods pages — it never reaches the Valuation
+// Directorate or Central Disposal's Disposal Requests, and there is no route
+// by which it could. Offering it here produced request rows that then sat in
+// both queues with nothing anyone could do to them.
 
-/// The two disposition options offered per requested package.
+/// The disposition a requested package carries. Sale is the only one: see
+/// above for why destruction is not a request.
 const Map<String, String> kDispositions = {
-  'destruction': 'Destruction',
   'sale': 'Sale',
 };
+
+/// The disposition every new request item is created with.
+const String kDefaultDisposition = 'sale';
 
 String dispositionLabel(String? code) => kDispositions[code] ?? (code ?? '—');
 
@@ -2444,12 +3521,12 @@ class DisposalRequestItemModel {
       id: json['id'] as String,
       requestId: json['request_id'] as String,
       forfeitedPackageId: json['forfeited_package_id'] as String,
-      disposition: json['disposition'] as String? ?? 'destruction',
+      disposition: json['disposition'] as String? ?? kDefaultDisposition,
       forfeited: json['forfeited_packages'] != null
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)
           : null,
-      valuationCost: (json['valuation_cost'] as num?)?.toDouble(),
+      valuationCost: parseDbNum(json['valuation_cost']),
       forwarded: json['forwarded'] as bool? ?? false,
     );
   }
@@ -2499,16 +3576,14 @@ class DisposalRequestModel {
     return DisposalRequestModel(
       id: json['id'] as String,
       yard: json['yard'] as String? ?? '',
-      requestDate: DateTime.parse(json['request_date'].toString()),
+      requestDate: parseDbDateRequired(json['request_date']),
       status: json['status'] as String? ?? 'pending',
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
       items: items,
       valuationStatus: json['valuation_status'] as String? ?? 'forwarded',
-      valuedAt: json['valued_at'] != null
-          ? DateTime.parse(json['valued_at'] as String)
-          : null,
+      valuedAt: parseDbDate(json['valued_at']),
       valuedByName: (json['valued_profile']
           as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -2540,10 +3615,14 @@ class PackageCategory {
       name: json['name'] as String,
       description: json['description'] as String?,
       targetWarehouseId: json['target_warehouse_id'] as String?,
-      targetWarehouseName:
+      // ⚠️ A plain column now, not an embed. The per-yard view resolves the
+      // warehouse name itself (migration 037) because a VIEW has no foreign
+      // keys for `warehouses(name)` to join through. The old embed shape is
+      // still read as a fallback for any caller still selecting the table.
+      targetWarehouseName: json['target_warehouse_name'] as String? ??
           (json['warehouses'] as Map<String, dynamic>?)?['name'] as String?,
       targetZone: json['target_zone'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
     );
   }
 }
@@ -2567,9 +3646,9 @@ class DisposalTaxModel {
     return DisposalTaxModel(
       id: json['id'] as String,
       name: json['name'] as String,
-      percentage: (json['percentage'] as num).toDouble(),
+      percentage: (parseDbNum(json['percentage']) ?? 0),
       isActive: json['is_active'] as bool? ?? true,
-      createdAt: DateTime.parse(json['created_at'].toString()),
+      createdAt: parseDbDateRequired(json['created_at']),
     );
   }
 

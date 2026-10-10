@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'lib/core/supabase_client.dart';
+import 'lib/core/db_client.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

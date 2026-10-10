@@ -11,6 +11,8 @@ import '../reports/reports_screen.dart';
 import 'tender_committee_tab.dart';
 import 'unsold_decision_tab.dart';
 import 'financials_tab.dart';
+import 'tender_sales_view_tab.dart';
+import '../../widgets/app_dialog.dart';
 
 /// Executive Office (DG / ADG) portal. Standalone scaffold (not AppShell).
 /// Customs' two highest posts pick a yard and generate/view/print any report
@@ -31,7 +33,11 @@ class _ExecutiveDashboardScreenState
   /// never drift out of step with the number of Tab widgets — when it does,
   /// the bar still PAINTS every tab but clicks resolve against the shorter
   /// controller, so tapping does nothing while swiping still works.
-  static const int _kTabCount = 4;
+  // ⚠️ Used twice: the controller's length, and the width check that
+  // decides whether the strip fills the bar or scrolls. One constant, so the
+  // two cannot drift -- the drift that had Central Disposal's length saying
+  // 16 while there were 15 tabs.
+  static const int _kTabCount = 6;
 
   // Not `late final`: a hot reload keeps the old controller alive, so a
   // changed _kTabCount would leave a stale one behind. didUpdateWidget-style
@@ -64,7 +70,7 @@ class _ExecutiveDashboardScreenState
         children: [
           // ── Top bar ──────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
@@ -111,7 +117,7 @@ class _ExecutiveDashboardScreenState
                   message: 'View profile',
                   child: InkWell(
                     borderRadius: BorderRadius.circular(999),
-                    onTap: () => showDialog(
+                    onTap: () => showAppDialog(
                       context: context,
                       builder: (_) => DisposalProfileDialog(accent: accent),
                     ),
@@ -174,15 +180,36 @@ class _ExecutiveDashboardScreenState
           // ── Tab bar ──────────────────────────────────────────
           Container(
             color: context.colors.cardDark,
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
             child: Container(
               decoration: BoxDecoration(
                 color: context.colors.surfaceDark,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: context.colors.borderColor),
               ),
-              child: TabBar(
+              child: LayoutBuilder(builder: (context, box) {
+                // ⚠️ Fill the bar when the six tabs fit; scroll when they do
+                // not.
+                //
+                // Fixed tabs divide the width equally, so on a narrow window
+                // the long labels -- 'Tender Committees', 'Unsold
+                // Perishables' -- did not fit their share and painted red
+                // RIGHT OVERFLOWED stripes over the header. Making the strip
+                // scrollable fixed that, but left the six tabs bunched at the
+                // left with a third of the bar empty beside them: Central
+                // Disposal has sixteen and genuinely needs to scroll, this has
+                // six and usually does not.
+                //
+                // The widest label sets the floor. 190px is 'Tender
+                // Committees' at 13pt with its icon, gap and padding, rounded
+                // up -- measured from the rendered strip, not guessed.
+                const perTab = 190.0;
+                final fits = box.maxWidth >= perTab * _kTabCount;
+                return TabBar(
                 controller: tabController,
+                isScrollable: !fits,
+                tabAlignment:
+                    fits ? TabAlignment.fill : TabAlignment.start,
                 splashFactory: NoSplash.splashFactory,
                 overlayColor: WidgetStateProperty.all(Colors.transparent),
                 indicatorSize: TabBarIndicatorSize.tab,
@@ -201,6 +228,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.groups_rounded, size: 18),
@@ -211,6 +239,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.rule_folder_rounded, size: 18),
@@ -221,6 +250,29 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.eco_rounded, size: 18),
+                          Gap(8),
+                          Text('Unsold Perishables'),
+                        ]),
+                  ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.storefront_rounded, size: 18),
+                          Gap(8),
+                          Text('Tender Sales'),
+                        ]),
+                  ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.account_balance_wallet_rounded, size: 18),
@@ -231,6 +283,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.assessment_rounded, size: 18),
@@ -239,7 +292,8 @@ class _ExecutiveDashboardScreenState
                         ]),
                   ),
                 ],
-              ),
+                );
+              }),
             ),
           ),
 
@@ -250,6 +304,11 @@ class _ExecutiveDashboardScreenState
               children: const [
                 TenderCommitteeTab(),
                 UnsoldDecisionTab(),
+                // ⚠️ Perishables never reach a tender committee, and get no
+                // second round -- one failed Special Tender Sale and the DG
+                // decides. Same table and same decision, its own list.
+                UnsoldDecisionTab(perishable: true),
+                TenderSalesViewTab(),
                 FinancialsTab(),
                 ReportsScreen(executiveMode: true),
               ],

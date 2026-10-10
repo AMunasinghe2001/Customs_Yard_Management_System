@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
-import '../../core/supabase_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/supabase_client.dart';
-import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
-import '../../core/yards.dart';
-import '../../services/services.dart';
 import '../../models/models.dart';
+import '../../widgets/account_cells.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -19,6 +15,9 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../core/app_log.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/confirm_dialog.dart';
 
 Widget _tableActionButton({
   required BuildContext context,
@@ -64,7 +63,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 5,
+        length: 4,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -79,9 +78,17 @@ class AdminScreen extends ConsumerWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Admin Panel',
+                        // Matches the nav entry — see app_shell.dart.
+                        Text('Yard Administration',
                             style: Theme.of(context).textTheme.headlineLarge),
-                        Text('Manage officers and system configuration',
+                        // ⚠️ NOT "manage officers". Officer accounts are
+                        // provisioned, posted and disabled by the ICT
+                        // Directorate; a yard cannot create or edit one.
+                        // What this panel actually does is configure the
+                        // yard's own storage and read its records.
+                        Text(
+                            'Yard staff record, warehouses, items and activity '
+                            'logs',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
@@ -122,16 +129,16 @@ class AdminScreen extends ConsumerWidget {
                           tabs: const [
                             Tab(
                                 icon: Icon(Icons.people_rounded, size: 20),
-                                text: 'Officers'),
+                                // Matches the heading below it: this tab is
+                                // a RECORD of the yard's staff, not a place
+                                // officers are created.
+                                text: 'Yard Staff'),
                             Tab(
                                 icon: Icon(Icons.warehouse_rounded, size: 20),
                                 text: 'Warehouses'),
                             Tab(
                                 icon: Icon(Icons.category_rounded, size: 20),
                                 text: 'Items'),
-                            Tab(
-                                icon: Icon(Icons.payments_rounded, size: 20),
-                                text: 'Storage Charges'),
                             Tab(
                                 icon: Icon(Icons.history_toggle_off_rounded,
                                     size: 20),
@@ -152,7 +159,6 @@ class AdminScreen extends ConsumerWidget {
                 _OfficersTab(),
                 _WarehousesTab(),
                 _CategoriesTab(),
-                _StorageChargesTab(),
                 _LogsTab()
               ])),
             ],
@@ -178,6 +184,12 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
 
   @override
   Widget build(BuildContext context) {
+    // When each member started and stopped serving HERE. Read from the audit
+    // log, which records the yard each event happened in — a profile row
+    // only knows where someone stands today.
+    final periods = ref.watch(myYardServicePeriodsProvider).valueOrNull ??
+        const <String, ({DateTime? activatedAt, DateTime? deactivatedAt})>{};
+    final myYard = ref.watch(currentProfileProvider)?.yard;
     // Admins manage only their own yard's staff. [myYardProfilesProvider]
     // filters to the current admin's yard and drops the head-office Appeal /
     // Disposal directorate accounts.
@@ -186,7 +198,7 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
       padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Officers & Admins',
+          Text('Yard Staff',
               style: TextStyle(
                   color: context.colors.textPrimary,
                   fontSize: 24,
@@ -195,11 +207,17 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
         const Gap(12),
         // ── Status filter chips ──────────────────────────────────
         Row(children: [
+          // ⚠️ "Serving" / "Past", not "Active" / "Inactive". This filter
+          // asks about service IN THIS YARD, and the group it collects
+          // holds two different people: someone whose account was
+          // disabled, and someone transferred elsewhere whose account is
+          // perfectly live. "Inactive" is wrong for the second and reads
+          // as an account state rather than a posting.
           _statusChip('All', null),
           const Gap(8),
-          _statusChip('Active', true),
+          _statusChip('Serving', true),
           const Gap(8),
-          _statusChip('Inactive', false),
+          _statusChip('Past Staff', false),
         ]),
         const Gap(12),
         Expanded(
@@ -219,19 +237,32 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                 ...(_statusFilter == null
                     ? list
                     : list.where((p) {
-                        final isActive = p.isActive && !p.isExpired;
+                        // ⚠️ Serving HERE, not "account enabled". Someone
+                        // transferred to another yard still has a live
+                        // account — they are simply no longer this yard's
+                        // staff, and filtering them under Active would say
+                        // the opposite.
+                        final isActive =
+                            p.yard == myYard && p.isActive && !p.isExpired;
                         return _statusFilter! ? isActive : !isActive;
                       }))
               ];
-              // Fewest days-until-disable first (most urgent on top); accounts
-              // that never auto-expire (directorate) sink to the bottom.
+              // ⚠️ Serving members first, then the ones who have left, most
+              // recent departure at the top of that group. The old sort was
+              // by days-until-auto-expiry, which is ICT's clock and read
+              // "Never" for every row in a yard — so it ordered nothing.
               filtered.sort((a, b) {
-                final da = a.daysUntilExpiry;
-                final db = b.daysUntilExpiry;
-                if (da == null && db == null) return 0;
-                if (da == null) return 1;
-                if (db == null) return -1;
-                return da.compareTo(db);
+                final aHere = a.yard == myYard && a.isActive && !a.isExpired;
+                final bHere = b.yard == myYard && b.isActive && !b.isExpired;
+                if (aHere != bHere) return aHere ? -1 : 1;
+                if (!aHere) {
+                  final da = periods[a.id]?.deactivatedAt;
+                  final db = periods[b.id]?.deactivatedAt;
+                  if (da != null && db != null) return db.compareTo(da);
+                  if (da != null) return -1;
+                  if (db != null) return 1;
+                }
+                return a.fullName.compareTo(b.fullName);
               });
               final pageItems = pageSlice(filtered, _page, kClientPageSize);
               return Column(children: [
@@ -257,6 +288,9 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                       headingRowColor:
                           WidgetStateProperty.all(context.colors.surfaceDark),
                       columns: [
+                        // ⚠️ Proportional, so the slack is shared. Pinning
+                        // the short columns pushed every spare pixel into
+                        // one gap at the end of the row.
                         DataColumn2(
                             label: Text('Name',
                                 style: TextStyle(
@@ -270,23 +304,31 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.M),
+                            size: ColumnSize.S),
+                        // ⚠️ The POST, not the permission level. `role`
+                        // has only two yard values — admin and officer — so
+                        // a DC and an SDDC both read "ADMIN", which is not
+                        // the job either of them holds. `job_role` is what
+                        // ICT actually assigned.
                         DataColumn2(
-                            label: Text('Role',
+                            label: Text('Job Role',
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.S,
-                            fixedWidth: 100),
+                            size: ColumnSize.S),
+                        // ⚠️ "Disables In" is gone. It counted down to an
+                        // automatic expiry, which is ICT's business, not the
+                        // yard's — and it read "Never" on every row here.
+                        // What a yard needs to know is WHEN each member
+                        // served in THIS yard.
                         DataColumn2(
-                            label: Text('Disables In',
+                            label: Text('Served in This Yard',
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.S,
-                            fixedWidth: 120),
+                            size: ColumnSize.L),
                         DataColumn2(
                             label: Text('Status',
                                 style: TextStyle(
@@ -294,7 +336,7 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
                             size: ColumnSize.S,
-                            fixedWidth: 130),
+                            fixedWidth: 140),
                       ],
                       rows: pageItems
                           .map((p) => DataRow(cells: [
@@ -307,9 +349,13 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 13))),
-                                DataCell(_RoleChip(role: p.role)),
-                                DataCell(_ExpiresInCell(profile: p)),
-                                DataCell(_AccountStatusChip(profile: p)),
+                                DataCell(_JobRoleChip(profile: p)),
+                                DataCell(_ServedInYardCell(
+                                    period: periods[p.id],
+                                    profile: p,
+                                    myYard: myYard)),
+                                DataCell(_YardStatusChip(
+                                    profile: p, myYard: myYard)),
                               ]))
                           .toList(),
                     ),
@@ -369,101 +415,134 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
 }
 
 
-class _RoleChip extends StatelessWidget {
-  final String role;
-  const _RoleChip({required this.role});
+/// The post ICT assigned — DC, SDDC or Officer — not the permission level.
+///
+/// ⚠️ `profiles.role` has only two yard values, 'admin' and 'officer', so a
+/// DC and an SDDC both render as "ADMIN" from it. They are two different
+/// posts that happen to share one permission level, and the yard's own staff
+/// list is the last place that distinction should be lost.
+class _JobRoleChip extends StatelessWidget {
+  final ProfileModel profile;
+
+  const _JobRoleChip({required this.profile});
+
   @override
   Widget build(BuildContext context) {
-    final isAdmin = role == 'admin';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isAdmin
-            ? context.colors.primaryGold.withOpacity(0.15)
-            : context.colors.accentBlue.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-            color: isAdmin
-                ? context.colors.primaryGold.withOpacity(0.4)
-                : context.colors.accentBlue.withOpacity(0.4)),
-      ),
-      child: Text(role.toUpperCase(),
+    // Admin-level posts keep the gold the role chip used, so the panel still
+    // reads at a glance; an officer stays neutral.
+    final isAdminPost = profile.isAdmin;
+    final color =
+        isAdminPost ? context.colors.primaryGold : context.colors.accentLightBlue;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: TooltipText(
+          profile.postShortTitle.toUpperCase(),
           style: TextStyle(
-              color: isAdmin
-                  ? context.colors.primaryGold
-                  : context.colors.accentLightBlue,
-              fontSize: 11,
-              fontWeight: FontWeight.w700)),
+              color: color, fontWeight: FontWeight.w800, fontSize: 11),
+        ),
+      ),
     );
   }
 }
 
-/// How long until the account auto-deactivates (its 8-month lifetime).
-/// "Never" for directorate accounts, "Expired" once past, and a red countdown
-/// in the last 2 weeks so admins can renew in time.
-class _ExpiresInCell extends StatelessWidget {
+/// Whether this person is this yard's staff TODAY.
+///
+/// ⚠️ Not the same as [AccountStatusChip], which reports whether the ACCOUNT
+/// is enabled. An officer transferred GL1 → GL2 has a perfectly live
+/// account, and GL1's own staff table calling them "ACTIVE" would say they
+/// still work here. Their standing in another yard is not this table's
+/// business; what it must say is that they have moved on.
+class _YardStatusChip extends StatelessWidget {
   final ProfileModel profile;
-  const _ExpiresInCell({required this.profile});
+  final String? myYard;
+
+  const _YardStatusChip({required this.profile, required this.myYard});
 
   @override
   Widget build(BuildContext context) {
-    final days = profile.daysUntilExpiry;
-    if (days == null) {
-      return Text('Never',
-          style: TextStyle(color: context.colors.textMuted, fontSize: 12));
+    final elsewhere = myYard != null && profile.yard != myYard;
+    if (elsewhere) {
+      final color = context.colors.textMuted;
+      return Tooltip(
+        message: 'Transferred to ${profile.yard ?? 'another yard'}. '
+            'The account is still active there.',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: color.withOpacity(0.4)),
+          ),
+          child: Text('TRANSFERRED',
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+        ),
+      );
     }
-    if (days < 0) {
-      return Text('Expired',
-          style: TextStyle(
-              color: context.colors.dangerRed,
-              fontWeight: FontWeight.w700,
-              fontSize: 12));
-    }
-    final soon = days <= 14;
-    final label = days == 0 ? 'Today' : '$days day${days == 1 ? '' : 's'}';
-    return Text(label,
-        style: TextStyle(
-            color: soon ? context.colors.dangerRed : context.colors.textPrimary,
-            fontWeight: soon ? FontWeight.w700 : FontWeight.w600,
-            fontSize: 12));
+    return AccountStatusChip(profile: profile);
   }
 }
 
-/// Read-only account status. Admins can no longer toggle this manually; an
-/// account is ACTIVE until 8 months after its creation date, then EXPIRED.
-class _AccountStatusChip extends StatelessWidget {
+/// The span this member has served in THIS yard.
+///
+/// ⚠️ Answers "what period did they work here", which is why the panel keeps
+/// people who have left. Someone still serving reads "Since 3 Feb 2026"; one
+/// who has gone reads the closed span, so a yard can see at a glance who was
+/// here when.
+///
+/// The dates come from the audit log, and an account provisioned before the
+/// log recorded these events has none — that reads as an em dash rather than
+/// a guess, because `created_at` is when the ACCOUNT was made, which is not
+/// the same as when the person started here.
+class _ServedInYardCell extends StatelessWidget {
+  final ({DateTime? activatedAt, DateTime? deactivatedAt})? period;
   final ProfileModel profile;
-  const _AccountStatusChip({required this.profile});
+  final String? myYard;
+
+  const _ServedInYardCell(
+      {required this.period, required this.profile, required this.myYard});
+
+  static final _fmt = DateFormat('d MMM yyyy');
 
   @override
   Widget build(BuildContext context) {
-    final String label;
-    final Color color;
-    if (!profile.isActive) {
-      label = 'INACTIVE';
-      color = context.colors.dangerRed;
-    } else if (profile.isExpired) {
-      label = 'EXPIRED';
-      color = context.colors.dangerRed;
+    final from = period?.activatedAt;
+    final to = period?.deactivatedAt;
+    // ⚠️ Still here means posted to THIS yard. A transferred officer's
+    // account is still enabled — somewhere else.
+    final stillHere =
+        profile.yard == myYard && profile.isActive && !profile.isExpired;
+
+    String label;
+    if (from == null && to == null) {
+      label = stillHere ? '—' : 'Transferred out';
+    } else if (stillHere) {
+      label = from != null ? 'Since ${_fmt.format(from)}' : 'Currently serving';
+    } else if (from != null && to != null) {
+      label = '${_fmt.format(from)} – ${_fmt.format(to)}';
+    } else if (to != null) {
+      label = 'Until ${_fmt.format(to)}';
     } else {
-      label = 'ACTIVE';
-      color = context.colors.successGreen;
+      // Joined here, no departure logged, but posted elsewhere now — the
+      // transfer itself is the end of the stint.
+      label = 'From ${_fmt.format(from!)} · transferred out';
     }
-    final expiresStr = DateFormat('dd MMM yyyy').format(profile.expiresAt);
-    return Tooltip(
-      message: profile.isExpired
-          ? 'Auto-deactivated on $expiresStr (8 months after creation)'
-          : 'Auto-deactivates on $expiresStr (8 months after creation)',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withOpacity(0.4)),
-        ),
-        child: Text(label,
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+
+    return TooltipText(
+      label,
+      style: TextStyle(
+        color: stillHere
+            ? context.colors.textSecondary
+            : context.colors.textMuted,
+        fontSize: 12.5,
+        fontWeight: stillHere ? FontWeight.w600 : FontWeight.w500,
       ),
     );
   }
@@ -784,7 +863,7 @@ class _WarehousesTab extends ConsumerWidget {
   }
 
   void _showAddWarehouseDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => const _AddWarehouseDialog(),
     );
@@ -953,7 +1032,7 @@ class _WarehousesTab extends ConsumerWidget {
   /// Manage the zones of one warehouse — this is where capacity is set.
   void _showZonesDialog(
       BuildContext context, WidgetRef ref, WarehouseModel warehouse) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => _WarehouseZonesDialog(warehouse: warehouse),
     );
@@ -970,55 +1049,69 @@ class _WarehousesTab extends ConsumerWidget {
     final capCtrl = TextEditingController(text: zone.capacity.toString());
     final descCtrl = TextEditingController(text: zone.description ?? '');
 
-    final saved = await showDialog<bool>(
+    // ⚠️ The SAME StyledFormDialog every other Yard Administration form uses.
+    //
+    // This was a bare AlertDialog, so the Warehouses page showed TWO different
+    // edit forms: "Edit Warehouse" with the yard's navy header, and this one
+    // with Material's default chrome — no header, no section card, different
+    // buttons. One page, one design.
+    final saved = await showAppDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Edit Zone'),
-        content: SizedBox(
-          width: 360,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: codeCtrl,
-              decoration: InputDecoration(
-                  labelText: 'Zone Code',
-                  hintText:
-                      '${warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: capCtrl,
-              keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: 'Capacity (items) *'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: descCtrl,
-              decoration:
-                  const InputDecoration(labelText: 'Description (optional)'),
-            ),
-          ]),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.trim().isEmpty) return;
-              if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
-              Navigator.pop(c, true);
-            },
-            child: const Text('Save'),
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDlg) => StyledFormDialog(
+          label: 'Zone',
+          title: 'Edit Zone',
+          icon: Icons.grid_view_rounded,
+          width: 460,
+          yard: true,
+          child: StyledFormSection(
+            title: '${warehouse.name} · ${zone.name}',
+            icon: Icons.warehouse_rounded,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                // The Zone Code hint mirrors the name as it is typed, so a
+                // rebuild is needed on every keystroke.
+                onChanged: (_) => setDlg(() {}),
+                decoration: const InputDecoration(
+                    labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
+              ),
+              TextField(
+                controller: codeCtrl,
+                decoration: InputDecoration(
+                    labelText: 'Zone Code',
+                    hintText:
+                        '${warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
+              ),
+              TextField(
+                controller: capCtrl,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Capacity (items) *'),
+              ),
+              TextField(
+                controller: descCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'Description (optional)'),
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Cancel')),
+            StyledDialogPrimaryButton(
+              labelText: 'Save',
+              icon: Icons.save_rounded,
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
+                Navigator.pop(c, true);
+              },
+            ),
+          ],
+        ),
       ),
     );
 
@@ -1052,13 +1145,7 @@ class _WarehousesTab extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showErrorSnack(context, e);
       }
     }
   }
@@ -1068,26 +1155,20 @@ class _WarehousesTab extends ConsumerWidget {
     WidgetRef ref,
     WarehouseZoneModel zone,
   ) async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: Text('Delete zone ${zone.name}?'),
-            content: const Text(
-                'Goods already recorded in this zone stay where they are, but '
-                'the zone stops counting towards capacity.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(c, false),
-                  child: const Text('Cancel')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    // ⚠️ The YARD's chrome, like Edit Zone two buttons away. This was a bare
+    // AlertDialog beside a StyledFormDialog: two shapes on one screen, and
+    // the plainer of the two was the one asking to destroy something.
+    final ok = await ConfirmDialog.show(
+      context,
+      label: 'ZONE',
+      title: 'Delete zone ${zone.name}?',
+      icon: Icons.grid_view_rounded,
+      message: 'Goods already recorded in this zone stay where they are, but '
+          'the zone stops counting towards capacity.',
+      confirmLabel: 'Delete zone',
+      accent: context.colors.dangerRed,
+      yard: true,
+    );
     if (!ok) return;
 
     try {
@@ -1107,13 +1188,7 @@ class _WarehousesTab extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showErrorSnack(context, e);
       }
     }
   }
@@ -1130,13 +1205,14 @@ class _WarehousesTab extends ConsumerWidget {
     final capC = TextEditingController(text: warehouse.capacity.toString());
     bool loading = false;
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => StyledFormDialog(
           label: 'Warehouse',
           title: 'Edit Warehouse',
           icon: Icons.warehouse_rounded,
+          yard: true,
           width: 460,
           child: StyledFormSection(
             title: warehouse.name,
@@ -1211,13 +1287,7 @@ class _WarehousesTab extends ConsumerWidget {
                         }
                       } catch (e) {
                         if (ctx.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error: ${e.toString()}'),
-                              backgroundColor: Colors.red,
-                              duration: const Duration(seconds: 4),
-                            ),
-                          );
+                          showErrorSnack(context, e);
                         }
                       } finally {
                         setState(() => loading = false);
@@ -1234,56 +1304,31 @@ class _WarehousesTab extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     WarehouseModel warehouse,
-  ) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Warehouse?'),
-        content: Text(
-          'Are you sure you want to delete "${warehouse.name}"? This action cannot be undone. The warehouse must have no active entries.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            onPressed: () async {
-              try {
-                await ref.read(warehouseServiceProvider).deleteWarehouse(
-                      warehouse.id,
-                    );
-                ref.refresh(warehousesProvider);
-                if (ctx.mounted) Navigator.pop(ctx);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Warehouse deleted successfully'),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error: ${e.toString()}'),
-                      backgroundColor: Colors.red,
-                      duration: const Duration(seconds: 4),
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+  ) async {
+    // ⚠️ ASK first, then act -- the delete used to run from inside the
+    // dialog's own button, so a failure had to close the dialog itself and
+    // the error landed on whatever was underneath. Confirming and acting are
+    // now two steps, like every other delete on this page.
+    final ok = await ConfirmDialog.show(
+      context,
+      label: 'WAREHOUSE',
+      title: 'Delete ${warehouse.name}?',
+      icon: Icons.warehouse_rounded,
+      message: 'This cannot be undone, and the warehouse must have no goods '
+          'still held in it. Its zones go with it.',
+      confirmLabel: 'Delete warehouse',
+      accent: context.colors.dangerRed,
+      yard: true,
     );
+    if (!ok) return;
+
+    try {
+      await ref.read(warehouseServiceProvider).deleteWarehouse(warehouse.id);
+      ref.invalidate(warehousesProvider);
+      if (context.mounted) context.showSuccess('Warehouse deleted');
+    } catch (e) {
+      if (context.mounted) showErrorSnack(context, e);
+    }
   }
 }
 
@@ -1327,9 +1372,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
             loading: () => Center(
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
-            error: (e, _) => Center(
-                child: Text('Error: $e',
-                    style: TextStyle(color: context.colors.dangerRed))),
+            error: (e, _) => Center(child: InlineError(e)),
             data: (list) {
               final pageItems = pageSlice(list, _page, kClientPageSize);
               return Column(children: [
@@ -1611,35 +1654,28 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                       color: context.colors.dangerRed,
                                       tooltip: 'Delete Category',
                                       onPressed: () async {
-                                        final ok = await showDialog<bool>(
-                                            context: context,
-                                            builder: (_) => AlertDialog(
-                                                  title: const Text(
-                                                      'Delete Category'),
-                                                  content: Text(
-                                                      'Delete "${c.name}"?'),
-                                                  actions: [
-                                                    TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                                context, false),
-                                                        child: const Text(
-                                                            'Cancel')),
-                                                    ElevatedButton(
-                                                        style: ElevatedButton.styleFrom(
-                                                            backgroundColor:
-                                                                context.colors
-                                                                    .dangerRed,
-                                                            foregroundColor:
-                                                                Colors.white),
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                                context, true),
-                                                        child: const Text(
-                                                            'Delete')),
-                                                  ],
-                                                ));
-                                        if (ok == true) {
+                                        // ⚠️ Says what is LOST, not just
+                                        // what is being deleted. A category
+                                        // carries this yard's warehouse and
+                                        // zone target, and removing it sends
+                                        // the next goods of that kind to the
+                                        // fallback warehouse instead.
+                                        final ok = await ConfirmDialog.show(
+                                          context,
+                                          label: 'CATEGORY',
+                                          title: 'Delete ${c.name}?',
+                                          icon: Icons.category_rounded,
+                                          message:
+                                              'Goods already recorded under '
+                                              'this category keep it. New '
+                                              'goods can no longer be '
+                                              'assigned to it, and its '
+                                              'storage location is forgotten.',
+                                          confirmLabel: 'Delete category',
+                                          accent: context.colors.dangerRed,
+                                          yard: true,
+                                        );
+                                        if (ok) {
                                           await ref
                                               .read(
                                                   packageCategoryServiceProvider)
@@ -1678,7 +1714,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
     String? selectedWarehouseId;
     String? selectedZone;
 
-    showDialog(
+    showAppDialog(
         context: context,
         // Consumer so the dialog rebuilds when warehousesProvider resolves —
         // capturing the parent tab's `ref` here would freeze it on whatever
@@ -1690,6 +1726,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                   label: 'Item Category',
                   title: 'Add Package Category',
                   icon: Icons.category_rounded,
+                  yard: true,
                   width: 560,
                   child: StyledFormSection(
                     title: 'Category Details',
@@ -1709,8 +1746,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                         data: (list) => StyledDropdownFormField<String?>(
                           value: selectedWarehouseId,
                           label: 'Target Warehouse (Auto-assign)',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 18),
                           options: [
                             const StyledDropdownOption<String?>(
                                 null, 'None: Do not auto-assign'),
@@ -1723,7 +1758,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                           }),
                         ),
                         loading: () => const CircularProgressIndicator(),
-                        error: (e, _) => Text('Error: $e'),
+                        error: (e, _) => InlineError(e),
                       ),
                       if (selectedWarehouseId != null)
                         Builder(builder: (_) {
@@ -1756,8 +1791,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             label: zones.isEmpty
                                 ? 'Target Zone (none defined)'
                                 : 'Target Zone',
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 18),
                             options: [
                               const StyledDropdownOption<String?>(null, 'None'),
                               ...zones.map((z) => StyledDropdownOption<String?>(
@@ -1827,7 +1860,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
     // the zone itself is named "3", so strip that prefix if it is there.
     String? selectedZone = category.targetZone?.trim();
 
-    showDialog(
+    showAppDialog(
         context: context,
         // Consumer so the dialog rebuilds when warehousesProvider resolves —
         // capturing the parent tab's `ref` here would freeze it on whatever
@@ -1839,6 +1872,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                   label: 'Item Category',
                   title: 'Edit Package Category',
                   icon: Icons.category_rounded,
+                  yard: true,
                   width: 560,
                   child: StyledFormSection(
                     title: category.name,
@@ -1860,8 +1894,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                               ? selectedWarehouseId
                               : null,
                           label: 'Target Warehouse (Auto-assign)',
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 18),
                           options: [
                             const StyledDropdownOption<String?>(
                                 null, 'None: Do not auto-assign'),
@@ -1874,7 +1906,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                           }),
                         ),
                         loading: () => const CircularProgressIndicator(),
-                        error: (e, _) => Text('Error: $e'),
+                        error: (e, _) => InlineError(e),
                       ),
                       if (selectedWarehouseId != null)
                         Builder(builder: (_) {
@@ -1912,8 +1944,6 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             label: zones.isEmpty
                                 ? 'Target Zone (none defined)'
                                 : 'Target Zone',
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 18),
                             options: [
                               const StyledDropdownOption<String?>(null, 'None'),
                               ...zones.map((z) => StyledDropdownOption<String?>(
@@ -1959,18 +1989,34 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             }
                           }
 
-                          await ref
-                              .read(packageCategoryServiceProvider)
-                              .updateCategory(
-                                category.id,
-                                nameC.text.trim(),
-                                description: descC.text.trim(),
-                                targetWarehouseId: selectedWarehouseId,
-                                targetZone: selectedWarehouseId == null ||
-                                        selectedZone == null
-                                    ? null
-                                    : selectedZone,
-                              );
+                          // ⚠️ Errors are SHOWN, not swallowed. A refused
+                          // write used to close the dialog as though it had
+                          // saved, which is the bug this whole change is
+                          // about; catching and reporting is the other half
+                          // of the fix.
+                          try {
+                            await ref
+                                .read(packageCategoryServiceProvider)
+                                .updateCategory(
+                                  category.id,
+                                  nameC.text.trim(),
+                                  description: descC.text.trim(),
+                                  targetWarehouseId: selectedWarehouseId,
+                                  targetZone: selectedWarehouseId == null ||
+                                          selectedZone == null
+                                      ? null
+                                      : selectedZone,
+                                );
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                                content: Text(
+                                    e.toString().replaceAll('Exception: ', '')),
+                                backgroundColor: Colors.red,
+                              ));
+                            }
+                            return;
+                          }
                           ref.invalidate(packageCategoriesProvider);
                           if (ctx.mounted) Navigator.pop(ctx);
                         }),
@@ -2093,16 +2139,14 @@ class _StatusToggleState extends State<_StatusToggle> {
           _loading = true;
           _currentValue = v;
         });
-        print('DEBUG: _StatusToggle triggered for ${widget.label} to $v');
+        AppLog.debug('status toggle ${widget.label} -> $v', tag: 'admin');
         try {
           await widget.onChanged(v);
           _lastChangeTime = DateTime.now(); // Mark successful change
         } catch (e) {
           if (mounted) {
             setState(() => _currentValue = !v);
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Failed: $e'),
-                backgroundColor: context.colors.dangerRed));
+            showErrorSnack(context, e);
           }
         } finally {
           if (mounted) setState(() => _loading = false);
@@ -2147,8 +2191,8 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
     if (details == null || details.isEmpty) return '—';
 
     if (log.entityType == 'storage_rate') {
-      final oldRate = details['old_rate'] as num?;
-      final newRate = details['new_rate'] as num?;
+      final oldRate = parseDbNum(details['old_rate']);
+      final newRate = parseDbNum(details['new_rate']);
       if (oldRate != null || newRate != null) {
         final oldText =
             oldRate != null ? NumberFormat('#,##0.00').format(oldRate) : '—';
@@ -2164,7 +2208,11 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final logs = ref.watch(allLogsProvider);
+    // ⚠️ One page from SQL. This fetched a YEAR of log rows and paged
+    // them here -- retention keeps twelve months, so the fetch grows all
+    // year and is largest exactly when an admin most wants to look
+    // something up. 166 rows at 344ms against 45ms for a page.
+    final logs = ref.watch(yardLogsPageProvider(_page));
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2179,11 +2227,9 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
             loading: () => Center(
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
-            error: (e, _) => Center(
-                child: Text('Error: $e',
-                    style: TextStyle(color: context.colors.dangerRed))),
-            data: (list) {
-              final pageItems = pageSlice(list, _page, kClientPageSize);
+            error: (e, _) => Center(child: InlineError(e)),
+            data: (data) {
+              final pageItems = data.rows;
               return Column(children: [
                 Expanded(
                     child: Container(
@@ -2280,10 +2326,12 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                         .animate()
                         .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
                         .fadeIn()),
+                // ⚠️ The SERVER's count: `pageItems.length` is the page
+                // size now and would pin the pager to page 1.
                 TablePager(
-                  total: list.length,
+                  total: data.total,
                   page: _page,
-                  pageSize: kClientPageSize,
+                  pageSize: kDispositionPageSize,
                   onPageChanged: (p) => setState(() => _page = p),
                 ),
               ]);
@@ -2295,265 +2343,6 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
   }
 }
 
-// ── Storage Charges Tab ───────────────────────────────────────
-
-class _StorageChargesTab extends ConsumerStatefulWidget {
-  const _StorageChargesTab();
-  @override
-  ConsumerState<_StorageChargesTab> createState() => _StorageChargesTabState();
-}
-
-class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
-  final _chargeCtrl = TextEditingController();
-  bool _loading = false;
-
-  double? _latestRate(Map<DateTime, double>? rates) {
-    if (rates == null || rates.isEmpty) return null;
-    final latestEntry = rates.entries.reduce(
-      (a, b) => a.key.isAfter(b.key) ? a : b,
-    );
-    return latestEntry.value;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final rates = ref.read(storageRateProvider).valueOrNull;
-      final rate = _latestRate(rates);
-      _chargeCtrl.text = rate?.toStringAsFixed(2) ?? '';
-    });
-  }
-
-  @override
-  void dispose() {
-    _chargeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_chargeCtrl.text.isEmpty) return;
-    final rate = double.tryParse(_chargeCtrl.text) ?? 0;
-    setState(() => _loading = true);
-    try {
-      final previousRate = _latestRate(
-        ref.read(storageRateProvider).valueOrNull,
-      );
-      final insertRes = await supabase
-          .from('storage_rates')
-          .insert({
-            'rate': rate,
-            'effective_from': DateTime.now().toIso8601String(),
-          })
-          .select('id')
-          .single();
-
-      final user = supabase.auth.currentUser;
-      if (user != null) {
-        await AuditLogService().recordLog(
-          userId: user.id,
-          action: 'Updated storage rate',
-          entityType: 'storage_rate',
-          entityId: insertRes['id'].toString(),
-          details: {
-            'old_rate': previousRate,
-            'new_rate': rate,
-          },
-        );
-      }
-
-      ref.invalidate(storageRateProvider);
-      ref.invalidate(storageRateHistoryProvider);
-      ref.invalidate(allLogsProvider);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Storage rate updated successfully'),
-            backgroundColor: context.colors.successGreen));
-        Navigator.pop(context);
-        _chargeCtrl.clear();
-      }
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: context.colors.dangerRed));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final history = ref.watch(storageRateHistoryProvider);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Storage Rates & Charges',
-                  style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700)),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: context.colors.primaryGold,
-                  foregroundColor: context.colors.primaryNavy,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                icon: const Icon(Icons.edit_rounded, size: 18),
-                label: const Text('Change Charges',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                onPressed: () => _showUpdateDialog(context),
-              ),
-            ],
-          ),
-          const Gap(16),
-          Expanded(
-            child: history.when(
-              loading: () => Center(
-                  child: CircularProgressIndicator(
-                      color: context.colors.primaryGold)),
-              error: (e, _) => ErrorView(
-                  error: e,
-                  onRetry: () => ref.refresh(storageRateHistoryProvider)),
-              data: (list) => Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                    color: context.colors.cardDark,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: context.colors.borderColor)),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: DataTable2(
-                    horizontalMargin: 24,
-                    columnSpacing: 20,
-                    fixedTopRows: 1,
-                    empty: const EmptyTableState(
-                        icon: Icons.history_rounded,
-                        message: 'No activity yet',
-                        subtitle: 'System actions will be logged here.'),
-                    isHorizontalScrollBarVisible: false,
-                    dataRowColor: WidgetStateProperty.all(Colors.transparent),
-                    headingRowColor:
-                        WidgetStateProperty.all(context.colors.surfaceDark),
-                    columns: [
-                      DataColumn2(
-                          label: Text('Date & Time',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13)),
-                          size: ColumnSize.M),
-                      DataColumn2(
-                          label: Text('Officer/Admin',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13)),
-                          size: ColumnSize.L),
-                      DataColumn2(
-                          label: Text('Action / Value Change',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13)),
-                          size: ColumnSize.L),
-                    ],
-                    rows: list
-                        .map((h) => DataRow(cells: [
-                              DataCell(TooltipText(
-                                  DateFormat('dd MMM yyyy, HH:mm')
-                                      .format(h.createdAt),
-                                  style: TextStyle(
-                                      color: context.colors.textMuted,
-                                      fontSize: 13))),
-                              DataCell(TooltipText(
-                                  h.userId == 'system'
-                                      ? 'System'
-                                      : (h.userFullName ?? 'Admin'),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600))),
-                              DataCell(TooltipText(
-                                  h.action == 'RATE_UPDATE'
-                                      ? 'Rate Set: LKR ${NumberFormat('#,##0.00').format(h.details?['rate'] ?? 0)}'
-                                      : h.action,
-                                  style: TextStyle(
-                                      color: context.colors.primaryGold,
-                                      fontSize: 13))),
-                            ]))
-                        .toList(),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showUpdateDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => StyledFormDialog(
-          label: 'Storage Rate',
-          title: 'Update Storage Charges',
-          icon: Icons.payments_rounded,
-          width: 440,
-          child: StyledFormSection(
-            title: 'Daily Charge',
-            icon: Icons.attach_money_rounded,
-            children: [
-              Text(
-                'Set the daily storage fee per package. This rate is used to calculate the total cost for held items.',
-                style: TextStyle(
-                    color: context.colors.textSecondary, fontSize: 13),
-              ),
-              TextField(
-                controller: _chargeCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                autofocus: true,
-                style: TextStyle(color: context.colors.textPrimary),
-                decoration: const InputDecoration(
-                  labelText: 'Daily Charge Rate (LKR)',
-                  prefixText: 'LKR ',
-                  helperText: 'e.g. 150.00',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            StyledDialogPrimaryButton(
-              labelText: 'Update Rate',
-              icon: Icons.save_rounded,
-              loading: _loading,
-              onPressed: _save,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Zones of one warehouse, each with its own capacity.
-///
-/// Capacity lives here rather than on the warehouse: space is organised zone
-/// by zone, and the warehouse's figure is simply their sum. Setting it in one
-/// place means the two can never disagree.
 class _WarehouseZonesDialog extends ConsumerStatefulWidget {
   final WarehouseModel warehouse;
   const _WarehouseZonesDialog({required this.warehouse});
@@ -2582,26 +2371,19 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
   }
 
   Future<void> _delete(WarehouseZoneModel zone) async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: Text('Delete zone ${zone.name}?'),
-            content: const Text(
-                'Goods already recorded in this zone stay where they are, but '
-                'the zone stops counting towards capacity.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(c, false),
-                  child: const Text('Cancel')),
-              TextButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: Text('Delete',
-                    style: TextStyle(color: context.colors.dangerRed)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    // The same wording and the same chrome as the other zone-delete on this
+    // page -- they are the same act, reached from two places.
+    final ok = await ConfirmDialog.show(
+      context,
+      label: 'ZONE',
+      title: 'Delete zone ${zone.name}?',
+      icon: Icons.grid_view_rounded,
+      message: 'Goods already recorded in this zone stay where they are, but '
+          'the zone stops counting towards capacity.',
+      confirmLabel: 'Delete zone',
+      accent: context.colors.dangerRed,
+      yard: true,
+    );
     if (!ok) return;
 
     setState(() => _busy = true);
@@ -2625,55 +2407,68 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
         TextEditingController(text: (existing?.capacity ?? 500).toString());
     final descCtrl = TextEditingController(text: existing?.description ?? '');
 
-    final saved = await showDialog<bool>(
+    final saved = await showAppDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: Text(existing == null ? 'Add zone' : 'Edit zone'),
-        content: SizedBox(
-          width: 360,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
+      // ⚠️ The SAME shape as the other Add/Edit Zone form on this page. Two
+      // routes reach the same job and one of them was still a bare
+      // AlertDialog, so the zone form looked like a different feature
+      // depending on which button opened it.
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDlg) => StyledFormDialog(
+          label: 'ZONE',
+          title: existing == null ? 'Add Zone' : 'Edit Zone',
+          icon: Icons.grid_view_rounded,
+          width: 460,
+          yard: true,
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: Text('Cancel',
+                    style: TextStyle(color: context.colors.textMuted))),
+            const Gap(8),
+            StyledDialogPrimaryButton(
+              labelText: 'Save',
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
+                Navigator.pop(c, true);
+              },
             ),
-            const Gap(12),
-            TextField(
-              controller: codeCtrl,
-              decoration: InputDecoration(
-                  labelText: 'Zone Code',
-                  hintText:
-                      '${widget.warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: capCtrl,
-              keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: 'Capacity (items) *'),
-            ),
-            const Gap(12),
-            TextField(
-              controller: descCtrl,
-              decoration:
-                  const InputDecoration(labelText: 'Description (optional)'),
-            ),
-          ]),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.trim().isEmpty) return;
-              if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
-              Navigator.pop(c, true);
-            },
-            child: const Text('Save'),
+          ],
+          child: StyledFormSection(
+            title: widget.warehouse.name,
+            icon: Icons.warehouse_rounded,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                // The Zone Code hint mirrors the name as it is typed, so a
+                // rebuild is needed on every keystroke.
+                onChanged: (_) => setDlg(() {}),
+                decoration: const InputDecoration(
+                    labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
+              ),
+              TextField(
+                controller: codeCtrl,
+                decoration: InputDecoration(
+                    labelText: 'Zone Code',
+                    hintText:
+                        '${widget.warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
+              ),
+              TextField(
+                controller: capCtrl,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Capacity (items) *'),
+              ),
+              TextField(
+                controller: descCtrl,
+                decoration:
+                    const InputDecoration(labelText: 'Description (optional)'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
 
@@ -2708,6 +2503,7 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
       label: 'ZONES & CAPACITY',
       title: widget.warehouse.name,
       icon: Icons.grid_view_rounded,
+      yard: true,
       width: 620,
       actions: [
         TextButton(
@@ -2963,6 +2759,7 @@ class _AddWarehouseDialogState extends ConsumerState<_AddWarehouseDialog> {
       label: 'WAREHOUSE',
       title: 'Add New Warehouse',
       icon: Icons.warehouse_rounded,
+      yard: true,
       width: 620,
       actions: [
         TextButton(
