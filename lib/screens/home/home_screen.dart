@@ -1,16 +1,81 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
+import '../../widgets/app_splash_screen.dart';
+
+/// Process-global tracker so the opening splash animation only plays once per
+/// app execution (at launch). Subsequent visits to '/' (e.g. after signing out)
+/// land directly on the portal chooser.
+bool _splashScreenShown = false;
+
+/// Resets the splash screen flag (useful for testing or manual triggers).
+void resetSplashScreenState() {
+  _splashScreenShown = false;
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, this.showSplash});
+
+  /// Explicit override to force or suppress the opening animation.
+  /// If null: suppressed during flutter test, otherwise shown if !_splashScreenShown.
+  final bool? showSplash;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late bool _displaySplash;
+
+  @override
+  void initState() {
+    super.initState();
+    final isTest = Platform.environment.containsKey('FLUTTER_TEST');
+    if (widget.showSplash != null) {
+      _displaySplash = widget.showSplash!;
+    } else if (isTest) {
+      _displaySplash = false;
+    } else {
+      _displaySplash = !_splashScreenShown;
+    }
+  }
+
+  void _onSplashComplete() {
+    if (!mounted) return;
+    setState(() {
+      _splashScreenShown = true;
+      _displaySplash = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 550),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: _displaySplash
+          ? AppSplashScreen(
+              key: const ValueKey('app_opening_splash'),
+              onComplete: _onSplashComplete,
+            )
+          : const _HomeScreenPortalView(
+              key: ValueKey('home_portal_view'),
+            ),
+    );
+  }
+}
 
 // ⚠️ A plain StatelessWidget now. It was a ConsumerWidget only for the
 // theme toggle in its corner; with that gone this page reads nothing from
 // Riverpod, and leaving it a Consumer would invite the next reader to add a
 // watch here rather than in the portal that needs it.
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class _HomeScreenPortalView extends StatelessWidget {
+  const _HomeScreenPortalView({super.key});
 
   @override
   Widget build(BuildContext context) {
