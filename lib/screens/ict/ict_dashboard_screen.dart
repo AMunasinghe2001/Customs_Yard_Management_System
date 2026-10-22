@@ -468,6 +468,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       child: TextField(
                         controller: firstC,
                         enabled: !otpSent,
+                        textInputAction: TextInputAction.next,
                         decoration:
                             const InputDecoration(labelText: 'First Name *'),
                       ),
@@ -477,6 +478,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       child: TextField(
                         controller: lastC,
                         enabled: !otpSent,
+                        textInputAction: TextInputAction.next,
                         decoration:
                             const InputDecoration(labelText: 'Last Name *'),
                       ),
@@ -488,6 +490,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       child: TextField(
                         controller: salaryC,
                         enabled: !otpSent,
+                        textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
                             labelText: 'Salary / Badge Number'),
                       ),
@@ -497,6 +500,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       child: TextField(
                         controller: mobileC,
                         enabled: !otpSent,
+                        textInputAction: TextInputAction.next,
                         keyboardType: TextInputType.phone,
                         decoration:
                             const InputDecoration(labelText: 'Mobile Number'),
@@ -508,6 +512,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     controller: emailC,
                     enabled: !otpSent,
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (dialogLoading || otpSent) ? null : (_) => sendOtp(),
                     decoration: const InputDecoration(
                       labelText: 'Official Email *',
                       helperText:
@@ -520,6 +526,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       controller: otpC,
                       keyboardType: TextInputType.number,
                       autofocus: true,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: dialogLoading ? null : (_) => verifyAndCreate(),
                       decoration: const InputDecoration(
                         labelText: 'Enter 6-digit OTP Code *',
                         prefixIcon: Icon(Icons.pin_rounded),
@@ -1000,6 +1008,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     Expanded(
                       child: TextField(
                         controller: salaryC,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: loading ? null : (_) => saveChanges(),
                         decoration: const InputDecoration(
                             labelText: 'Salary / Badge No'),
                       ),

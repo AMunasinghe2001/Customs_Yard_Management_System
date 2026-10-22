@@ -268,110 +268,115 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
     await showIctDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => StyledFormDialog(
-          label: 'STORAGE RATE',
-          title: 'Set the daily rate',
-          icon: Icons.warehouse_rounded,
-          headerAccentColor: widget.accent,
-          erp: true,
-          width: 460,
-          actions: [
-            TextButton(
-              onPressed: saving ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            const Gap(8),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: widget.accent,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        builder: (ctx, setDlg) {
+          Future<void> saveRate() async {
+            if (saving) return;
+            final value = double.tryParse(ctrl.text.trim());
+            // ⚠️ A rate of zero is not a rate. It would silently
+            // stop every warehouse charge in the country, and the
+            // only sign would be invoices reading LKR 0.
+            if (value == null || value <= 0) {
+              setDlg(() =>
+                  error = 'Enter a rate greater than zero');
+              return;
+            }
+            setDlg(() {
+              error = null;
+              saving = true;
+            });
+            try {
+              await ref
+                  .read(disposalServiceProvider)
+                  .setStorageRate(value);
+              ref.invalidate(storageRateProvider);
+              ref.invalidate(storageRateHistoryProvider);
+              // ⚠️ `set_storage_rate` writes an audit row, and
+              // Activity Logs one tab over is already built. Without
+              // this the rate change is missing from the log until
+              // ICT navigates away and back -- the same bug the yard
+              // portal had before this page moved here.
+              ref.invalidate(ictAllOfficeLogsProvider);
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(
+                      'Daily storage rate set to LKR '
+                      '${value.toStringAsFixed(2)}'),
+                  backgroundColor: context.colors.successGreen,
+                ));
+              }
+            } catch (e) {
+              setDlg(() {
+                saving = false;
+                error = 'Could not save: $e';
+              });
+            }
+          }
+
+          return StyledFormDialog(
+            label: 'STORAGE RATE',
+            title: 'Set the daily rate',
+            icon: Icons.warehouse_rounded,
+            headerAccentColor: widget.accent,
+            erp: true,
+            width: 460,
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
               ),
-              icon: saving
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.check_rounded, size: 16),
-              label: const Text('Set Rate'),
-              onPressed: saving
-                  ? null
-                  : () async {
-                      final value = double.tryParse(ctrl.text.trim());
-                      // ⚠️ A rate of zero is not a rate. It would silently
-                      // stop every warehouse charge in the country, and the
-                      // only sign would be invoices reading LKR 0.
-                      if (value == null || value <= 0) {
-                        setDlg(() =>
-                            error = 'Enter a rate greater than zero');
-                        return;
-                      }
-                      setDlg(() {
-                        error = null;
-                        saving = true;
-                      });
-                      try {
-                        await ref
-                            .read(disposalServiceProvider)
-                            .setStorageRate(value);
-                        ref.invalidate(storageRateProvider);
-                        ref.invalidate(storageRateHistoryProvider);
-                        // ⚠️ `set_storage_rate` writes an audit row, and
-                        // Activity Logs one tab over is already built. Without
-                        // this the rate change is missing from the log until
-                        // ICT navigates away and back -- the same bug the yard
-                        // portal had before this page moved here.
-                        ref.invalidate(ictAllOfficeLogsProvider);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(
-                                'Daily storage rate set to LKR '
-                                '${value.toStringAsFixed(2)}'),
-                            backgroundColor: context.colors.successGreen,
-                          ));
-                        }
-                      } catch (e) {
-                        setDlg(() {
-                          saving = false;
-                          error = 'Could not save: $e';
-                        });
-                      }
-                    },
-            ),
-          ],
-          child: StyledFormSection(
-            title: 'Daily charge per package',
-            icon: Icons.attach_money_rounded,
-            children: [
-              Text(
-                'Applies from today forward. Charges already computed keep the '
-                'rate they were computed at, so this never rewrites a bill '
-                'that has been issued.',
-                style:
-                    TextStyle(color: context.colors.textSecondary, fontSize: 12.5),
-              ),
-              const Gap(10),
-              TextField(
-                controller: ctrl,
-                autofocus: true,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Daily rate (LKR)',
-                  prefixText: 'LKR ',
-                  helperText: 'e.g. 150.00',
-                  errorText: error,
+              const Gap(8),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: widget.accent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                 ),
-                onChanged: (_) {
-                  if (error != null) setDlg(() => error = null);
-                },
+                icon: saving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_rounded, size: 16),
+                label: const Text('Set Rate'),
+                onPressed: saving ? null : saveRate,
               ),
             ],
-          ),
-        ),
+            child: StyledFormSection(
+              title: 'Daily charge per package',
+              icon: Icons.attach_money_rounded,
+              children: [
+                Text(
+                  'Applies from today forward. Charges already computed keep the '
+                  'rate they were computed at, so this never rewrites a bill '
+                  'that has been issued.',
+                  style:
+                      TextStyle(color: context.colors.textSecondary, fontSize: 12.5),
+                ),
+                const Gap(10),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: saving ? null : (_) => saveRate(),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Daily rate (LKR)',
+                    prefixText: 'LKR ',
+                    helperText: 'e.g. 150.00',
+                    errorText: error,
+                  ),
+                  onChanged: (_) {
+                    if (error != null) setDlg(() => error = null);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
     ctrl.dispose();
@@ -390,120 +395,126 @@ class _SystemRatesTabState extends ConsumerState<SystemRatesTab> {
     await showIctDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => StyledFormDialog(
-          label: tax == null ? 'NEW LEVY' : 'EDIT LEVY',
-          title: tax == null ? 'Add a sale levy' : 'Edit ${tax.name}',
-          icon: Icons.receipt_long_rounded,
-          headerAccentColor: context.colors.successGreen,
-          erp: true,
-          width: 460,
-          actions: [
-            TextButton(
-              onPressed: saving ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            const Gap(8),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: context.colors.successGreen,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        builder: (ctx, setDlg) {
+          Future<void> saveTax() async {
+            if (saving) return;
+            final name = nameCtrl.text.trim();
+            final pct = double.tryParse(pctCtrl.text.trim());
+            if (name.isEmpty) {
+              setDlg(() => error = 'Give the levy a name');
+              return;
+            }
+            // ⚠️ 0-100. A negative levy would pay the buyer and a
+            // figure over 100 would take more than the sale
+            // fetched; both compute happily and neither is a tax.
+            if (pct == null || pct < 0 || pct > 100) {
+              setDlg(() =>
+                  error = 'Enter a percentage between 0 and 100');
+              return;
+            }
+            setDlg(() {
+              error = null;
+              saving = true;
+            });
+            try {
+              final svc = ref.read(disposalServiceProvider);
+              if (tax == null) {
+                await svc.createTax(name, pct, isActive: active);
+              } else {
+                await svc.updateTax(tax.id, name, pct, active);
+              }
+              ref.invalidate(taxesProvider);
+              if (ctx.mounted) Navigator.pop(ctx);
+            } catch (e) {
+              setDlg(() {
+                saving = false;
+                error = 'Could not save: $e';
+              });
+            }
+          }
+
+          return StyledFormDialog(
+            label: tax == null ? 'NEW LEVY' : 'EDIT LEVY',
+            title: tax == null ? 'Add a sale levy' : 'Edit ${tax.name}',
+            icon: Icons.receipt_long_rounded,
+            headerAccentColor: context.colors.successGreen,
+            erp: true,
+            width: 460,
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
               ),
-              icon: saving
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.check_rounded, size: 16),
-              label: Text(tax == null ? 'Add Levy' : 'Save'),
-              onPressed: saving
-                  ? null
-                  : () async {
-                      final name = nameCtrl.text.trim();
-                      final pct = double.tryParse(pctCtrl.text.trim());
-                      if (name.isEmpty) {
-                        setDlg(() => error = 'Give the levy a name');
-                        return;
-                      }
-                      // ⚠️ 0-100. A negative levy would pay the buyer and a
-                      // figure over 100 would take more than the sale
-                      // fetched; both compute happily and neither is a tax.
-                      if (pct == null || pct < 0 || pct > 100) {
-                        setDlg(() =>
-                            error = 'Enter a percentage between 0 and 100');
-                        return;
-                      }
-                      setDlg(() {
-                        error = null;
-                        saving = true;
-                      });
-                      try {
-                        final svc = ref.read(disposalServiceProvider);
-                        if (tax == null) {
-                          await svc.createTax(name, pct, isActive: active);
-                        } else {
-                          await svc.updateTax(tax.id, name, pct, active);
-                        }
-                        ref.invalidate(taxesProvider);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      } catch (e) {
-                        setDlg(() {
-                          saving = false;
-                          error = 'Could not save: $e';
-                        });
-                      }
-                    },
-            ),
-          ],
-          child: StyledFormSection(
-            title: 'Levy',
-            icon: Icons.percent_rounded,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  helperText: 'e.g. VAT, Stamp Duty',
+              const Gap(8),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: context.colors.successGreen,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                 ),
-              ),
-              const Gap(10),
-              TextField(
-                controller: pctCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Percentage',
-                  suffixText: '%',
-                  errorText: error,
-                ),
-                onChanged: (_) {
-                  if (error != null) setDlg(() => error = null);
-                },
-              ),
-              const Gap(6),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: active,
-                activeThumbColor: context.colors.successGreen,
-                title: const Text('Applied to new sales',
-                    style: TextStyle(fontSize: 13.5)),
-                // ⚠️ Says what INACTIVE means. It reads as "deleted" unless
-                // the form is explicit: sales already recorded keep the levy
-                // they were charged.
-                subtitle: Text(
-                    active
-                        ? 'This levy is charged on every sale recorded from now on.'
-                        : 'Not charged on new sales. Sales already recorded keep it.',
-                    style: TextStyle(
-                        color: context.colors.textMuted, fontSize: 11.5)),
-                onChanged: (v) => setDlg(() => active = v),
+                icon: saving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_rounded, size: 16),
+                label: Text(tax == null ? 'Add Levy' : 'Save'),
+                onPressed: saving ? null : saveTax,
               ),
             ],
-          ),
-        ),
+            child: StyledFormSection(
+              title: 'Levy',
+              icon: Icons.percent_rounded,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Name',
+                    helperText: 'e.g. VAT, Stamp Duty',
+                  ),
+                ),
+                const Gap(10),
+                TextField(
+                  controller: pctCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: saving ? null : (_) => saveTax(),
+                  decoration: InputDecoration(
+                    labelText: 'Percentage',
+                    suffixText: '%',
+                    errorText: error,
+                  ),
+                  onChanged: (_) {
+                    if (error != null) setDlg(() => error = null);
+                  },
+                ),
+                const Gap(6),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: active,
+                  activeThumbColor: context.colors.successGreen,
+                  title: const Text('Applied to new sales',
+                      style: TextStyle(fontSize: 13.5)),
+                  // ⚠️ Says what INACTIVE means. It reads as "deleted" unless
+                  // the form is explicit: sales already recorded keep the levy
+                  // they were charged.
+                  subtitle: Text(
+                      active
+                          ? 'This levy is charged on every sale recorded from now on.'
+                          : 'Not charged on new sales. Sales already recorded keep it.',
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 11.5)),
+                  onChanged: (v) => setDlg(() => active = v),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
     nameCtrl.dispose();

@@ -218,6 +218,7 @@ class YardDirectorateTab extends ConsumerWidget {
                   // The code is the primary key referenced by profiles and by
                   // yard_directorates; changing it would strand both.
                   enabled: isNew,
+                  textInputAction: TextInputAction.next,
                   textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
                     labelText: 'Code *',
@@ -228,10 +229,12 @@ class YardDirectorateTab extends ConsumerWidget {
                 ),
                 TextField(
                   controller: nameC,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(labelText: 'Full name *'),
                 ),
                 TextField(
                   controller: prefixC,
+                  textInputAction: TextInputAction.next,
                   textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
                     labelText: 'SR prefix *',
@@ -242,6 +245,8 @@ class YardDirectorateTab extends ConsumerWidget {
                 TextField(
                   controller: orderC,
                   keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: saving ? null : (_) => save(),
                   decoration: const InputDecoration(
                     labelText: 'Sort order',
                     helperText: 'Lower numbers appear first in pickers.',
@@ -356,6 +361,7 @@ class YardDirectorateTab extends ConsumerWidget {
                   // Stamped on every package, warehouse entry and audit row the
                   // yard has ever produced.
                   enabled: isNew,
+                  textInputAction: TextInputAction.next,
                   textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
                     labelText: 'Code *',
@@ -366,10 +372,12 @@ class YardDirectorateTab extends ConsumerWidget {
                 ),
                 TextField(
                   controller: nameC,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(labelText: 'Display name *'),
                 ),
                 TextField(
                   controller: prefixC,
+                  textInputAction: TextInputAction.next,
                   textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
                     labelText: 'SR prefix *',
@@ -379,6 +387,8 @@ class YardDirectorateTab extends ConsumerWidget {
                 TextField(
                   controller: orderC,
                   keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: saving ? null : (_) => save(),
                   decoration: const InputDecoration(labelText: 'Sort order'),
                 ),
               ],
