@@ -264,11 +264,22 @@ CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO profiles (id, full_name, role)
+  INSERT INTO profiles (
+    id, full_name, role, username, badge_number, mobile_number,
+    job_role, department, yard, directorate, profile_image_url
+  )
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', 'New User'),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'officer')
+    COALESCE(NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''), 'New User'),
+    COALESCE(NULLIF(TRIM(NEW.raw_user_meta_data->>'role'), ''), 'officer'),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'username'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'badge_number'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'mobile_number'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'job_role'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'department'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'yard'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'directorate'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'profile_image_url'), '')
   );
   RETURN NEW;
 END;

@@ -4318,23 +4318,29 @@ class IctService {
       rethrow;
     }
 
-    // ⚠️ No profile write here. `sr_auth.sign_up` fills the profile in the same
-    // transaction as the account (migrations 035/036), so an upsert at this
-    // point would be writing fields that are already correct.
-    //
-    // What used to be here was that upsert wrapped in `catch (_) {}` — it
-    // swallowed every failure, so an account whose profile never took its
-    // username or yard was reported to ICT as created successfully, and the
-    // officer could not sign in. The check below replaces it: it asks whether
-    // the row is actually right, and says so if it is not.
+    // Ensure the profile row is explicitly populated with all metadata fields
+    // using the active ICT administrator's session.
+    await supabase.from('profiles').update({
+      'full_name': fullName.trim(),
+      'username': username,
+      'badge_number': badgeNumber?.trim(),
+      'mobile_number': mobileNumber?.trim(),
+      'yard': yard,
+      'role': role,
+      'is_active': true,
+      if (jobRole != null && jobRole.isNotEmpty) 'job_role': jobRole,
+      if (directorate != null && directorate.isNotEmpty)
+        'directorate': directorate,
+    }).eq('id', userId);
+
     final check = await supabase
         .from('profiles')
         .select('username, yard, role')
         .eq('id', userId)
         .maybeSingle();
-    if (check == null) {
+    if (check == null || check['username'] == null || check['yard'] == null) {
       throw Exception(
-          'The account was created but its profile is missing. Ask ICT to '
+          'The account was created but its profile is missing required fields. Ask ICT to '
           'check the database before this officer tries to sign in.');
     }
 

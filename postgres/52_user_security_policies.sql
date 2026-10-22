@@ -79,6 +79,9 @@ as $fn$
 declare
   v_id     uuid;
   v_reason text;
+  v_role   text;
+  v_yard   text;
+  v_is_ict boolean;
 begin
   if p_email is null or length(trim(p_email)) = 0 then
     raise exception 'email is required' using errcode = '22023';
@@ -94,6 +97,39 @@ begin
     raise exception 'user_already_exists' using errcode = '23505';
   end if;
 
+  v_role := nullif(trim(coalesce(p_meta->>'role', '')), '');
+  v_yard := nullif(trim(coalesce(p_meta->>'yard', '')), '');
+
+  if v_role is null then
+    raise exception 'a role is required' using errcode = '22023';
+  end if;
+
+  -- ⚠️ WHO is asking. A sign-up form has nobody signed in, so this is false
+  -- there; ICT's staff screen runs with the admin's own session, so it is true.
+  -- This is the whole difference between the two callers.
+  v_is_ict := public.auth_user_is_ict();
+
+  if v_role in ('admin','officer') then
+    -- Yard roles: ICT only. 'admin' is SDDC/DDC — full control of a yard.
+    if not v_is_ict then
+      raise exception
+        'role % may only be created by the ICT Directorate', v_role
+        using errcode = '42501';
+    end if;
+    -- A yard account must say WHICH yard; without it the RLS policies that
+    -- scope every query by yard have nothing to match on.
+    if v_yard is null then
+      raise exception 'a yard account needs an assigned yard'
+        using errcode = '22023';
+    end if;
+  elsif v_role in ('ict','valuation','appeal','disposal','executive') then
+    -- Directorate roles carry no yard (migration 027's CHECK constraint).
+    v_yard := null;
+  else
+    raise exception 'role % is not a role this system issues', v_role
+      using errcode = '42501';
+  end if;
+
   insert into sr_auth.users (email, encrypted_password, raw_user_meta_data,
                           email_confirmed_at)
   values (trim(p_email),
@@ -101,6 +137,37 @@ begin
           coalesce(p_meta, '{}'::jsonb),
           now())
   returning users.id into v_id;
+
+  -- Complete the profile the `on_auth_user_created` trigger just inserted.
+  -- See 035 for why this is an UPDATE and not an INSERT.
+  update public.profiles p set
+    full_name     = coalesce(nullif(trim(coalesce(p_meta->>'full_name','')), ''),
+                             p.full_name),
+    badge_number  = coalesce(nullif(trim(coalesce(p_meta->>'badge_number','')), ''),
+                             p.badge_number),
+    role          = v_role,
+    is_active     = true,
+    username      = coalesce(nullif(trim(coalesce(p_meta->>'username','')), ''),
+                             p.username),
+    mobile_number = coalesce(nullif(trim(coalesce(p_meta->>'mobile_number','')), ''),
+                             p.mobile_number),
+    job_role      = coalesce(nullif(trim(coalesce(p_meta->>'job_role','')), ''),
+                             p.job_role),
+    department    = coalesce(nullif(trim(coalesce(p_meta->>'department','')), ''),
+                             p.department),
+    yard          = v_yard,
+    directorate   = coalesce(nullif(trim(coalesce(p_meta->>'directorate','')), ''),
+                             p.directorate),
+    profile_image_url =
+                    coalesce(nullif(trim(coalesce(p_meta->>'profile_image_url','')), ''),
+                             p.profile_image_url)
+  where p.id = v_id;
+
+  if not found then
+    raise exception
+      'no profile row for the new account — is on_auth_user_created present?'
+      using errcode = 'P0002';
+  end if;
 
   return query
   select u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at
