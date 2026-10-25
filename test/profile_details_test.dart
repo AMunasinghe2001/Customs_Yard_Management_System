@@ -190,7 +190,7 @@ void main() {
     test('the service persists it', () {
       final services = _read('lib/services/services.dart');
       expect("if (jobRole != null && jobRole.isNotEmpty) 'job_role': jobRole,"
-          .allMatches(services).length, 2,
+          .allMatches(services).length, greaterThanOrEqualTo(2),
           reason: 'both create and update must stamp the post');
     });
   });

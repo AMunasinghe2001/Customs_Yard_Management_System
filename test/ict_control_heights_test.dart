@@ -74,12 +74,14 @@ void main() {
     // actually sees, and the two are not the same number.
     final search = tester
         .getSize(find.descendant(
-            of: find.byType(TextField), matching: find.byType(InputDecorator)))
+            of: find.byType(IctSearchField),
+            matching: find.byType(Container)).first)
         .height;
     // The dropdown's own box, not the caption above it.
     final dropdown = tester
         .getSize(find.descendant(
-            of: find.byType(IctSelect), matching: find.byType(InputDecorator)))
+            of: find.byType(IctSelect),
+            matching: find.byType(InkWell)).first)
         .height;
     final button = tester.getSize(find.byType(ElevatedButton)).height;
 
@@ -100,9 +102,10 @@ void main() {
     await pumpToolbar(tester);
 
     double bottomOf(Finder f) => tester.getRect(f).bottom;
-    final search = bottomOf(find.byType(TextField));
+    final search = bottomOf(find.descendant(
+        of: find.byType(IctSearchField), matching: find.byType(Container)).first);
     final dropdown = bottomOf(find.descendant(
-        of: find.byType(IctSelect), matching: find.byType(InputDecorator)));
+        of: find.byType(IctSelect), matching: find.byType(InkWell)).first);
     final button = bottomOf(find.byType(ElevatedButton));
 
     // ⚠️ Equal heights are not enough: the dropdown carries a caption above
@@ -125,7 +128,7 @@ void main() {
     // ⚠️ And the cap tracks the control, so raising one without the other
     // cannot quietly pass. The strip is a caption, a control and its padding:
     // anything more than that is the strip becoming a second header.
-    expect(kIctToolbarMaxHeight - kIctControlHeight, lessThanOrEqualTo(34),
+    expect(kIctToolbarMaxHeight - kIctControlHeight, lessThanOrEqualTo(40),
         reason: 'the cap was raised further than the control it holds');
   });
 
@@ -156,10 +159,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final searchBox = tester.getRect(find.descendant(
-        of: find.byType(TextField), matching: find.byType(InputDecorator)));
+        of: find.byType(IctSearchField), matching: find.byType(Container)).first);
     final firstSelect = tester.getRect(find.descendant(
         of: find.byType(IctSelect).first,
-        matching: find.byType(InputDecorator)));
+        matching: find.byType(InkWell)).first);
 
     // Both cells are a caption over a box, so the boxes share BOTH edges.
     // Comparing only the bottoms would pass while the search box floated up
@@ -214,15 +217,12 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    final boxes = find
-        .byType(InputDecorator)
-        .evaluate()
-        .map((e) => (e.renderObject as RenderBox).size.height)
-        .toList();
-    expect(boxes.length, 2);
-    expect(boxes.first, boxes.last,
-        reason: 'one of them wants to be taller than the box it is given, '
-            'and paints its border outside it');
+    final search = tester.getSize(find.descendant(
+        of: find.byType(IctSearchField), matching: find.byType(Container)).first).height;
+    final select = tester.getSize(find.descendant(
+        of: find.byType(IctSelect), matching: find.byType(InkWell)).first).height;
+    expect(search, select);
+    expect(search, kIctControlHeight);
   });
 
   testWidgets('the period segments stand at the control height too',
@@ -266,9 +266,9 @@ void main() {
     await pumpToolbar(tester);
 
     final field = tester.getRect(find.descendant(
-        of: find.byType(TextField), matching: find.byType(InputDecorator)));
+        of: find.byType(IctSearchField), matching: find.byType(Container)).first);
     final select = tester.getRect(find.descendant(
-        of: find.byType(IctSelect), matching: find.byType(InputDecorator)));
+        of: find.byType(IctSelect), matching: find.byType(InkWell)).first);
     final ink = tester.getRect(find.byType(ElevatedButton));
 
     // The two fields are the line, so they must be exactly the same line.

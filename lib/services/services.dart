@@ -70,7 +70,7 @@ class AuthService {
       throw Exception('account_deactivated');
     }
 
-    if (profile.isExpired) {
+    if (!profile.isPasswordExpired && profile.isExpired) {
       await signOut();
       throw Exception('account_expired');
     }
@@ -436,7 +436,7 @@ class AuthService {
       await supabase.auth.signOut();
       throw Exception('account_deactivated');
     }
-    if (profile.isExpired) {
+    if (!profile.isPasswordExpired && profile.isExpired) {
       await signOut();
       throw Exception('account_expired');
     }
@@ -487,7 +487,7 @@ class AuthService {
       await signOut();
       throw Exception('account_deactivated');
     }
-    if (profile.isExpired) {
+    if (!profile.isPasswordExpired && profile.isExpired) {
       await signOut();
       throw Exception('account_expired');
     }

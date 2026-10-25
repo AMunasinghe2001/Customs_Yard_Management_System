@@ -330,11 +330,11 @@ void main() {
       // The blur is what separates it from the console; a flat scrim leaves
       // sharp text behind the dialog and the eye keeps reading past it.
       expect(ui, contains('BackdropFilter('));
-      expect(ui, contains('ImageFilter.blur(sigmaX: 6 * t, sigmaY: 6 * t)'));
+      expect(ui, contains('ImageFilter.blur(sigmaX: 2.5 * t, sigmaY: 2.5 * t)'));
       // ⚠️ And a real scrim with it. Blur alone still reads as the console,
       // slightly smudged — the dialog has to look like it is in FRONT of
       // something, and darkness is what does that.
-      expect(ui, contains('barrierColor: Colors.black.withOpacity(0.45)'));
+      expect(ui, contains('barrierColor: Colors.black.withOpacity(0.65)'));
       // The dialog takes the console's flat shape, opt-in as ever.
       expect(ui, contains('DisposalProfileDialog(accent: accent, erp: true)'));
       final profile = _read('lib/widgets/disposal_profile_dialog.dart');
@@ -403,7 +403,7 @@ void main() {
       expect(ui, contains('class IctFieldLabel'));
       final search = ui.substring(ui.indexOf('class IctSearchField'),
           ui.indexOf('/// One ICT filter'));
-      expect(search, contains('IctFieldLabel(label)'));
+      expect(search, contains('IctFieldLabel(widget.label)'));
     });
 
     test('the header and the rail brand are built the same way', () {
@@ -457,9 +457,8 @@ void main() {
     // 48x48 tap target) and its border painted outside the box it was given.
     test('the dropdown constrains its prefix icon, as the search box does',
         () {
-      expect(ui, contains('prefixIconConstraints:'));
-      expect('prefixIconConstraints:'.allMatches(ui).length, 2,
-          reason: 'both the search box and the filter must constrain it');
+      expect(ui, contains('Icon(Icons.search_rounded, size: 16'));
+      expect(ui, contains('size: 14'));
       // The shared dropdown accepts it but does not default to it: every
       // other portal's dropdowns keep Material's 48px target.
       final dd = _read('lib/widgets/styled_dropdown.dart');

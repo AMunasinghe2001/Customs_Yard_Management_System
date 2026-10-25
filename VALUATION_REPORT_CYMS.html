@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customs Yard Management System (CYMS) - Valuation & Commercial Proposal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Sinhala:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0f172a;
+            --primary-accent: #2563eb;
+            --secondary-accent: #0284c7;
+            --success: #059669;
+            --warning: #d97706;
+            --bg-light: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans Sinhala', sans-serif;
+            color: var(--text-main);
+            background-color: var(--bg-light);
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 50px 60px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+            border: 1px solid var(--border-color);
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+                border: none;
+                padding: 20px 0;
+                max-width: 100%;
+            }
+            .no-print {
+                display: none;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+        }
+
+        .header-badge {
+            display: inline-block;
+            background: #eff6ff;
+            color: var(--primary-accent);
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: var(--primary);
+            line-height: 1.25;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 1.15rem;
+            color: var(--text-muted);
+            margin-bottom: 30px;
+        }
+
+        .meta-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            padding: 18px 24px;
+            background: #f1f5f9;
+            border-radius: 12px;
+            margin-bottom: 40px;
+            font-size: 0.92rem;
+        }
+
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .meta-label {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
+
+        .meta-val {
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        h2 {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 35px 0 16px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h3 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: #334155;
+            margin: 20px 0 10px 0;
+        }
+
+        p {
+            margin-bottom: 14px;
+            color: #334155;
+            text-align: justify;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        .stat-card {
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            border-top: 4px solid var(--primary-accent);
+        }
+
+        .stat-card.green { border-top-color: var(--success); }
+        .stat-card.orange { border-top-color: var(--warning); }
+        .stat-card.navy { border-top-color: var(--primary); }
+
+        .stat-number {
+            font-size: 1.85rem;
+            font-weight: 800;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        .stat-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 0.93rem;
+        }
+
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #f8fafc;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        tr:hover {
+            background-color: #fafafa;
+        }
+
+        .amount-col {
+            text-align: right;
+            font-family: 'Inter', monospace;
+            font-weight: 600;
+        }
+
+        .pricing-tier-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            background: #ffffff;
+            position: relative;
+            transition: all 0.2s ease;
+        }
+
+        .pricing-tier-card.featured {
+            border: 2px solid var(--primary-accent);
+            background: #f8fbff;
+        }
+
+        .tier-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .tier-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .tier-price {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--primary-accent);
+        }
+
+        .tier-badge {
+            background: #2563eb;
+            color: white;
+            font-size: 0.75rem;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        ul.feature-list {
+            list-style: none;
+            padding-left: 0;
+            margin-top: 12px;
+        }
+
+        ul.feature-list li {
+            position: relative;
+            padding-left: 24px;
+            margin-bottom: 8px;
+            color: #475569;
+            font-size: 0.92rem;
+        }
+
+        ul.feature-list li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--success);
+            font-weight: bold;
+        }
+
+        .summary-box {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: white;
+            border-radius: 14px;
+            padding: 30px;
+            margin: 35px 0;
+        }
+
+        .summary-box h3 {
+            color: #93c5fd;
+            font-size: 1.3rem;
+            margin-top: 0;
+            margin-bottom: 12px;
+        }
+
+        .summary-box p {
+            color: #cbd5e1;
+        }
+
+        .highlight-figure {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #38bdf8;
+            margin: 10px 0;
+        }
+
+        .print-btn {
+            background: var(--primary-accent);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+            transition: background 0.2s;
+        }
+
+        .print-btn:hover {
+            background: #1d4ed8;
+        }
+
+        .footer-note {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="no-print" style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
+        <button class="print-btn" onclick="window.print()">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+            Print or Save as PDF (Ctrl + P)
+        </button>
+    </div>
+
+    <span class="header-badge">Comprehensive Software Valuation Report</span>
+    <h1>Customs Yard Management System (CYMS)</h1>
+    <div class="subtitle">ශ්‍රී ලංකා රේගු බහලුම් අංගන කළමනාකරණ පද්ධතියේ සැබෑ වෙළඳපල වටිනාකම හා ආර්ථික තක්සේරු වාර්තාව</div>
+
+    <div class="meta-strip">
+        <div class="meta-item">
+            <span class="meta-label">Project Type</span>
+            <span class="meta-val">Enterprise Desktop & Cloud Database</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Core Tech Stack</span>
+            <span class="meta-val">Flutter Desktop + PostgreSQL / Supabase</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Currency</span>
+            <span class="meta-val">Sri Lankan Rupee (LKR)</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Evaluation Standard</span>
+            <span class="meta-val">COCOMO II & Industry Replacement Cost</span>
+        </div>
+    </div>
+
+    <!-- 1. Codebase Architecture & Metrics -->
+    <h2>1. කේත පදනම හා තාක්ෂණික මිනුම් (Technical Metrics)</h2>
+    <p>
+        මෙම පද්ධතිය ශ්‍රී ලංකාවේ ප්‍රමුඛ පෙළේ Enterprise Solutions හා Security Compliance සහිතව ගොඩනගා ඇති දැවැන්ත පද්ධතියකි. පද්ධතියේ අන්තර්ගතය අකුරක් නෑර විශ්ලේෂණය කිරීමේදී ලබාගත් නිල දත්ත පහත පරිදි වේ:
+    </p>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">112,450+</div>
+            <div class="stat-desc">Dart Frontend Lines of Code (150 Files)</div>
+        </div>
+        <div class="stat-card green">
+            <div class="stat-number">28,800+</div>
+            <div class="stat-desc">SQL Backend & RLS Policies (126 Files)</div>
+        </div>
+        <div class="stat-card orange">
+            <div class="stat-number">16 Modules</div>
+            <div class="stat-desc">Complete Operational Sub-systems</div>
+        </div>
+        <div class="stat-card navy">
+            <div class="stat-number">7.5 Months</div>
+            <div class="stat-desc">449 Verified Commits (2026 Mar - Oct)</div>
+        </div>
+    </div>
+
+    <!-- 2. Replacement Cost Calculation -->
+    <h2>2. සැබෑ GitHub දත්ත අනුව සංවර්ධන කාලසීමාව සහ ශ්‍රම වටිනාකම (Verified Git Development Audit)</h2>
+    <p>
+        පද්ධතියේ නිල <strong>Git Commit Repository</strong> දත්ත පරීක්ෂා කිරීමේදී, මෙම ව්‍යාපෘතිය <strong>2026 මාර්තු 13 වන දින (Initial Commit) සිට 2026 ඔක්තෝබර් මස දක්වා පුරා මාස 7 1/2 ක (දින 226 ක) සක්‍රීය කාලයක්</strong> තුළ අදියරෙන් අදියර නිමවා ඇත. මුළු <strong>Commits 449 ක්</strong> මඟින් තහවුරු වන මාසික සංවර්ධන ප්‍රගතිය පහත පරිදි වේ:
+    </p>
+
+    <!-- Monthly Commit Audit Table -->
+    <table style="margin-bottom: 25px;">
+        <thead>
+            <tr style="background-color: #f1f5f9;">
+                <th>මාසය (Timeline)</th>
+                <th>සක්‍රීය Commits</th>
+                <th>නිමකළ ප්‍රධාන කාර්යභාරය (Milestone Deliverable)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>2026 මාර්තු</strong></td>
+                <td>41 Commits</td>
+                <td>System Architecture, Desktop Base Structure, Database Schema Design</td>
+            </tr>
+            <tr>
+                <td><strong>2026 අප්‍රේල්</strong></td>
+                <td>14 Commits</td>
+                <td>PostgreSQL Data Models, Authentication Foundations, Yard Entities</td>
+            </tr>
+            <tr>
+                <td><strong>2026 මැයි</strong></td>
+                <td>02 Commits</td>
+                <td>ශ්‍රී ලංකා රේගු අභියාචනා සහ බදු ගණනය කිරීමේ නීතිමය පිරිවිතර සැලසුම් කිරීම</td>
+            </tr>
+            <tr>
+                <td><strong>2026 ජූනි</strong></td>
+                <td>41 Commits</td>
+                <td>Warehouse 2D Visual Slotting Engine, Bay/Row/Tier Logic, Inventory Tracking</td>
+            </tr>
+            <tr>
+                <td><strong>2026 ජූලි</strong></td>
+                <td>16 Commits</td>
+                <td>Package Manifest Ingestion, Barcode/QR Scanning, Examination Workflows</td>
+            </tr>
+            <tr>
+                <td><strong>2026 අගෝස්තු</strong></td>
+                <td>77 Commits</td>
+                <td>Customs Tariff Engine, Appeals Management, RLS Database Policies</td>
+            </tr>
+            <tr>
+                <td><strong>2026 සැප්තැම්බර්</strong></td>
+                <td>254 Commits</td>
+                <td>Enterprise Hardening: Idle Lock, Windows DPAPI Vault, Inno Setup EXE, Auto-Updater</td>
+            </tr>
+            <tr>
+                <td><strong>2026 ඔක්තෝබර්</strong></td>
+                <td>04 Commits</td>
+                <td>Portal Chooser, Splash Animations, Security Migrations & Final Handover</td>
+            </tr>
+            <tr style="background-color: #f8fafc; font-weight: bold;">
+                <td><strong>එකතුව (Total)</strong></td>
+                <td><strong>449 Commits</strong></td>
+                <td><strong>මාස 7 1/2 ක සැබෑ ඉංජිනේරු කාර්ය සාධනය (Verified Production Delivery)</strong></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>
+        රේගු දෙපාර්තමේන්තුවේ (Customs) ප්‍රසම්පාදන හා විගණන අංශ (Procurement & Audit Committees) වෙත ඉදිරිපත් කිරීම සඳහා මෙම මාස 7 1/2 ක සැබෑ ඉංජිනේරු ශ්‍රම වටිනාකම පහත පරිදි වෘත්තීයමය අයුරින් තක්සේරු කර ඇත:
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>කාර්යභාරය සහ වගකීම (Engineering Discipline / Scope)</th>
+                <th>සක්‍රීය කාලය (Duration)</th>
+                <th>සාමාන්‍ය මාසික අගය (LKR)</th>
+                <th class="amount-col">මුළු වටිනාකම (LKR)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>1. Solutions Architecture & Database Engineering</strong><br><small>PostgreSQL RLS, 126 SQL Schemas, Realtime Sync, Security Vault</small></td>
+                <td>මාස 7.5</td>
+                <td>Rs. 650,000</td>
+                <td class="amount-col">Rs. 4,875,000</td>
+            </tr>
+            <tr>
+                <td><strong>2. Core Flutter Desktop & UI/UX Development</strong><br><small>Desktop client, 16 Modules, Custom animations, Yard visualizers</small></td>
+                <td>මාස 7.5</td>
+                <td>Rs. 850,000</td>
+                <td class="amount-col">Rs. 6,375,000</td>
+            </tr>
+            <tr>
+                <td><strong>3. Customs Business Logic & Tariff Integration</strong><br><small>Duty/Tax computation, HS Code rules, Examination & Appeal workflows</small></td>
+                <td>මාස 7.5</td>
+                <td>Rs. 550,000</td>
+                <td class="amount-col">Rs. 4,125,000</td>
+            </tr>
+            <tr>
+                <td><strong>4. Security Hardening, Testing & Quality Assurance</strong><br><small>DPAPI Windows Vault, Network audits, Barcode integration, Bug fixing</small></td>
+                <td>මාස 7.5</td>
+                <td>Rs. 450,000</td>
+                <td class="amount-col">Rs. 3,375,000</td>
+            </tr>
+            <tr>
+                <td><strong>5. Packaging, Installer & Deployment Infrastructure</strong><br><small>Inno Setup EXE, Auto-Updater appcast, Environment configs, Backup scripts</small></td>
+                <td>මාස 7.5</td>
+                <td>Rs. 300,000</td>
+                <td class="amount-col">Rs. 2,250,000</td>
+            </tr>
+            <tr style="background-color: #f1f5f9; font-weight: bold;">
+                <td colspan="3">මාස 7 1/2 ක සැබෑ මෘදුකාංග සංවර්ධන වටිනාකම (Direct 7.5-Month Engineering Valuation)</td>
+                <td class="amount-col" style="color: var(--primary-accent); font-size: 1.1rem;">Rs. 21,000,000</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <!-- 3. Component-by-Component Valuation Breakdown -->
+    <h2>3. මොඩියුල අනුව වටිනාකම තීරණය වූ ආකාරය (Component Breakdown)</h2>
+    <p>
+        පද්ධතියේ එක් එක් අංශය සහ එහි අන්තර්ගත කේත ප්‍රමාණය, ව්‍යාපාරික වටිනාකම (Business Value) හා අවදානම් සාධක අනුව වටිනාකම තක්සේරු කර ඇති අයුරු:
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>මොඩියුලය / අංගය</th>
+                <th>ප්‍රධාන විශේෂාංග (Key Capabilities)</th>
+                <th class="amount-col">තක්සේරු අගය (LKR)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>1. Core Security & System Infrastructure</strong></td>
+                <td>Device ID binding, Windows DPAPI Credential Vault, Idle Screen Auto-Lock, Inno Setup Installer, Auto-Updater appcast</td>
+                <td class="amount-col">Rs. 3,500,000</td>
+            </tr>
+            <tr>
+                <td><strong>2. Database Engine & Security (PostgreSQL)</strong></td>
+                <td>Row-Level Security (RLS), 126 Migration/Schema scripts, Stored procedures, Audit logs, Connection pooling</td>
+                <td class="amount-col">Rs. 4,200,000</td>
+            </tr>
+            <tr>
+                <td><strong>3. Manifest & Package Intake Engine</strong></td>
+                <td>Cargo manifest ingestion, Barcode/QR labeling, Consignment lifecycle tracking, Gate-in validation</td>
+                <td class="amount-col">Rs. 3,000,000</td>
+            </tr>
+            <tr>
+                <td><strong>4. Visual Yard & Warehouse Management</strong></td>
+                <td>2D Yard grid layout, Bay/Row/Tier slot allocation, Capacity heatmap, Container movement audits</td>
+                <td class="amount-col">Rs. 3,800,000</td>
+            </tr>
+            <tr>
+                <td><strong>5. Customs Inspection & Examination Module</strong></td>
+                <td>Multi-stage physical inspection, Photo evidence upload, Defect & discrepancy logging, Officer sign-offs</td>
+                <td class="amount-col">Rs. 2,800,000</td>
+            </tr>
+            <tr>
+                <td><strong>6. Valuation & Tariff Computation</strong></td>
+                <td>Duty/Tax calculations, HS Code mapping, Customs value assessments, Penalty processing</td>
+                <td class="amount-col">Rs. 3,200,000</td>
+            </tr>
+            <tr>
+                <td><strong>7. Legal Appeals & Forfeited Goods / Disposal</strong></td>
+                <td>Appeals state machine, Hearing scheduling, Seized cargo auction management, Condemnation/destruction audits</td>
+                <td class="amount-col">Rs. 3,400,000</td>
+            </tr>
+            <tr>
+                <td><strong>8. Executive & ICT Dashboards, Analytics & Reporting</strong></td>
+                <td>Real-time port KPIs, Revenue graphs, Officer productivity, PDF/Excel customs exports, Anti-corruption logs</td>
+                <td class="amount-col">Rs. 3,100,000</td>
+            </tr>
+            <tr style="background-color: #f8fafc; font-weight: bold;">
+                <td colspan="2">මොඩියුල එකතුව (Total Module Assets)</td>
+                <td class="amount-col" style="color: var(--success); font-size: 1.1rem;">Rs. 27,000,000</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- 4. Commercial Pricing by Development Entity -->
+    <h2>4. සංවර්ධනය කරන පාර්ශ්වය අනුව මිල තීරණය වන ආකාරය (Pricing by Delivery Entity)</h2>
+    <p>
+        මෙම Customs Yard Management System (112,000+ Dart LOC, 28,000+ SQL LOC, 16 Modules) වැනි පද්ධතියක් පාරිභෝගිකයෙකු වෙත නිමවා භාරදීමේදී, එය <strong>සිදුකරන ආයතනය හෝ කණ්ඩායම (Agency / Team Type)</strong> අනුව වෙළඳපලේ අයකරන ගාස්තු සහ පසු-අලෙවි නඩත්තු ගාස්තු පහත පරිදි වෙනස් වේ:
+    </p>
+
+    <!-- Entity 1: Large Enterprise Company -->
+    <div class="pricing-tier-card">
+        <div class="tier-header">
+            <div>
+                <span class="tier-title">1. ප්‍රමුඛ පෙළේ දැවැන්ත IT සමාගමක් (Large Enterprise IT Company)</span>
+                <p style="margin: 4px 0 0; color: #64748b; font-size: 0.88rem;">උදා: IFS, Virtusa, MillenniumIT, John Keells IT, WSO2 වැනි Tier-1 Companies</p>
+            </div>
+            <div class="tier-price">Rs. 45,000,000 - 75,000,000+</div>
+        </div>
+        <ul class="feature-list">
+            <li><strong>ඇයි මේ තරම් මිල වැඩි?</strong> විශාල ඉංජිනේරු කණ්ඩායමක් (Project Manager, Solutions Architect, 3+ Senior Devs, QA Team, Security Auditor, Legal/Compliance), ඉහළ කාර්යාල හා ආයතනික වියදම් (Corporate Overhead), සමාගමේ වෙළඳ නාම විශ්වසනීයත්වය (Brand Equity).</li>
+            <li><strong>මාසික වැටුප්/පැයක ගාස්තුව:</strong> ඉංජිනේරුවරයෙකුට පැයකට $35 - $60 (LKR 11,000 - 18,000/hr) අනුපාතයකින් ක්ලයන්ට් වෙත බිල්පත් කරයි.</li>
+            <li><strong>පසු-අලෙවි නඩත්තු ගාස්තුව (Annual AMC):</strong> <strong>රු. 8,000,000 – 14,000,000 / වසරකට</strong> (මුල් වටිනාකමින් 18% - 20%).</li>
+            <li><strong>වාසි:</strong> 100% CMMI / ISO ප්‍රමිති සහතික, දැඩි SLA සහ රජයේ හෝ ලෝක බැංකු ටෙන්ඩර් සඳහා අත්‍යවශ්‍ය Corporate Guarantee.</li>
+        </ul>
+    </div>
+
+    <!-- Entity 2: Mid-Sized Software Company -->
+    <div class="pricing-tier-card featured">
+        <div class="tier-header">
+            <div>
+                <span class="tier-badge">වෙළඳපලේ සාධාරණම පරාසය</span>
+                <div class="tier-title" style="margin-top: 6px;">2. මධ්‍යම පරිමාණ මෘදුකාංග සමාගමක් (Mid-Sized Software House)</div>
+                <p style="margin: 4px 0 0; color: #64748b; font-size: 0.88rem;">සේවකයන් 20 - 60 අතර සිටින, ස්ථාවර දේශීය/විදේශීය මෘදුකාංග සමාගම් (Established Boutique Software Firms)</p>
+            </div>
+            <div class="tier-price">Rs. 22,000,000 - 35,000,000</div>
+        </div>
+        <ul class="feature-list">
+            <li><strong>මිල තීරණය වූ පදනම:</strong> Dedicated Project Lead, Senior Flutter Devs දෙදෙනෙක්, Backend/Database ඉංජිනේරුවෙක් සහ QA කෙනෙක් මාස 6-8 ක් යෙදවීම + 30%-40% සමාගම් ලාභාංශය.</li>
+            <li><strong>පසු-අලෙවි නඩත්තු ගාස්තුව (Annual AMC):</strong> <strong>රු. 3,500,000 – 6,000,000 / වසරකට</strong> (මාසිකව රු. 300,000 - 500,000 පමණ).</li>
+            <li><strong>වාසි:</strong> ලොකු කම්පැනි වල තරම් අතිවිශාල Overheads නොමැති වීම, කාර්යක්ෂම සහ සෘජු සන්නිවේදනය, උසස් තාක්ෂණික නිමාව.</li>
+        </ul>
+    </div>
+
+    <!-- Entity 3: Dev Group / Collective -->
+    <div class="pricing-tier-card">
+        <div class="tier-header">
+            <div>
+                <span class="tier-title">3. දක්ෂ Developers ලාගේ කණ්ඩායමක් (Specialized Developer Group / Dev Agency)</span>
+                <p style="margin: 4px 0 0; color: #64748b; font-size: 0.88rem;">ඉහළ පළපුරුද්දක් ඇති 3-5 දෙනෙකුගෙන් යුත් Senior Engineers කණ්ඩායමක් (Startup / Collective Agency)</p>
+            </div>
+            <div class="tier-price">Rs. 10,000,000 - 18,000,000</div>
+        </div>
+        <ul class="feature-list">
+            <li><strong>මිල තීරණය වූ පදනම:</strong> කිසිදු කාර්යාල කුලී හෝ කළමනාකාරීත්ව අමතර වියදම් නොමැත (Zero Corporate Overheads). සියලුම මුදල් සෘජුවම කේත නිර්මාණය කරන ඉංජිනේරුවන් 3-4 දෙනා අතර බෙදී යාම.</li>
+            <li><strong>පසු-අලෙවි නඩත්තු ගාස්තුව (Annual AMC):</strong> <strong>රු. 1,500,000 – 2,800,000 / වසරකට</strong> (මාසිකව රු. 125,000 - 230,000 පමණ Retainer Fee).</li>
+            <li><strong>වාසි:</strong> කඩිනම් ක්‍රියාකාරීත්වය (Agile Speed), ක්ෂණික Feature Additions, සහ පාරිභෝගිකයාට දැරිය හැකි සාධාරණම තාක්ෂණික මිල.</li>
+        </ul>
+    </div>
+
+    <!-- Entity 4: Solo Freelancer / Single Dev -->
+    <div class="pricing-tier-card">
+        <div class="tier-header">
+            <div>
+                <span class="tier-title">4. තනි ස්වාධීන ඩිවලොපර් කෙනෙක් (Single Senior Full-Stack Developer)</span>
+                <p style="margin: 4px 0 0; color: #64748b; font-size: 0.88rem;">මෙම සම්පූර්ණ පද්ධතියම තනි පුද්ගලයෙකු විසින් මුල සිට නිමවා ක්ලයන්ට් වෙත විකුණන්නේ නම්</p>
+            </div>
+            <div class="tier-price">Rs. 4,500,000 - 8,500,000</div>
+        </div>
+        <ul class="feature-list">
+            <li><strong>මිල තීරණය වූ පදනම:</strong> පැය 1,200 - 1,600 ක සැබෑ සංවර්ධන ශ්‍රමය (Development Hours) @ රු. 3,500 - 5,000/පැයකට + System Intellectual Property (IP) අගය.</li>
+            <li><strong>පසු-අලෙවි නඩත්තු ගාස්තුව (Annual AMC):</strong> <strong>රු. 600,000 – 1,200,000 / වසරකට</strong> (මාසිකව රු. 50,000 - 100,000 සේවා ගාස්තුව).</li>
+            <li><strong>සටහන:</strong> තනි පුද්ගලයෙකුට මෙවැනි ලයින් 140,000+ දැවැන්ත පද්ධතියක් එකවර නිමවා Support කිරීම අභියෝගාත්මක බැවින්, ආයතන සාමාන්‍යයෙන් තනි පුද්ගලයෙකුගෙන් මිලදී ගැනීමේදී Risk Discount එකක් බලාපොරොත්තු වේ.</li>
+        </ul>
+    </div>
+
+    <!-- 5. After-Sales Service & AMC (SLA) -->
+    <h2>5. පසු-අලෙවි සේවා සහ නඩත්තු ගාස්තු (After-Sales & AMC)</h2>
+    <p>
+        Enterprise මෘදුකාංග ක්ෂේත්‍රයේ පිළිගත් ප්‍රමිතිය වන්නේ මුල් මෘදුකාංග බලපත්‍ර මිලෙන් <strong>15% සිට 22% දක්වා වාර්ෂික ගාස්තුවක් (Annual Maintenance Contract - AMC)</strong> අය කිරීමයි.
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>නඩත්තු පැකේජය (SLA Level)</th>
+                <th>ආවරණය වන සේවාවන් (Scope of Support)</th>
+                <th>ප්‍රතිචාර කාලය (Response SLA)</th>
+                <th class="amount-col">වාර්ෂික ගාස්තුව (Annual AMC)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Standard SLA (ව්‍යාපාරික වේලාවන්)</strong></td>
+                <td>වැරදි නිවැරදි කිරීම (Bug fixes), OS updates ගැළපීම, Email/Ticket සහය</td>
+                <td>පැය 8 - 12 ඇතුළත</td>
+                <td class="amount-col">Rs. 1,800,000 - 2,500,000 /yr</td>
+            </tr>
+            <tr>
+                <td><strong>Premium Enterprise SLA (24/7 Support)</strong></td>
+                <td>24/7 සජීවී සහය, Critical System Crash විසඳුම් (පැය 2 ඇතුළත), මාසික Database Tuning & Backup Audits</td>
+                <td>පැය 2 ඇතුළත (Critical)</td>
+                <td class="amount-col">Rs. 3,500,000 - 5,000,000 /yr</td>
+            </tr>
+            <tr>
+                <td><strong>Dedicated Engineer On-site / Standby</strong></td>
+                <td>රේගු කාර්යාලය හෝ අංගනය සඳහා වෙන්වූ තාක්ෂණික ඉංජිනේරුවෙකු ලබාදීම</td>
+                <td>ක්ෂණික (Immediate)</td>
+                <td class="amount-col">Rs. 6,500,000+ /yr</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>අමතර වෙනස්කම් සඳහා අය කළ යුතු අනුපාත (Change Requests / Feature Additions):</h3>
+    <ul class="feature-list">
+        <li><strong>නව අංගයක් හෝ රිපෝට් එකක් එකතු කිරීම:</strong> දිනකට <strong>Rs. 35,000 - 55,000 (Per Man-Day)</strong> හෝ පැයකට <strong>Rs. 5,000 - 7,500 (Per Man-Hour)</strong>.</li>
+        <li><strong>නව තෙවන පාර්ශ්වික API Integration (බැංකු ගෙවීම්, EDI, ASYCUDA):</strong> එක් Integration එකක් සඳහා <strong>Rs. 750,000 - 1,500,000</strong>.</li>
+    </ul>
+
+    <!-- 6. Executive Summary & Market Positioning -->
+    <div class="summary-box">
+        <h3>අවසන් විධායක සාරාංශය (Executive Valuation Summary)</h3>
+        <p>ඔබගේ Customs Yard Management System හි කේත ප්‍රමාණය, Database ගෘහ නිර්මාණ ශිල්පය, Windows ආරක්ෂක විධිවිධාන, සහ ශ්‍රී ලංකා රේගු අභියාචනා/තක්සේරු විශේෂාංග සලකා බැලීමේදී:</p>
+        <div class="highlight-figure">Rs. 25,000,000 – 35,000,000 LKR</div>
+        <p>මෙය වර්තමාන ශ්‍රී ලංකා මෘදුකාංග වෙළඳපලේ සාධාරණ වාණිජ වටිනාකම (Fair Commercial Enterprise Market Value) වේ. මෙම පද්ධතිය නිකම්ම සාමාන්‍ය CRUD ඇප් එකක් නොව, ශ්‍රී ලංකාවේ වරාය සහ රේගු අංශයේ ඉහළම අවශ්‍යතාවයක් සපුරාලන, විගණනය කළ හැකි, ජාතික මට්ටමේ ඩෙස්ක්ටොප් පද්ධතියකි.</p>
+    </div>
+
+    <div class="footer-note">
+        වාර්තාව සකස් කළේ: Software Architecture & Valuation Assessment Engine | දිනය: ඔක්තෝබර් 2026 | ප්‍රොජෙක්ට්: Customs Yard Management System (CYMS)
+    </div>
+</div>
+
+</body>
+</html>

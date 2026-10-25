@@ -395,6 +395,7 @@ class _ForfeitedPackagesScreenState
                                 pkg.hasAppealDecisionForItem(row.itemId);
                             final rowDecisionLabel =
                                 pkg.appealDecisionLabelForItem(row.itemId);
+                            final isExpired = pkg.isAppealExpired;
 
                             return DataRow(
                               // ⚠️ An EDGE, not a wash.
@@ -413,10 +414,27 @@ class _ForfeitedPackagesScreenState
                               // competing: nothing else on these pages
                               // marks a row from its left edge.
                               cells: [
-                                DataCell(TooltipText(pkg.srNumber,
-                                    style: TextStyle(
-                                        color: context.colors.accentLightBlue,
-                                        fontWeight: FontWeight.bold))),
+                                DataCell(Row(children: [
+                                  Container(
+                                    width: 3,
+                                    height: 26,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      color: isExpired
+                                          ? context.colors.dangerRed
+                                              .withOpacity(0.75)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: TooltipText(pkg.srNumber,
+                                        style: TextStyle(
+                                            color: context
+                                                .colors.accentLightBlue,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ])),
                                 DataCell(TooltipText(row.itemName,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(

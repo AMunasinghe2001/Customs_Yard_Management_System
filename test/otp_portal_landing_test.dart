@@ -1,10 +1,10 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('an expired OTP user may remain on their portal to change password', () {
-    final router = File('lib/core/router.dart').readAsStringSync();
+    final router = File('lib/core/router.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     // The session is required by the mandatory password-change stage.  If the
     // router signs it out while the login page is still public, rebuilding

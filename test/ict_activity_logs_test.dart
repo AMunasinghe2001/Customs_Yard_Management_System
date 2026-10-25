@@ -226,7 +226,7 @@ void main() {
 
     test('the month window covers a short February', () {
       // Built as the 0th day of the NEXT month, so 2024-02 ends on the 29th.
-      expect(tab, contains('DateTime(m.year, m.month + 1, 0)'));
+      expect(tab, contains('DateTime(res.year, res.month + 1, 0'));
       expect(DateTime(2024, 3, 0).day, 29);
       expect(DateTime(2026, 3, 0).day, 28);
     });
@@ -311,17 +311,12 @@ void main() {
     });
 
     test('a month is picked in two steps, year then month', () {
-      // ⚠️ One flat list of "September 2026, August 2026, …" only reaches as
-      // far back as someone decided to build it — twelve months — so the
-      // month before that was unreachable however much log there was.
-      final month = tab.substring(tab.indexOf('Future<DateTime?> _pickMonth'));
-      final body = month.substring(0, month.indexOf('  }'));
-      expect(body, contains('await _pickYear(anchor)'));
-      // The month list is months alone; the year is already chosen.
-      expect(body, contains("DateFormat('MMMM')"));
-      expect(body, isNot(contains("DateFormat('MMMM yyyy')")));
+      final month = tab.substring(tab.indexOf('Future<void> _pickMonthDialog'));
+      final body = month.substring(0, month.indexOf('  Future<void> _pickYearDialog'));
+      expect(body, contains("label: 'Month'"));
+      expect(body, contains("label: 'Year'"));
       // And it does not offer months that have not happened yet.
-      expect(body, contains('year == now.year ? now.month : 12'));
+      expect(body, contains('(selectedYear == currentYear) ? currentMonth : 12'));
     });
   });
 }

@@ -24,6 +24,7 @@ import '../../widgets/app_dialog.dart';
 import '../../widgets/date_filter_button.dart';
 import '../../widgets/send_disposal_request_button.dart';
 import '../../widgets/qty_cell.dart';
+import '../../widgets/handover_cell.dart';
 
 final otherPackageSearchProvider = StateProvider<String>((ref) => '');
 final otherPackageDateRangeProvider =
@@ -678,6 +679,10 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                 size: ColumnSize.S,
                                 fixedWidth: 140),
                             DataColumn2(
+                                label: Center(child: Text('Delivery')),
+                                size: ColumnSize.S,
+                                fixedWidth: 150),
+                            DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
                                 fixedWidth: 55),
@@ -726,6 +731,17 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                                         row.package.createdAt,
                                                 outcome: appealOutcomes[
                                                     row.item.id]))),
+                                    DataCell(Center(
+                                        child: row.completed
+                                            ? HandoverCell(
+                                                entry: row.entry,
+                                                delivered: row.entry
+                                                        ?.otherDelivered ??
+                                                    false,
+                                                kind: HandoverEntryKind.other,
+                                                package: row.package,
+                                                rates: storageRateHistory)
+                                            : const _NotYetDeliverableChip())),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,

@@ -61,7 +61,7 @@ void main() {
     });
 
     test('nothing is rendered for goods never admitted', () {
-      expect(dialog, contains('if (entries.isEmpty) return const SizedBox.shrink();'));
+      expect(dialog, contains('if (entries.isEmpty && !isPerishable) return const SizedBox.shrink();'));
     });
   });
 

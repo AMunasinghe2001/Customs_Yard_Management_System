@@ -18,6 +18,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/account_cells.dart';
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/update_available_button.dart';
 import 'ict_ui.dart';
 import 'activity_logs_tab.dart';
 import 'directorate_access_tab.dart';
@@ -1672,6 +1673,43 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       ),
                     ),
                     const Gap(8),
+
+                    // ⚠️ Shown ONLY when there is an update.
+                    //
+                    // This was a permanent "Check for Updates" button,
+                    // which is a question almost nobody wants to ask:
+                    // nearly every press answered "nothing new". The
+                    // app already knows from the start-up check, so it
+                    // offers the ACTION instead of the question.
+                    //
+                    // ⚠️ The console builds its own header and never
+                    // uses AppShell, so it does not inherit the
+                    // equivalent button there -- the widget is shared
+                    // instead, drawn in each portal's own shape.
+                    UpdateAvailableButton(
+                      trailing: const Gap(8),
+                      builder: (ctx, update, onPressed) => SizedBox(
+                        height: 38,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: updateButtonAccent(ctx),
+                            foregroundColor: ctx.colors.primaryNavy,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                    kIctControlRadius)),
+                          ),
+                          icon: const Icon(Icons.download_rounded,
+                              size: 16),
+                          label: Text(updateButtonLabel(update),
+                              style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700)),
+                          onPressed: onPressed,
+                        ),
+                      ),
+                    ),
 
                     // Sign Out — still the labelled button every other directorate
                     // shows, and it still goes through AuthService: ICT once called

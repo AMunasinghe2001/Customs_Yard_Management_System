@@ -248,7 +248,6 @@ class IdleLockController {
 
   final Ref _ref;
   Timer? _timer;
-  DateTime? _lastActivityTime;
 
   /// Whether there is a session worth protecting.
   ///
@@ -260,37 +259,26 @@ class IdleLockController {
   bool _armed = false;
 
   /// Start protecting the session. Called once a profile exists.
+  ///
+  /// Idempotent: the overlay calls this from `build`, which runs on every
+  /// rebuild of the app, and re-poking there would keep pushing the deadline
+  /// out so a busy-but-untouched screen never locked.
   void arm() {
     if (_armed) return;
     _armed = true;
-    _lastActivityTime = DateTime.now();
-    _startTimer();
+    poke();
   }
 
-  /// Restart the countdown. Called on genuine user interaction.
+  /// Restart the countdown. Called on every real interaction.
   void poke() {
+    // Once locked, activity must not silently un-lock the app -- the user has
+    // to sign in again. The countdown resumes when the lock is lifted.
     if (!_armed || _ref.read(idleLockedProvider)) return;
-    _lastActivityTime = DateTime.now();
-  }
-
-  void _startTimer() {
     _timer?.cancel();
-    // Heartbeat check every 5 seconds to ensure the 5-minute timeout is strictly honored
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!_armed || _ref.read(idleLockedProvider)) {
-        _timer?.cancel();
-        _timer = null;
-        return;
-      }
-      if (_lastActivityTime != null &&
-          DateTime.now().difference(_lastActivityTime!) >= kIdleLockTimeout) {
-        _lock();
-      }
-    });
+    _timer = Timer(kIdleLockTimeout, _lock);
   }
 
   void _lock() {
-    _timer?.cancel();
     _timer = null;
     // Re-checked at fire time, not only when the timer was set: a sign-out
     // during the last few seconds of a countdown would otherwise still throw
@@ -308,8 +296,7 @@ class IdleLockController {
   /// Called after the user has signed back in.
   void unlock() {
     _ref.read(idleLockedProvider.notifier).set(false);
-    _lastActivityTime = DateTime.now();
-    _startTimer();
+    poke();
   }
 
   /// Stop counting entirely -- used while no one is signed in, so the lock
@@ -318,7 +305,6 @@ class IdleLockController {
     _armed = false;
     _timer?.cancel();
     _timer = null;
-    _lastActivityTime = null;
   }
 
   void dispose() => _timer?.cancel();

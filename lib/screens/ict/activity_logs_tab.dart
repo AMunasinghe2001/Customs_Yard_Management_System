@@ -516,7 +516,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                 },
               ),
             ),
-          ]).animate().fadeIn(duration: 300.ms),
+          ]).animate().fadeIn(duration: 300.ms, delay: 120.ms),
           const Gap(16),
 
           // ── Table ─────────────────────────────────────────────

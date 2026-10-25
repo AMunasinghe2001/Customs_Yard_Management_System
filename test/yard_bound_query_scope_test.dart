@@ -12,15 +12,15 @@ void main() {
     final end = services.indexOf('getWarehouseFilterOptions(', start);
     final body = services.substring(start, end);
     expect(body, contains("q = q.eq('yard', effectiveYard)"));
-    expect(body, contains("query = query.eq('yard', AppSession.currentYard)"));
+    expect(body, contains("AppSession.isYardBound ? AppSession.currentYard : null"));
     expect(warehouseMigration, contains('p.yard'));
   });
 
   test('held-goods rows, totals and years use the signed-in yard in SQL', () {
     final start = services.indexOf('getHeldGoodsPaged({');
-    final end = services.indexOf('getExpenseSummaryPaged(', start);
+    final end = services.indexOf('getExpenseSrPageIds(', start);
     final body = services.substring(start, end);
     expect(body, contains("q = q.eq('yard', effectiveYard)"));
-    expect(body, contains("query = query.eq('yard', AppSession.currentYard)"));
+    expect(body, contains("AppSession.isYardBound ? AppSession.currentYard : null"));
   });
 }

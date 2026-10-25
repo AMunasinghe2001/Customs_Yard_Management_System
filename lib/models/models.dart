@@ -1014,35 +1014,51 @@ class ProfileModel {
   /// Central Disposal Directorate user (cross-yard sold-package visibility).
   bool get isDisposal => role == 'disposal';
 
-  /// Auto-deactivation is disabled — accounts remain active until explicitly
-  /// deactivated by ICT.
-  DateTime get expiresAt => DateTime(createdAt.year + 20, createdAt.month,
+  /// Accounts automatically deactivate 8 months after they were created.
+  /// (Applies to admins and officers alike.)
+  DateTime get expiresAt => DateTime(createdAt.year, createdAt.month + 8,
       createdAt.day, createdAt.hour, createdAt.minute, createdAt.second);
 
-  /// Appeal Directorate (AD/ADD) user — cross-yard forfeited-package review +
+  /// Appeal Directorate (AD/ADD) user - cross-yard forfeited-package review +
   /// appeal-hold authority.
   bool get isAppeal => role == 'appeal';
 
-  /// Valuation Directorate (DC/SDDC) user — cross-yard valuation of disposal
+  /// Valuation Directorate (DC/SDDC) user - cross-yard valuation of disposal
   /// requests before they reach the Central Disposal Directorate.
   bool get isValuation => role == 'valuation';
 
-  /// Executive Office (DG / ADG) — Customs' two highest posts. Institutional,
+  /// Executive Office (DG / ADG) - Customs\' two highest posts. Institutional,
   /// cross-yard read-only, never auto-expires.
   bool get isExecutive => role == 'executive';
 
-  /// ICT Directorate (Information & Communication Technology Division) — cross-yard
+  /// ICT Directorate (Information & Communication Technology Division) - cross-yard
   /// user provisioning, administration, and system management. Institutional, never auto-expires.
   bool get isIct => role == 'ict';
 
-  /// Accounts do not auto-expire; status is managed manually by ICT.
-  bool get isExpired => false;
+  /// True once the account is past its 8-month lifetime. Directorate accounts
+  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC, ICT) are institutional and
+  /// never auto-expire (officers transfer in/out of the post).
+  bool get isExpired =>
+      !isDisposal &&
+      !isAppeal &&
+      !isValuation &&
+      !isExecutive &&
+      !isIct &&
+      DateTime.now().isAfter(expiresAt);
 
-  /// Whether the account may currently sign in.
-  bool get isEffectivelyActive => isActive;
+  /// Whether the account may currently sign in: explicitly active AND not
+  /// past its 8-month auto-deactivation window.
+  bool get isEffectivelyActive => isActive && !isExpired;
 
-  /// Days until account expiry — null as auto-expiration is disabled.
-  int? get daysUntilExpiry => null;
+  /// Whole days until the account auto-deactivates (its 8-month lifetime).
+  /// Negative once already expired. null for institutional directorate
+  /// accounts that never auto-expire.
+  int? get daysUntilExpiry {
+    if (isDisposal || isAppeal || isValuation || isExecutive || isIct) {
+      return null;
+    }
+    return expiresAt.difference(DateTime.now()).inDays;
+  }
 
   // ── Password expiry (90-day rotation policy) ───────────────────────────
   /// Passwords must be rotated every 90 days. The clock starts from

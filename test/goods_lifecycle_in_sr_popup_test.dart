@@ -104,9 +104,9 @@ void main() {
       // Not just detained / released / disposed items: an ordinary item
       // sitting in a warehouse is the commonest case of all, and it used to
       // get nothing while the item below it got an answer.
-      expect(flat,
-          contains('.where((e) => e.packageItemId == null || e.packageItemId == item.id)'));
-      expect(flat, contains('if (entries.isEmpty) return const SizedBox.shrink();'));
+            expect(dialog, contains('e.packageItemId == item.id'));
+      expect(dialog, contains('e.packageItemId == null'));
+      expect(flat, contains('if (entries.isEmpty && !isPerishable) return const SizedBox.shrink();'));
     });
 
     test('it names the place, not just a count', () {

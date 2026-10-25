@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -72,7 +72,7 @@ void main() {
   });
 
   group('the router refuses an expired password everywhere', () {
-    final router = File('lib/core/router.dart').readAsStringSync();
+    final router = File('lib/core/router.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     test('an expired session cannot reach any page of the app', () {
       // ⚠️ The back arrow is only ONE exit. Any other route into the app
@@ -82,13 +82,11 @@ void main() {
       expect(router, contains("return '/';"));
     });
 
-    test('and the stale session is dropped on a public page', () {
-      // On a login page there is nothing to protect, but the session must
-      // not survive to authorise the NEXT navigation.
+    test('and the session is contained on a public page', () {
       final i = router.indexOf('profile.isPasswordExpired');
       final block = router.substring(i, i + 900);
-      expect(block, contains('signOut()'));
-      expect(block, contains('currentProfileProvider.notifier).state = null'));
+      expect(block, contains('if (isPublicPage)'));
+      expect(block, contains('return null;'));
     });
 
     test('verifyUserSession still tolerates it, or the change is impossible',
