@@ -26,6 +26,7 @@ import '../../widgets/source_chip.dart';
 import '../../widgets/yard_chip.dart';
 import '../executive/unsold_shared.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/developer_support_dialog.dart';
 
 /// The quantity actually forfeited & sent for disposal for a valuation row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -184,6 +185,39 @@ class _ValuationDashboardScreenState
                     ),
                   ),
                 ),
+              const Gap(8),
+              Tooltip(
+                message: 'Contact Developer / System Support',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => showAppDialog(
+                    context: context,
+                    builder: (_) => DeveloperSupportDialog(
+                      portalName: 'Valuation Directorate',
+                      accent: gold,
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: gold.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: gold.withOpacity(0.35)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.support_agent_rounded,
+                          color: gold, size: 16),
+                      const Gap(6),
+                      Text('Contact Developer',
+                          style: TextStyle(
+                              color: gold,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                    ]),
+                  ),
+                ),
+              ),
               const Gap(8),
               IconButton(
                 tooltip: 'Toggle theme',

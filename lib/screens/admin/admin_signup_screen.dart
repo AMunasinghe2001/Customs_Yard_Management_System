@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -158,7 +159,8 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
   }
 
   Future<void> _verifyAndCreate() async {
-    if (_otpCtrl.text.trim().isEmpty) {
+    final cleanOtp = _otpCtrl.text.replaceAll(RegExp(r'\s+'), '');
+    if (cleanOtp.isEmpty) {
       setState(() => _error = 'Please enter the OTP code.');
       return;
     }
@@ -172,7 +174,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
           '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}';
       await ref.read(adminServiceProvider).verifySignupOtp(
             email: _emailCtrl.text.trim(),
-            otp: _otpCtrl.text.trim(),
+            otp: cleanOtp,
             password: _passwordCtrl.text,
             fullName: fullName,
             badgeNumber: _salaryCtrl.text.trim(),
@@ -673,6 +675,10 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                                 autofocus: true,
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(6),
+                                ],
                                 style: const TextStyle(
                                     fontSize: 22,
                                     letterSpacing: 8,

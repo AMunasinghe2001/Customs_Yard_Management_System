@@ -28,6 +28,7 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/outcome_filter.dart';
+import '../../widgets/developer_support_dialog.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/tender_page_scope.dart';
 import '../../widgets/table_pager.dart';
@@ -202,6 +203,39 @@ class DisposalDashboardScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
+                const Gap(8),
+                Tooltip(
+                  message: 'Contact Developer / System Support',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => showAppDialog(
+                      context: context,
+                      builder: (_) => DeveloperSupportDialog(
+                        portalName: 'Central Disposal Directorate',
+                        accent: green,
+                      ),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: green.withOpacity(0.35)),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.support_agent_rounded,
+                            color: green, size: 16),
+                        const Gap(6),
+                        Text('Contact Developer',
+                            style: TextStyle(
+                                color: green,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13)),
+                      ]),
+                    ),
+                  ),
+                ),
                 const Gap(8),
                 IconButton(
                   tooltip: 'Toggle theme',

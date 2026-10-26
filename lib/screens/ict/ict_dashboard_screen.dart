@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,6 +26,8 @@ import 'directorate_access_tab.dart';
 import 'system_rates_tab.dart';
 import 'yard_directorate_tab.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/app_dialog.dart';
+import '../../widgets/developer_support_dialog.dart';
 
 /// ICT Directorate Portal: Central user provisioning and management for
 /// SDDC / DDC (Yard Admins) and Yard Officers across all customs yards.
@@ -296,7 +299,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
           }
 
           Future<void> verifyAndCreate() async {
-            final otp = otpC.text.trim();
+            final otp = otpC.text.replaceAll(RegExp(r'\s+'), '');
             if (otp.isEmpty) {
               setDialogState(() => dialogError = 'Please enter the OTP code.');
               return;
@@ -528,6 +531,10 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       keyboardType: TextInputType.number,
                       autofocus: true,
                       textInputAction: TextInputAction.done,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(6),
+                      ],
                       onSubmitted: dialogLoading ? null : (_) => verifyAndCreate(),
                       decoration: const InputDecoration(
                         labelText: 'Enter 6-digit OTP Code *',
@@ -1634,6 +1641,39 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                           ),
                         ),
                       ),
+                    const Gap(8),
+                    Tooltip(
+                      message: 'Contact Developer / System Support',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () => showAppDialog(
+                          context: context,
+                          builder: (_) => DeveloperSupportDialog(
+                            portalName: 'ICT Directorate',
+                            accent: accent,
+                          ),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: accent.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: accent.withOpacity(0.35)),
+                          ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.support_agent_rounded,
+                                color: accent, size: 16),
+                            const Gap(6),
+                            Text('Contact Developer',
+                                style: TextStyle(
+                                    color: accent,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
+                          ]),
+                        ),
+                      ),
+                    ),
                     const Gap(8),
 
                     // Theme toggle — a bordered square, so it reads as a control

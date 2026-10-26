@@ -184,14 +184,24 @@ class GmailOtpService {
     _codes[key] = _OtpEntry(code, DateTime.now().add(_ttl), 0);
 
     final c = _copy[purpose]!;
+    // Render OTP code in a single styled container with CSS letter-spacing.
+    // Visually cleanly spaced, but copies as continuous digits without spaces!
+    final codeBlock = '''
+  <div style="text-align:center;margin:20px 0 18px;">
+    <div style="display:inline-block;background:#f8f9fc;border:2px dashed #231f87;border-radius:12px;padding:12px 28px;box-shadow:0 4px 12px rgba(35,31,135,0.06);">
+      <span style="font-family:'Courier New',Courier,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#0e0c3a;user-select:all;display:inline-block;">$code</span>
+    </div>
+  </div>''';
     final html =
         _shell(heading: c.heading, recipientName: recipientName, body: '''
-  <p style="margin:0 0 6px">${c.lead}</p>
-  <p style="font-size:30px;font-weight:bold;letter-spacing:8px;color:#111;
-            margin:14px 0">$code</p>
-  <p style="color:#555;margin:0">This code expires in ${_ttl.inMinutes}
-     minutes.</p>
-  <p style="color:#555;margin:10px 0 0">${c.unexpected}</p>''');
+  <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.6;">${c.lead}</p>
+  $codeBlock
+  <div style="text-align:center;margin:0 0 18px;">
+    <span style="display:inline-block;background:rgba(212,160,23,0.12);color:#D4A017;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid rgba(212,160,23,0.25);">
+      &#9201; Expires in ${_ttl.inMinutes} minutes
+    </span>
+  </div>
+  <p style="color:#78909c;margin:0;font-size:13px;line-height:1.5;">${c.unexpected}</p>''');
 
     try {
       await _sendOffThread(_MailJob(
@@ -237,18 +247,19 @@ class GmailOtpService {
         heading: isReissue ? 'New sign-in details' : 'Welcome aboard',
         recipientName: fullName,
         body: '''
-  <p style="margin:0 0 10px">${isReissue ? 'Your $who sign-in details have been reissued. The previous password no longer works. Use these from now on:' : 'Your $who account has been created. Welcome to the SR Management System — use these details to sign in for the first time:'}</p>
-  <table style="border-collapse:collapse;margin:12px 0;background:#f6f7fb;
-                border-radius:8px">
-    <tr><td style="padding:8px 14px;color:#555"><b>Username</b></td>
-        <td style="padding:8px 14px;font-family:monospace;font-size:15px">$username</td></tr>
-    <tr><td style="padding:8px 14px;color:#555"><b>Password</b></td>
-        <td style="padding:8px 14px;font-family:monospace;font-size:15px">$password</td></tr>
+  <p style="margin:0 0 14px;font-size:14px;color:#334155;line-height:1.6;">${isReissue ? 'Your $who sign-in details have been reissued. The previous password no longer works. Use these from now on:' : 'Your $who account has been created. Welcome to the SR Management System — use these details to sign in for the first time:'}</p>
+  <table style="width:100%;border-collapse:collapse;margin:16px 0;border-radius:10px;overflow:hidden;border:1px solid #e2e2e6;">
+    <tr style="background:#f8f9fc;">
+      <td style="padding:12px 16px;color:#78909c;font-size:13px;font-weight:600;width:110px;border-bottom:1px solid #f0f4fa;">Username</td>
+      <td style="padding:12px 16px;font-family:'Courier New',monospace;font-size:15px;font-weight:700;color:#0e0c3a;border-bottom:1px solid #f0f4fa;">$username</td>
+    </tr>
+    <tr style="background:#ffffff;">
+      <td style="padding:12px 16px;color:#78909c;font-size:13px;font-weight:600;">Password</td>
+      <td style="padding:12px 16px;font-family:'Courier New',monospace;font-size:15px;font-weight:700;color:#0e0c3a;">$password</td>
+    </tr>
   </table>
-  <p style="color:#555;margin:0">You can sign in with your
-     <b>username or e-mail</b>. Please change this password from
-     <b>Edit Profile</b> once you are in.</p>
-  <p style="color:#555;margin:10px 0 0">${isReissue ? 'If you did not ask for new sign-in details, tell your administrator at once — someone else has reset your account.' : 'Keep this e-mail until you have changed the password, then delete it: it carries a working credential.'}</p>''');
+  <p style="color:#334155;margin:0 0 8px;font-size:13px;line-height:1.6;">You can sign in with your <b>username or e-mail</b>. Please change this password from <b>Edit Profile</b> once you are in.</p>
+  <p style="color:#78909c;margin:8px 0 0;font-size:13px;line-height:1.5;">${isReissue ? 'If you did not ask for new sign-in details, tell your administrator at once — someone else has reset your account.' : 'Keep this e-mail until you have changed the password, then delete it: it carries a working credential.'}</p>''');
     // ⚠️ Off the UI isolate, like the OTP send. This one runs while an
     // admin waits on the officer-creation dialog, and a frozen dialog reads
     // as a hung app -- so they press the button again and a second officer
@@ -267,28 +278,58 @@ class GmailOtpService {
 
   /// The frame every one of these e-mails shares, so they read as one system
   /// rather than as several.
+  ///
+  /// ⚠️ Updated to a professionally styled card layout with gradient header,
+  /// matching the app's navy/gold branding and the SR Management System
+  /// design language used across all portals.
   static String _shell({
     required String heading,
     required String body,
     String? recipientName,
   }) {
     final greeting = (recipientName != null && recipientName.trim().isNotEmpty)
-        ? '<p style="margin:0 0 10px">Hello ${recipientName.trim()},</p>'
+        ? '<p style="margin:0 0 14px;font-size:14px;color:#334155;">Hello ${recipientName.trim()},</p>'
         : '';
     return '''
-<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:auto;
-            padding:24px;color:#222">
-  <h2 style="color:#1a1764;margin:0 0 2px">Sri Lanka Customs</h2>
-  <p style="color:#777;margin:0 0 18px;font-size:13px">SR Management System</p>
-  <p style="margin:0 0 14px;font-size:17px;font-weight:bold;color:#1a1764">
-    $heading</p>
-  $greeting
-  $body
-  <hr style="border:none;border-top:1px solid #e5e7eb;margin:22px 0 10px">
-  <p style="color:#999;font-size:12px;margin:0">This is an automated message
-     from the Sri Lanka Customs SR Management System. Please do not reply.</p>
-</div>''';
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background-color:#f0f4fa;color:#1e293b;margin:0;padding:30px 16px;">
+  <div style="background:#ffffff;max-width:520px;margin:0 auto;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(14,12,58,0.12);">
+    <!-- Header with Sri Lanka Customs Logo -->
+    <div style="background:linear-gradient(135deg,#231f87 0%,#1a1764 40%,#0e0c3a 100%);color:#ffffff;padding:26px 30px 22px;text-align:center;">
+      <table cellpadding="0" cellspacing="0" style="margin:0 auto;border-collapse:collapse;">
+        <tr>
+          <td align="center" style="padding-bottom:12px;">
+            <img src="https://upload.wikimedia.org/wikipedia/en/thumb/6/6c/Sri_Lanka_Customs_logo.svg/500px-Sri_Lanka_Customs_logo.svg.png"
+                 alt="Sri Lanka Customs"
+                 width="68"
+                 height="80"
+                 style="display:block;margin:0 auto;width:68px;height:auto;border:0;outline:none;" />
+          </td>
+        </tr>
+      </table>
+      <h2 style="margin:0;font-size:19px;font-weight:700;letter-spacing:0.4px;color:#ffffff;">Sri Lanka Customs</h2>
+      <p style="margin:5px 0 0 0;font-size:12px;color:rgba(255,255,255,0.65);letter-spacing:0.2px;">SR Management System</p>
+    </div>
+    <!-- Body -->
+    <div style="padding:28px 30px;">
+      <h3 style="margin:0 0 16px 0;font-size:17px;font-weight:700;color:#0e0c3a;">$heading</h3>
+      $greeting
+      $body
+    </div>
+    <!-- Footer -->
+    <div style="background:#f8f9fc;border-top:1px solid #f0f4fa;padding:18px 30px;text-align:center;">
+      <p style="margin:0;font-size:11px;color:#94a3b8;">This is an automated message from the Sri Lanka Customs SR Management System. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>''';
   }
+
 
   /// Verify [code] for [email]. Throws Exception(message) on any failure;
   /// returns normally on success.
@@ -319,7 +360,9 @@ class GmailOtpService {
       _codes.remove(key);
       throw Exception('Too many attempts. Please resend a new code.');
     }
-    if (entry.code != code.trim()) {
+    // Clean all whitespace, spaces, tabs and hyphens if pasted from email
+    final cleanInput = code.replaceAll(RegExp(r'\s+'), '').replaceAll('-', '');
+    if (entry.code != cleanInput) {
       entry.attempts++;
       throw Exception('Invalid code. Please try again.');
     }

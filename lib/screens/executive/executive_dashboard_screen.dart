@@ -13,6 +13,7 @@ import 'unsold_decision_tab.dart';
 import 'financials_tab.dart';
 import 'tender_sales_view_tab.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/developer_support_dialog.dart';
 
 /// Executive Office (DG / ADG) portal. Standalone scaffold (not AppShell).
 /// Customs' two highest posts pick a yard and generate/view/print any report
@@ -145,6 +146,39 @@ class _ExecutiveDashboardScreenState
                     ),
                   ),
                 ),
+              const Gap(8),
+              Tooltip(
+                message: 'Contact Developer / System Support',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => showAppDialog(
+                    context: context,
+                    builder: (_) => DeveloperSupportDialog(
+                      portalName: 'Top Management Directorate',
+                      accent: accent,
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: accent.withOpacity(0.35)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.support_agent_rounded,
+                          color: accent, size: 16),
+                      const Gap(6),
+                      Text('Contact Developer',
+                          style: TextStyle(
+                              color: accent,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                    ]),
+                  ),
+                ),
+              ),
               const Gap(8),
               IconButton(
                 tooltip: 'Toggle theme',

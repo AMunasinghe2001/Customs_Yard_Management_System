@@ -22,6 +22,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/developer_support_dialog.dart';
 
 final _appealSearchProvider = StateProvider<String>((ref) => '');
 final _appealYardProvider = StateProvider<String?>((ref) => null); // null = all
@@ -159,6 +160,39 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                     ),
                   ),
                 ),
+              const Gap(8),
+              Tooltip(
+                message: 'Contact Developer / System Support',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => showAppDialog(
+                    context: context,
+                    builder: (_) => DeveloperSupportDialog(
+                      portalName: 'Appeal Directorate',
+                      accent: accent,
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: accent.withOpacity(0.35)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.support_agent_rounded,
+                          color: accent, size: 16),
+                      const Gap(6),
+                      Text('Contact Developer',
+                          style: TextStyle(
+                              color: accent,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                    ]),
+                  ),
+                ),
+              ),
               const Gap(8),
               IconButton(
                 tooltip: 'Toggle theme',

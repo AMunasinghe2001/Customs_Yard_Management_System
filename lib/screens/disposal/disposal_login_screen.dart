@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
@@ -226,7 +227,8 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
 
   // Phase 2: verify the OTP and sign in.
   Future<void> _verify() async {
-    if (_otpCtrl.text.trim().isEmpty) {
+    final cleanOtp = _otpCtrl.text.replaceAll(RegExp(r'\s+'), '');
+    if (cleanOtp.isEmpty) {
       setState(() => _error = 'Please enter the OTP code.');
       return;
     }
@@ -236,7 +238,7 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     });
     try {
       final profile = await ref.read(authServiceProvider).finishOtpLogin(
-          _resolvedEmail, _otpCtrl.text.trim(), _passwordCtrl.text);
+          _resolvedEmail, cleanOtp, _passwordCtrl.text);
       if (profile == null) {
         setState(() => _error = 'Verification failed. Please try again.');
         return;
@@ -664,6 +666,10 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
                               autofocus: true,
                               keyboardType: TextInputType.number,
                               textAlign: TextAlign.center,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(6),
+                              ],
                               style: const TextStyle(
                                   fontSize: 22,
                                   letterSpacing: 8,

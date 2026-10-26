@@ -10,6 +10,8 @@ import '../core/providers.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'update_available_button.dart';
+import 'app_dialog.dart';
+import 'developer_support_dialog.dart';
 
 class NavItem {
   final String label;
@@ -85,8 +87,6 @@ const _navOutcomes = [
   NavItem('Government Use', Icons.account_balance_rounded,
       '/government-use-packages'),
   NavItem('Auction Goods', Icons.gavel_rounded, '/auction-packages'),
-  NavItem('Re-export Goods', Icons.flight_takeoff_rounded,
-      '/reexport-packages'),
   NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
   NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
 ];
@@ -390,6 +390,27 @@ class _AppShellState extends ConsumerState<AppShell> {
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () => context.go('/profile'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.support_agent_rounded, size: 16),
+                          label: const Text('Contact Developer',
+                              style: TextStyle(fontSize: 13)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: context.colors.primaryGold,
+                            side: BorderSide(
+                                color: context.colors.primaryGold.withOpacity(0.4)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onPressed: () => showAppDialog(
+                            context: context,
+                            builder: (_) => const DeveloperSupportDialog(
+                              portalName: 'Customs Yard',
+                            ),
+                          ),
                         ),
                       ),
                       // ⚠️ Shown ONLY when there is an update.

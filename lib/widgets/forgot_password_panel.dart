@@ -181,7 +181,7 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
 
   // ── Step 2: prove you can read the mailbox ─────────────────────────────
   void _checkCode() {
-    final code = _otpCtrl.text.trim();
+    final code = _otpCtrl.text.replaceAll(RegExp(r'\s+'), '');
     if (code.length < 4) {
       setState(() => _error = 'Enter the 6-digit code from the email.');
       return;
@@ -208,7 +208,7 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
       await ref.read(authServiceProvider).finishPasswordReset(
             identifier: _idCtrl.text.trim(),
             email: _email,
-            otp: _otpCtrl.text.trim(),
+            otp: _otpCtrl.text.replaceAll(RegExp(r'\s+'), ''),
             newPassword: _passCtrl.text,
           );
       if (!mounted) return;

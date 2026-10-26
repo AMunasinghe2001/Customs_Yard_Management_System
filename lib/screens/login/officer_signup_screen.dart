@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -73,7 +74,7 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
       } else {
         await ref.read(adminServiceProvider).verifySignupOtp(
               email: _emailCtrl.text.trim(),
-              otp: _otpCtrl.text.trim(),
+              otp: _otpCtrl.text.replaceAll(RegExp(r'\s+'), ''),
               password: _passwordCtrl.text,
               fullName: fullName,
               badgeNumber: _salaryCtrl.text.trim(),
@@ -467,8 +468,6 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                           if (_otpSent) ...[
                             TextFormField(
                               controller: _otpCtrl,
-                              // Enter submits, so the form can be completed from the
-                              // keyboard without reaching for the mouse.
                               onFieldSubmitted: (_) =>
                                   _isLoading ? null : _register(),
                               decoration: InputDecoration(
@@ -477,6 +476,10 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                                     color: context.colors.textMuted),
                               ),
                               keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(6),
+                              ],
                               validator: (v) => v == null || v.isEmpty
                                   ? 'OTP required'
                                   : null,
