@@ -85,12 +85,8 @@ const _navOutcomes = [
   NavItem('Government Use', Icons.account_balance_rounded,
       '/government-use-packages'),
   NavItem('Auction Goods', Icons.gavel_rounded, '/auction-packages'),
-  // ⚠️ Re-export is NOT here, though the DG rules it like the other four.
-  // Its goods appear on Re-exported Goods under Disposed, which lists all
-  // 19 that left the country by any route and marks each row Yard or Top
-  // Management. A second entry here led to a page showing 2 of those 19 --
-  // a strict subset, and a reader had to know which page answered their
-  // question. The split that matters is between ROWS on one page.
+  NavItem('Re-export Goods', Icons.flight_takeoff_rounded,
+      '/reexport-packages'),
   NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
   NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
 ];

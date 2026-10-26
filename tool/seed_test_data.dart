@@ -161,12 +161,20 @@ Future<void> main() async {
     'audit_logs',
     'sr_number_migration_log',
   ]) {
+    if (t == 'audit_logs') {
+      await conn.execute('alter table public.audit_logs disable trigger audit_logs_no_delete');
+      final r = await conn.execute('delete from public."$t"');
+      await conn.execute('alter table public.audit_logs enable trigger audit_logs_no_delete');
+      print('  cleared ${t.padRight(28)} ${r.affectedRows}');
+      continue;
+    }
     final r = await conn.execute('delete from public."$t"');
     print('  cleared ${t.padRight(28)} ${r.affectedRows}');
   }
 
   // Rebuilt so categories, zones and the goods actually agree.
   for (final t in const [
+    'package_category_targets',
     'package_categories',
     'warehouse_zones',
     'warehouses',
@@ -190,9 +198,9 @@ Future<void> main() async {
         'Rear compound', 8000),
   ]) {
     final r = await conn.execute(
-      r'insert into public.warehouses (name, code, description, location, capacity) '
-      r'values ($1, $2, $3, $4, $5) returning id',
-      parameters: [name, code, desc, location, capacity],
+      r'insert into public.warehouses (name, code, description, location, capacity, yard) '
+      r'values ($1, $2, $3, $4, $5, $6) returning id',
+      parameters: [name, code, desc, location, capacity, _yard],
     );
     warehouses[code] = r.first.first as String;
     print('  $code  $name');
@@ -245,10 +253,16 @@ Future<void> main() async {
     ('General Cargo', 'W01', 'A', 'Anything not otherwise categorised'),
   ];
   for (final (name, wh, zone, desc) in categories) {
+    final catRes = await conn.execute(
+      r'insert into public.package_categories (name, description) '
+      r'values ($1, $2) returning id',
+      parameters: [name, desc],
+    );
+    final catId = catRes.first.first as String;
     await conn.execute(
-      r'insert into public.package_categories (name, target_warehouse_id, target_zone, description) '
+      r'insert into public.package_category_targets (category_id, yard, target_warehouse_id, target_zone) '
       r'values ($1, $2, $3, $4)',
-      parameters: [name, warehouses[wh], zone, desc],
+      parameters: [catId, _yard, warehouses[wh], zone],
     );
   }
   print('  ${categories.length} categories, each routed to a real zone');
@@ -519,20 +533,25 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
           await conn.execute(
             r'insert into public.warehouse_entries '
             r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
-            r' zone, yard, daily_rate, admitted_at, created_at, updated_at) '
-            r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9)',
+            r' zone, yard, daily_rate, admitted_at, created_at, updated_at, '
+            r' moved_for_space, intended_warehouse_id, intended_zone, moved_reason) '
+            r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$10,$11,$12,$13)',
             parameters: [
               pkgId,
               itemId,
-              wh.$1,
+              wh.warehouseId,
               status == 'Detain'
                   ? _detainReasons[_rng.nextInt(_detainReasons.length)]
                   : 'Pending Inquiry',
               qty,
-              wh.$2,
+              wh.zone,
               _yard,
               50.0,
               entry.add(const Duration(hours: 3)),
+              wh.movedForSpace,
+              wh.intendedWarehouseId,
+              wh.intendedZone,
+              wh.movedReason,
             ],
           );
         }
@@ -657,14 +676,25 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
         await conn.execute(
           r'insert into public.warehouse_entries '
           r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
-          r' zone, yard, daily_rate, admitted_at, created_at, updated_at) '
-          r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9)',
+          r' zone, yard, daily_rate, admitted_at, created_at, updated_at, '
+          r' moved_for_space, intended_warehouse_id, intended_zone, moved_reason) '
+          r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$10,$11,$12,$13)',
           parameters: [
-            pkgId, itemId, wh.$1,
+            pkgId,
+            itemId,
+            wh.warehouseId,
             status == 'Detain'
                 ? _detainReasons[_rng.nextInt(_detainReasons.length)]
                 : 'Pending Inquiry',
-            qty, wh.$2, _yard, 50.0, entry.add(const Duration(hours: 3)),
+            qty,
+            wh.zone,
+            _yard,
+            50.0,
+            entry.add(const Duration(hours: 3)),
+            wh.movedForSpace,
+            wh.intendedWarehouseId,
+            wh.intendedZone,
+            wh.movedReason,
           ],
         );
       } else {
@@ -697,6 +727,95 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
     }
     made++;
     recent++;
+  }
+
+  // ── Today's cohort (Recorded today & Recent Activity) ─────────────────────
+  // Registered today so the dashboard's "Recorded today" and "Recent Activity"
+  // panels display active, live data during presentations.
+  final today = DateTime.now();
+  final todayCases = [
+    ('Detain', 'Pending Inquiry', 'Automotive Electronic Sensors', 'Vehicle diagnostics parts', '8542.31.00', 14500, 45, 'SR'),
+    ('Forfeit', 'Forfeited under Customs Ordinance', 'Designer Wrist Watches', 'Luxury chronograph watches', '9102.11.00', 48000, 30, 'SR'),
+    ('Abandoned', 'Abandoned by the consignee', 'Porcelain Dinner Sets', 'Imported ceramic tableware', '6911.10.00', 8500, 60, 'SR'),
+    ('Detain', 'Document Verification', 'Heavy Duty Industrial Belts', 'Rubber transmission belts', '4010.12.00', 12500, 40, 'OA'),
+  ];
+  for (var i = 0; i < todayCases.length; i++) {
+    final (status, reason, name, desc, hs, val, qty, reg) = todayCases[i];
+    final key = '$reg-${today.year}';
+    final serial = (serials[key] ?? 0) + 1;
+    serials[key] = serial;
+    final srNumber = '$_directoratePrefix/$_yard/$reg/${serial.toString().padLeft(2, '0')}/${today.year}';
+    final (consignee, declarant) = _consignees[i % _consignees.length];
+
+    final pRes = await conn.execute(
+      r'insert into public.packages '
+      r'(sr_number, case_number, consignee_name, consignee_nic, consignee_address, '
+      r' consignee_phone, declarant_name, cusdec_no, cusdec_date, entry_date, '
+      r' origin_country, declared_value, weight_kg, container_number, description, '
+      r' status, yard, created_at, updated_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18) '
+      r'returning id',
+      parameters: [
+        srNumber, '$_yard/CASE/${today.year}/${3000 + i}',
+        consignee, '198512345678V', 'Colombo Port Gate 04', '0771234567',
+        declarant, 'CUSDEC/${today.year}/${9000 + i}',
+        _iso(today), today, 'Singapore', (val * qty).toDouble(), 450.0,
+        'CONT${8000000 + i}', 'Consignment registered today',
+        status == 'Detain' ? 'detained' : 'pending', _yard, today,
+      ],
+    );
+    final pId = pRes.first.first as String;
+    final itRes = await conn.execute(
+      r'insert into public.package_items '
+      r'(package_id, item_name, goods_description, quantity, unit_of_measure, '
+      r' unit_value, hs_code, category, status, reasons, nature, yard, created_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id',
+      parameters: [
+        pId, name, desc, qty, 'Pieces', val.toDouble(), hs,
+        _categoryFor(name, false), status, reason, 'normal', _yard, today,
+      ],
+    );
+    final itId = itRes.first.first as String;
+
+    final wh = _placeIn(name, qty, warehouses, space, openArea: reg == 'OA');
+    if (wh != null) {
+      await conn.execute(
+        r'insert into public.warehouse_entries '
+        r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
+        r' zone, yard, daily_rate, admitted_at, created_at, updated_at, '
+        r' moved_for_space, intended_warehouse_id, intended_zone, moved_reason) '
+        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$10,$11,$12,$13)',
+        parameters: [
+          pId,
+          itId,
+          wh.warehouseId,
+          reason,
+          qty,
+          wh.zone,
+          _yard,
+          50.0,
+          today,
+          wh.movedForSpace,
+          wh.intendedWarehouseId,
+          wh.intendedZone,
+          wh.movedReason,
+        ],
+      );
+    }
+    if (status == 'Forfeit' || status == 'Abandoned') {
+      await conn.execute(
+        r'insert into public.forfeited_packages '
+        r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
+        r' appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) '
+        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$5,$5)',
+        parameters: [
+          pId, itId, srNumber, consignee, today,
+          today.add(const Duration(days: 30)), reason, status.toLowerCase(), _yard, qty,
+        ],
+      );
+    }
+    statusTally[status] = (statusTally[status] ?? 0) + 1;
+    made++;
   }
 
   print('  $made packages');
@@ -1484,10 +1603,11 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
         await conn.execute(
           r'insert into public.tender_sale_items '
           r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
-          r' created_at) values ($1,$2,$3,$4,false,$5)',
+          r' unsold, unsold_at, created_at) values ($1,$2,$3,$4,false,true,$6,$5)',
           parameters: [
             saleId, fpId, itemId.first.first as String?, _yard,
             committeeRoundAt,
+            committeeRoundAt.add(const Duration(hours: 6)),
           ],
         );
         // ⚠️ The committee's price now BELONGS to the round that ran at it.
@@ -1515,16 +1635,19 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
       // package no tab claims.
       if (ranCommitteeRound && _rng.nextInt(100) < 90) {
         // ⚠️ Cycled, not chosen at random. Each outcome has its OWN tab
-        // (Government Use / Auction / Converted / Removed), and a
+        // (Government Use / Auction / Re-export / Converted / Removed), and a
         // random pick over a small pool leaves some of those tabs empty.
         final outcome = _unsoldOutcomes[outcomeIdx++ % _unsoldOutcomes.length];
+        final isDelivered = _rng.nextInt(100) < 45;
+        final decidedAt = committeeAt.add(Duration(days: 5 + _rng.nextInt(20)));
+        final deliveredAt = isDelivered ? decidedAt.add(Duration(days: 2 + _rng.nextInt(10))) : null;
         await conn.execute(
           r'insert into public.unsold_proposals '
-          r'(forfeited_package_id, proposal, note, yard, decided_at, created_at, updated_at) '
-          r'values ($1,$2,$3,$4,$5,$5,$5)',
+          r'(forfeited_package_id, proposal, note, yard, delivered, delivered_at, decided_at, created_at, updated_at) '
+          r'values ($1,$2,$3,$4,$5,$6,$7,$7,$7)',
           parameters: [
             fpId, outcome.$1, outcome.$2, _yard,
-            committeeAt.add(Duration(days: 5 + _rng.nextInt(20))),
+            isDelivered, deliveredAt, decidedAt,
           ],
         );
         byOutcome[outcome.$1] = (byOutcome[outcome.$1] ?? 0) + 1;
@@ -1617,6 +1740,7 @@ final _committeeMembers = jsonEncode([
 const _unsoldOutcomes = <(String, String)>[
   ('government_use', 'Allocated to a government department'),
   ('auction', 'Referred to public auction'),
+  ('re_export', 'To be re-exported to country of origin'),
   ('convert', 'To be converted for departmental use'),
   ('remove_from_premises', 'To be removed from the premises'),
 ];
@@ -2021,8 +2145,8 @@ Future<void> _seedTenderPipeline(Connection conn) async {
       await conn.execute(
         r'insert into public.tender_sale_items '
         r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
-        r' sold_at, sold_price, receipt_number, is_delivered, delivered_at, created_at) '
-        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+        r' sold_at, sold_price, receipt_number, is_delivered, delivered_at, unsold, unsold_at, created_at) '
+        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
         parameters: [
           saleId, fpId, itemId, _yard, sold,
           sold ? saleAt : null,
@@ -2030,6 +2154,8 @@ Future<void> _seedTenderPipeline(Connection conn) async {
           sold ? 'TR/$_yard/${saleAt.year}/${2000 + saleSerial}' : null,
           sold && _rng.nextBool(),
           sold && _rng.nextBool() ? saleAt.add(const Duration(days: 3)) : null,
+          !sold,
+          !sold ? saleAt.add(const Duration(hours: 6)) : null,
           saleAt,
         ],
       );
@@ -2310,6 +2436,8 @@ Future<void> _seedTenderPipeline(Connection conn) async {
     '  and not exists (select 1 from public.tender_sale_items t2 '
     '                   where t2.forfeited_package_id = tsi.forfeited_package_id '
     '                     and t2.sold) '
+    '  and not exists (select 1 from public.unsold_proposals up '
+    '                   where up.forfeited_package_id = tsi.forfeited_package_id) '
     'group by tsi.forfeited_package_id '
     '  having count(*) < 4 '
     '      or exists (select 1 from public.tender_committees tc '
@@ -3030,35 +3158,144 @@ const _preferredWarehouse = {
   'Vehicle Parts and Tyres': 'W01',
 };
 
+const _categoryDesignations = <String, (String, String)>{
+  'Vehicle Parts and Tyres': ('W01', 'B'),
+  'Electrical & Electronics': ('W02', 'A'),
+  'Household & Kitchenware': ('W01', 'C'),
+  'Textiles and Apparel': ('W01', 'D'),
+  'Chemicals & Solvents': ('W03', 'A'),
+  'Building Materials': ('W03', 'B'),
+  'Metals & Hardware': ('W03', 'C'),
+  'Medical Supplies': ('W02', 'B'),
+  'Foodstuffs & Perishables': ('W02', 'C'),
+  'General Cargo': ('W01', 'A'),
+};
+
+class PlacementResult {
+  final String warehouseId;
+  final String warehouseCode;
+  final String zone;
+  final bool movedForSpace;
+  final String? intendedWarehouseId;
+  final String? intendedZone;
+  final String? movedReason;
+
+  const PlacementResult({
+    required this.warehouseId,
+    required this.warehouseCode,
+    required this.zone,
+    this.movedForSpace = false,
+    this.intendedWarehouseId,
+    this.intendedZone,
+    this.movedReason,
+  });
+}
+
 /// Finds a zone with room for [qty] and books the space.
 ///
-/// Tries the category's own warehouse first, then any other -- which is what
-/// the SR form lets an officer do when the zone they wanted is full. A zone is
-/// never taken past its capacity, so the Zone Capacity page reports something
-/// true; returns null only when nothing anywhere can take the goods.
-(String, String)? _placeIn(String itemName, int qty,
+/// Tries the category's own warehouse and zone first. When near capacity,
+/// it places overflow into another zone in the same warehouse or another warehouse,
+/// recording `movedForSpace` so the system can display displaced badges.
+PlacementResult? _placeIn(String itemName, int qty,
     Map<String, String> whs, Map<String, int> space,
     {bool openArea = false}) {
+  if (openArea) {
+    final homeKey = 'OA1|Y1';
+    final homeSpace = space[homeKey] ?? 0;
+    if (homeSpace >= qty && homeSpace >= 1200) {
+      space[homeKey] = homeSpace - qty;
+      return PlacementResult(
+        warehouseId: whs['OA1']!,
+        warehouseCode: 'OA1',
+        zone: 'Y1',
+      );
+    }
+    final y2Space = space['OA1|Y2'] ?? 0;
+    if (y2Space >= qty) {
+      space['OA1|Y2'] = y2Space - qty;
+      return PlacementResult(
+        warehouseId: whs['OA1']!,
+        warehouseCode: 'OA1',
+        zone: 'Y2',
+        movedForSpace: true,
+        intendedWarehouseId: whs['OA1'],
+        intendedZone: 'Y1',
+        movedReason: 'Open Area Bay 1 reached high capacity',
+      );
+    }
+    return null;
+  }
+
   final cat = _categoryFor(itemName, false);
-  final preferred = openArea ? 'OA1' : (_preferredWarehouse[cat] ?? 'W01');
+  final designation = _categoryDesignations[cat] ?? ('W01', 'A');
+  final homeWh = designation.$1;
+  final homeZone = designation.$2;
+  final homeKey = '$homeWh|$homeZone';
+  final homeSpace = space[homeKey] ?? 0;
 
-  // ⚠️ An OA number's goods belong in the Open Area, and an SR number's under
-  // cover. The two registers exist to keep them apart, so the fallback never
-  // crosses between them -- it only tries other zones of the same kind.
-  final order = openArea
-      ? ['OA1']
-      : [preferred, ...whs.keys.where((c) => c != preferred && c != 'OA1')];
+  // Let W02 Zone A slightly overfill up to 3,500 items (103%) to demonstrate
+  // the overfill warning bar, while other zones cap at ~3,200 (threshold 200).
+  final isW02A = homeKey == 'W02|A';
+  final overflowThreshold = isW02A ? -120 : 200;
 
-  for (final code in order) {
-    final keys = space.keys.where((k) => k.startsWith('$code|')).toList()
-      ..sort();
-    for (final k in keys) {
-      if ((space[k] ?? 0) >= qty) {
-        space[k] = space[k]! - qty;
-        return (whs[code]!, k.split('|')[1]);
-      }
+  if (homeSpace - qty >= overflowThreshold) {
+    space[homeKey] = homeSpace - qty;
+    return PlacementResult(
+      warehouseId: whs[homeWh]!,
+      warehouseCode: homeWh,
+      zone: homeZone,
+    );
+  }
+
+  // Target zone is full! Overflow to another zone in the SAME warehouse first
+  final sameWhZones = ['A', 'B', 'C', 'D']
+      .where((z) => z != homeZone)
+      .map((z) => ('$homeWh|$z', z))
+      .toList();
+  sameWhZones.sort((a, b) => (space[b.$1] ?? 0).compareTo(space[a.$1] ?? 0));
+
+  for (final (k, z) in sameWhZones) {
+    final s = space[k] ?? 0;
+    if (s >= qty && s >= 150) {
+      space[k] = s - qty;
+      return PlacementResult(
+        warehouseId: whs[homeWh]!,
+        warehouseCode: homeWh,
+        zone: z,
+        movedForSpace: true,
+        intendedWarehouseId: whs[homeWh],
+        intendedZone: homeZone,
+        movedReason: 'Zone $homeZone reached capacity; placed in Zone $z',
+      );
     }
   }
+
+  // Same warehouse also heavily utilized! Overflow to another covered warehouse
+  final otherWhs = ['W01', 'W02', 'W03'].where((w) => w != homeWh).toList();
+  final otherZones = <(String, String, String)>[];
+  for (final w in otherWhs) {
+    for (final z in ['A', 'B', 'C', 'D']) {
+      otherZones.add(('$w|$z', w, z));
+    }
+  }
+  otherZones.sort((a, b) => (space[b.$1] ?? 0).compareTo(space[a.$1] ?? 0));
+
+  for (final (k, w, z) in otherZones) {
+    final s = space[k] ?? 0;
+    if (s >= qty && s >= 150) {
+      space[k] = s - qty;
+      return PlacementResult(
+        warehouseId: whs[w]!,
+        warehouseCode: w,
+        zone: z,
+        movedForSpace: true,
+        intendedWarehouseId: whs[homeWh],
+        intendedZone: homeZone,
+        movedReason: 'Warehouse $homeWh at capacity; placed in Warehouse $w Zone $z',
+      );
+    }
+  }
+
   return null;
 }
 

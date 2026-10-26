@@ -349,7 +349,9 @@ List<DataCell> unsoldCells(
               return am.compareTo(bm);
             }))
           .last;
-  final sealed = currentSale != null && !currentSale.saleEnded;
+  // ⚠️ If the package has reached a final outcome (delivery != null on a decided
+  // table), it has exhausted all tender rounds. Its agreed valuation is not sealed.
+  final sealed = delivery == null && currentSale != null && !currentSale.saleEnded;
   // The yard belongs in the row's tooltip, not its own column: the yard page
   // shows one yard only, and the other two portals have a Yard dropdown.
   final srTip = '${f.srNumber} · ${yardName(f.yard)}'

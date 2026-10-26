@@ -303,16 +303,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                   subtitle: 'Unsold goods sent to public auction',
                   countLabel: 'For Auction',
                   proposalFilter: 'auction'))),
-      // ⚠️ There is NO '/re-export-packages'. Top Management's re-export
-      // ruling had its own page here, listing the 2 goods the DG sent back
-      // -- and every one of them already appears on Re-exported Goods,
-      // which lists all 19 that left the country by any route and marks
-      // each row Yard or Top Management in its Decided By column.
-      //
-      // Two pages for one population, one a strict subset of the other,
-      // meant a reader had to know which of the two answered their
-      // question. The split that matters is between ROWS on one page, and
-      // that is where it lives.
+      GoRoute(
+          path: '/reexport-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const UnsoldPackagesScreen(
+                  route: '/reexport-packages',
+                  title: 'Re-export Goods',
+                  subtitle: 'Unsold goods approved for re-exportation and return to origin',
+                  countLabel: 'For Re-export',
+                  proposalFilter: 're_export'))),
       GoRoute(
           path: '/converted-packages',
           pageBuilder: (_, state) => NoTransitionPage(
