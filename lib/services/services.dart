@@ -4488,12 +4488,6 @@ class IctService {
           'deactivated_at': null,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', profileId);
-        try {
-          await PgDatabase.instance.execute(
-            'UPDATE sr_auth.users SET last_sign_in_at = now() WHERE id = @id',
-            parameters: {'id': profileId},
-          );
-        } catch (_) {}
       }
     } else {
       await supabase.from('profiles').update({
