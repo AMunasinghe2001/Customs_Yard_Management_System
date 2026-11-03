@@ -270,6 +270,12 @@ class AuthService {
   /// no active account. The CALLER must not report which -- saying "no such
   /// account" would let anyone test which usernames and addresses are real, so
   /// the screens say "if that account exists, a code has been sent" either way.
+  ///
+  /// ⚠️ DORMANT accounts (automatically deactivated after 30 days of inactivity)
+  /// ARE allowed to reset their password. Proving mailbox ownership via OTP is
+  /// sufficient to wake the account. A successful reset also auto-reactivates it
+  /// (see reset_password_for_identifier in the database).
+  /// MANUALLY deactivated accounts remain blocked — only ICT can reactivate them.
   Future<String?> startPasswordReset(String identifier) async {
     final id = _normalizeLoginIdentifier(identifier);
     if (id.isEmpty) return null;
@@ -4462,9 +4468,41 @@ class IctService {
   }
 
   Future<void> toggleUserStatus(String profileId, bool active, {String? staffName}) async {
-    await supabase
-        .from('profiles')
-        .update({'is_active': active}).eq('id', profileId);
+    if (active) {
+      // ⚠️ Turning an account back ON must route through reactivate_account,
+      // not a plain is_active write. A dormant account has a stale last_sign_in_at
+      // (> 30 days old) in sr_auth.users. If only is_active is flipped, the very
+      // next sign-in by ANY user runs disable_dormant_accounts(), which sees
+      // last_sign_in_at > 30 days and immediately flips it back to DORMANT.
+      // reactivate_account resets sr_auth.users.last_sign_in_at = now(), clears
+      // deactivated_reason and deactivated_at, restarting the 30-day dormancy window.
+      try {
+        await supabase.rpc('reactivate_account', params: {'p_id': profileId});
+      } catch (e) {
+        AppLog.warn(
+            'reactivate_account RPC failed ($e), falling back to profiles update',
+            tag: 'ict');
+        await supabase.from('profiles').update({
+          'is_active': true,
+          'deactivated_reason': null,
+          'deactivated_at': null,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('id', profileId);
+        try {
+          await PgDatabase.instance.execute(
+            'UPDATE sr_auth.users SET last_sign_in_at = now() WHERE id = @id',
+            parameters: {'id': profileId},
+          );
+        } catch (_) {}
+      }
+    } else {
+      await supabase.from('profiles').update({
+        'is_active': false,
+        'deactivated_reason': 'manual',
+        'deactivated_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', profileId);
+    }
 
     await AuditLogService().recordLog(
       userId: supabase.auth.currentUser?.id,

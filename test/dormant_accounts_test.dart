@@ -106,6 +106,14 @@ void main() {
       final body = svc.substring(fn, fn + 1200);
       expect(body, contains("rpc('reactivate_account'"),
           reason: 'waking an account by flag alone re-disables it next sweep');
+
+      // ⚠️ Both services must agree. IctService powers the Staff Register table
+      // in the ICT Console where administrators reactivate yard officers.
+      final fn2 = svc.indexOf('Future<void> toggleUserStatus', fn + 1);
+      expect(fn2, greaterThan(-1), reason: 'IctService.toggleUserStatus must exist');
+      final body2 = svc.substring(fn2, fn2 + 1200);
+      expect(body2, contains("rpc('reactivate_account'"),
+          reason: 'IctService must route reactivation to reactivate_account');
     });
   });
 

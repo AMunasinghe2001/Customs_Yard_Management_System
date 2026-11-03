@@ -28,6 +28,15 @@ set client_min_messages = warning;
 --  account" would let anyone test which usernames and addresses are real; the
 --  screens above say "if that account exists, a code has been sent" either
 --  way.
+--
+--  Dormant accounts (deactivated_reason = 'dormant') ARE allowed to reset
+--  their password — proving ownership of the mailbox is exactly the right
+--  evidence that the holder is still the right person. A successful reset
+--  also reactivates the account automatically (see reset_password_for_identifier).
+--
+--  Manually deactivated accounts (deactivated_reason = 'manual' or any other
+--  value) are NOT resettable — ICT deactivated them deliberately and only ICT
+--  should bring them back.
 create or replace function public.reset_email_for_identifier(
   p_identifier text
 )
@@ -51,14 +60,19 @@ begin
     return null;
   end if;
 
-  -- Only for an account that can actually sign in. A deactivated one must not
-  -- be resettable into life.
+  -- Allow active accounts AND dormant accounts (deactivated_reason = 'dormant').
+  -- Dormant accounts went quiet automatically; proving mailbox ownership is
+  -- sufficient evidence to wake them. Manually deactivated accounts stay blocked
+  -- — ICT deactivated them on purpose and only ICT should reactivate them.
   if not exists (
     select 1
     from   public.profiles p
     join   sr_auth.users u on u.id = p.id
     where  lower(u.email) = lower(v_email)
-      and  p.is_active
+      and  (
+             p.is_active
+             or p.deactivated_reason = 'dormant'
+           )
   ) then
     return null;
   end if;
@@ -70,6 +84,9 @@ $fn$;
 -- ── Set a new password for an identifier ────────────────────────────────────
 --  Called only after the app has verified the one-time code it emailed to the
 --  address reset_email_for_identifier returned.
+--
+--  If the account was DORMANT it is automatically reactivated here: the holder
+--  has just proved they control the mailbox, so no ICT action is needed.
 create or replace function public.reset_password_for_identifier(
   p_identifier text,
   p_password   text
@@ -82,6 +99,7 @@ as $fn$
 declare
   v_email text;
   v_id    uuid;
+  v_reason text;
 begin
   v_email := public.reset_email_for_identifier(p_identifier);
   if v_email is null then
@@ -91,9 +109,11 @@ begin
     raise exception 'reset_not_available' using errcode = '22023';
   end if;
 
-  select u.id into v_id
-  from   sr_auth.users u
-  where  lower(u.email) = lower(v_email);
+  select u.id, p.deactivated_reason
+    into v_id, v_reason
+    from sr_auth.users u
+    join public.profiles p on p.id = u.id
+   where lower(u.email) = lower(v_email);
 
   if v_id is null then
     raise exception 'reset_not_available' using errcode = '22023';
@@ -109,6 +129,26 @@ begin
   update public.profiles
      set password_updated_at = now()
    where id = v_id;
+
+  -- If the account was DORMANT, reactivate it now. The password reset proved
+  -- mailbox ownership, which is equivalent to ICT reactivating manually.
+  -- Reset last_seen_at so the dormancy sweep does not immediately re-disable it.
+  if v_reason = 'dormant' then
+    update public.profiles
+       set is_active          = true,
+           deactivated_reason = null,
+           deactivated_at     = null,
+           last_seen_at       = now(),
+           updated_at         = now()
+     where id = v_id;
+
+    -- Also reset sr_auth.users.last_sign_in_at so the sign_in dormancy sweep
+    -- does not immediately flip the account back to dormant on next login.
+    update sr_auth.users
+       set last_sign_in_at = now(),
+           updated_at      = now()
+     where id = v_id;
+  end if;
 
   begin
     perform sr_auth.clear_failed_login(v_email);
@@ -167,10 +207,29 @@ begin
     raise exception 'VERIFY FAILED: the old password still signs in';
   end if;
 
-  -- A deactivated account is not resettable.
-  update public.profiles set is_active = false where id = v_id;
+  -- A DORMANT account IS resettable (the holder proved mailbox ownership).
+  update public.profiles
+     set is_active = false, deactivated_reason = 'dormant', deactivated_at = now()
+   where id = v_id;
+  if public.reset_email_for_identifier('reset.probe') is null then
+    raise exception 'VERIFY FAILED: a dormant account should be resettable';
+  end if;
+
+  -- After the reset the dormant account is reactivated.
+  perform public.reset_password_for_identifier('reset.probe', 'brand-new-pw-2');
+  if not (select is_active from public.profiles where id = v_id) then
+    raise exception 'VERIFY FAILED: dormant account was not reactivated after password reset';
+  end if;
+  if (select deactivated_reason from public.profiles where id = v_id) is not null then
+    raise exception 'VERIFY FAILED: deactivated_reason was not cleared after reset';
+  end if;
+
+  -- A MANUALLY deactivated account is NOT resettable.
+  update public.profiles
+     set is_active = false, deactivated_reason = 'manual', deactivated_at = now()
+   where id = v_id;
   if public.reset_email_for_identifier('reset.probe') is not null then
-    raise exception 'VERIFY FAILED: a deactivated account resolved';
+    raise exception 'VERIFY FAILED: a manually deactivated account should NOT be resettable';
   end if;
 
   delete from public.profiles where id = v_id;
