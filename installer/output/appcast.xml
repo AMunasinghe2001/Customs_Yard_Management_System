@@ -14,13 +14,13 @@
     <description>Updates for the SR Management System</description>
     <language>en</language>
     <item>
-      <title>Version 1.6.3</title>
-      <description><![CDATA[<html><head><meta charset="utf-8"><style>html,body{margin:0;padding:12px 14px;background:#ffffff;color:#1a1a1a;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.55;}h1,h2,h3{font-size:14px;margin:0 0 8px;color:#111111;}ul{margin:6px 0 0 18px;padding:0;}li{margin:3px 0;}p{margin:0 0 8px;}a{color:#0b5cad;}::selection{background:#cfe3f7;color:#1a1a1a;}</style></head><body><p>Improvements and bug fixes in Version 1.6.3</p></body></html>]]></description>
-      <pubDate>Wed, 23 Sep 2026 07:53:06 +0000</pubDate>
-      <enclosure url="https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/SLCustoms-SR-Setup-1.6.3.exe"
-                 sparkle:version="1.6.3+21"
-                 sparkle:shortVersionString="1.6.3"
-                 length="17013436"
+      <title>Version 1.7.0</title>
+      <description><![CDATA[<html><head><meta charset="utf-8"><style>html,body{margin:0;padding:12px 14px;background:#ffffff;color:#1a1a1a;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.55;}h1,h2,h3{font-size:14px;margin:0 0 8px;color:#111111;}ul{margin:6px 0 0 18px;padding:0;}li{margin:3px 0;}p{margin:0 0 8px;}a{color:#0b5cad;}::selection{background:#cfe3f7;color:#1a1a1a;}</style></head><body><p>Fix dormant accounts reactivation clock and allow forgot password for dormant accounts</p></body></html>]]></description>
+      <pubDate>Tue, 03 Nov 2026 13:02:35 +0000</pubDate>
+      <enclosure url="https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/SLCustoms-SR-Setup-1.7.0.exe"
+                 sparkle:version="1.7.0+22"
+                 sparkle:shortVersionString="1.7.0"
+                 length="16248154"
                  type="application/octet-stream" />
     </item>
   </channel>

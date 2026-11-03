@@ -171,4 +171,3 @@ begin
   raise notice 'migration 054 VERIFY passed';
 end
 $verify$;
-
