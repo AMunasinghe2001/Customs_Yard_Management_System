@@ -53,17 +53,35 @@
   #define GmailFromName "SL Customs"
 #endif
 
-; The Supabase project. Every PC reaches this; there is no office
-; server.
-;
-; ⚠️ THE SESSION POOLER, never db.<ref>.supabase.co. The direct host
-; is IPv6-ONLY and fails from an IPv4 network -- most of Sri Lanka --
-; as "Network is unreachable", which reads like a dead server and is
-; not. The project ref belongs in the USERNAME here, not the host.
-#define DbHost     "aws-0-ap-south-1.pooler.supabase.com"
-#define DbPort     "5432"
-#define DbName     "postgres"
-#define DbUser     "yard_app.knqpwufqpcoevjaxuihp"
+; Database settings are supplied by tool\publish_release.ps1. The same
+; installer packages either the GL1 office build or the cloud build.
+#ifndef DbProfile
+  #define DbProfile "supabase"
+#endif
+#ifndef DbHost
+  #define DbHost "aws-0-ap-south-1.pooler.supabase.com"
+#endif
+#ifndef DbPort
+  #define DbPort "5432"
+#endif
+#ifndef DbName
+  #define DbName "postgres"
+#endif
+#ifndef DbUser
+  #define DbUser "yard_app.knqpwufqpcoevjaxuihp"
+#endif
+#ifndef DbSsl
+  #define DbSsl "true"
+#endif
+#ifndef DbSslVerify
+  #define DbSslVerify "true"
+#endif
+#ifndef DbRootCert
+  #define DbRootCert "supabase-root-2021.crt"
+#endif
+#ifndef SetupSuffix
+  #define SetupSuffix "Cloud"
+#endif
 
 [Setup]
 ; ⚠️ Never reuse this GUID for another product. Windows identifies the
@@ -145,7 +163,7 @@ RestartApplications=yes
 CloseApplicationsFilter=*.exe,*.dll
 
 OutputDir=output
-OutputBaseFilename=SLCustoms-SR-Setup-{#AppVersion}
+OutputBaseFilename=SLCustoms-SR-Setup-{#AppVersion}-{#SetupSuffix}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -375,7 +393,7 @@ begin
   //  reports "password authentication failed", which sends the reader to
   //  the server instead of to this line. Quoting every password rather
   //  than only the awkward ones leaves no rule to remember.
-  SetArrayLength(Lines, 18);
+  SetArrayLength(Lines, 19);
   Lines[0] := '# Written by the installer on first install.';
   Lines[1] := '# Edit this file to point this PC at another server, then';
   Lines[2] := '# restart the app. An upgrade keeps it, unless it still';
@@ -383,11 +401,12 @@ begin
   //  index. It was 12, which put it after PG_CONNECT_TIMEOUT and split
   //  the comment across the whole file.
   Lines[3] := '# points at localhost, which no officer PC can serve.';
-  Lines[4] := 'PG_HOST={#DbHost}';
-  Lines[5] := 'PG_PORT={#DbPort}';
-  Lines[6] := 'PG_DATABASE={#DbName}';
-  Lines[7] := 'PG_USER={#DbUser}';
-  Lines[8] := 'PG_PASSWORD="' + Pw + '"';
+  Lines[4] := 'PG_PROFILE={#DbProfile}';
+  Lines[5] := 'PG_HOST={#DbHost}';
+  Lines[6] := 'PG_PORT={#DbPort}';
+  Lines[7] := 'PG_DATABASE={#DbName}';
+  Lines[8] := 'PG_USER={#DbUser}';
+  Lines[9] := 'PG_PASSWORD="' + Pw + '"';
   //  ⚠️ TLS, VERIFIED, against Supabase's own root.
   //
   //  This connection crosses the public internet carrying the
@@ -399,11 +418,11 @@ begin
   //  Windows does not trust: without the .crt (shipped beside the
   //  exe) a verified connection fails as "Bad server certificate".
   //  Never answer that by setting PG_SSL_VERIFY=false.
-  Lines[9]  := 'PG_SSL=true';
-  Lines[10] := 'PG_SSL_VERIFY=true';
-  Lines[11] := 'PG_SSL_ROOT_CERT=supabase-root-2021.crt';
+  Lines[10] := 'PG_SSL={#DbSsl}';
+  Lines[11] := 'PG_SSL_VERIFY={#DbSslVerify}';
+  Lines[12] := 'PG_SSL_ROOT_CERT={#DbRootCert}';
   //  The cloud is further away than a LAN server.
-  Lines[12] := 'PG_CONNECT_TIMEOUT=30';
+  Lines[13] := 'PG_CONNECT_TIMEOUT=30';
 
   //  ⚠️ The Gmail keys go in the SAME file, because sign-in needs
   //  them. Quoted like the database password: a Google App Password is
@@ -413,11 +432,11 @@ begin
   //  Left blank at compile time, the keys are written empty rather
   //  than omitted, so the file still SHOWS what is missing when an
   //  officer opens it after "E-mail is not configured".
-  Lines[13] := '';
-  Lines[14] := '# The account that sends the sign-in codes.';
-  Lines[15] := 'GMAIL_USER={#GmailUser}';
-  Lines[16] := 'GMAIL_APP_PASSWORD="' + GmailPw + '"';
-  Lines[17] := 'GMAIL_FROM_NAME={#GmailFromName}';
+  Lines[14] := '';
+  Lines[15] := '# The account that sends the sign-in codes.';
+  Lines[16] := 'GMAIL_USER={#GmailUser}';
+  Lines[17] := 'GMAIL_APP_PASSWORD="' + GmailPw + '"';
+  Lines[18] := 'GMAIL_FROM_NAME={#GmailFromName}';
 
   //  ⚠️ Written WITHOUT a BOM. Innos UTF-8 mode prefixes one, and
   //  dotenv reads those three bytes as part of the first key -- so

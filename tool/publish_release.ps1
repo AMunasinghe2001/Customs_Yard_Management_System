@@ -51,6 +51,15 @@
 param(
   [string]$Notes = '',
 
+  [ValidateSet('cloud', 'gl1-office')]
+  [string]$Deployment = 'cloud',
+
+  # The GL1 PostgreSQL server. Used only with -Deployment gl1-office.
+  [string]$OfficeHost = '10.10.71.39',
+  [int]$OfficePort = 5432,
+  [string]$OfficeDatabase = 'Customs_SR_DB',
+  [string]$OfficeUser = 'yard_app',
+
   # The Supabase `yard_app` password, baked into this build so an officer
   # can install and sign in with no file to edit.
   #
@@ -79,6 +88,33 @@ Set-Location $root
 $BucketBase = 'https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates'
 $FeedUrl     = "$BucketBase/appcast.xml"
 $ManifestUrl = "$BucketBase/latest.json"
+
+if ($Deployment -eq 'gl1-office') {
+  if (-not $DbPassword) { throw '-DbPassword is required for -Deployment gl1-office.' }
+  $dbProfile = 'office'
+  $dbHost = $OfficeHost
+  $dbPort = $OfficePort
+  $dbName = $OfficeDatabase
+  $dbUser = $OfficeUser
+  $dbSsl = 'true'
+  $dbSslVerify = 'false'
+  $dbRootCert = ''
+  $setupSuffix = 'GL1-Office'
+  # Never let an office build consume the shared cloud installer feed.
+  # An update from that feed could silently move GL1 back to Supabase.
+  $NoUpdateFeed = $true
+} else {
+  if (-not $DbPassword) { throw '-DbPassword is required for -Deployment cloud.' }
+  $dbProfile = 'supabase'
+  $dbHost = 'aws-0-ap-south-1.pooler.supabase.com'
+  $dbPort = 5432
+  $dbName = 'postgres'
+  $dbUser = 'yard_app.knqpwufqpcoevjaxuihp'
+  $dbSsl = 'true'
+  $dbSslVerify = 'true'
+  $dbRootCert = 'supabase-root-2021.crt'
+  $setupSuffix = 'Cloud'
+}
 
 function Step($n, $text) {
   Write-Host ''
@@ -125,6 +161,7 @@ if ($issVersion -ne $version -or $dartVersion -ne $version) {
 
 Write-Host ''
 Write-Host "Version : $version (build $build)" -ForegroundColor Green
+Write-Host "Target  : $Deployment" -ForegroundColor Green
 if ($NoUpdateFeed) {
   Write-Host 'Updates : OFF for this build' -ForegroundColor Yellow
 } else {
@@ -167,10 +204,22 @@ if ($SkipFlutter) {
   if (-not $NoUpdateFeed) {
     $a += "--dart-define=UPDATE_FEED_URL=$FeedUrl"
     $a += "--dart-define=UPDATE_MANIFEST_URL=$ManifestUrl"
+  } else {
+    # An explicit empty define overrides the app's cloud default.
+    $a += '--dart-define=UPDATE_FEED_URL='
+    $a += '--dart-define=UPDATE_MANIFEST_URL='
   }
   if ($DbPassword) {
-    $a += "--dart-define=PG_CLOUD_PASSWORD=$DbPassword"
+    $a += "--dart-define=PG_PASSWORD=$DbPassword"
   }
+  $a += "--dart-define=PG_PROFILE=$dbProfile"
+  $a += "--dart-define=PG_HOST=$dbHost"
+  $a += "--dart-define=PG_PORT=$dbPort"
+  $a += "--dart-define=PG_DATABASE=$dbName"
+  $a += "--dart-define=PG_USER=$dbUser"
+  $a += "--dart-define=PG_SSL=$dbSsl"
+  $a += "--dart-define=PG_SSL_VERIFY=$dbSslVerify"
+  $a += "--dart-define=PG_SSL_ROOT_CERT=$dbRootCert"
   if ($GmailPassword) {
     $a += "--dart-define=GMAIL_APP_PASSWORD=$GmailPassword"
   }
@@ -213,6 +262,15 @@ if ($DbPassword) {
   # password. Measured with a `#` in it.
   $isccArgs += "/DDbPassword=$DbPassword"
 }
+$isccArgs += "/DDbProfile=$dbProfile"
+$isccArgs += "/DDbHost=$dbHost"
+$isccArgs += "/DDbPort=$dbPort"
+$isccArgs += "/DDbName=$dbName"
+$isccArgs += "/DDbUser=$dbUser"
+$isccArgs += "/DDbSsl=$dbSsl"
+$isccArgs += "/DDbSslVerify=$dbSslVerify"
+$isccArgs += "/DDbRootCert=$dbRootCert"
+$isccArgs += "/DSetupSuffix=$setupSuffix"
 if ($GmailPassword) {
   $isccArgs += "/DGmailPassword=$GmailPassword"
 }
@@ -221,7 +279,7 @@ $isccArgs += 'installer\setup.iss'
 & $iscc @isccArgs
 if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
 
-$setupExe = "installer\output\SLCustoms-SR-Setup-$version.exe"
+$setupExe = "installer\output\SLCustoms-SR-Setup-$version-$setupSuffix.exe"
 if (-not (Test-Path $setupExe)) { throw "installer not found at $setupExe" }
 
 # ── 3. The feeds ──────────────────────────────────────────────────────────

@@ -29,6 +29,8 @@ import 'package:flutter/foundation.dart';
 class AppEnv {
   AppEnv._();
 
+  static const String _profileDefine = String.fromEnvironment('PG_PROFILE');
+
   static DotEnv? _env;
   static String? _loadedFrom;
 
@@ -126,6 +128,7 @@ class AppEnv {
   /// contains underscores, so `PG_SSL_VERIFY_local` could not be told from a
   /// key of that name in its own right.
   static String get profile {
+    if (_profileDefine.trim().isNotEmpty) return _profileDefine.trim();
     load();
     return (_env?['PG_PROFILE'] ?? '').trim();
   }
