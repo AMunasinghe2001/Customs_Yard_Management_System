@@ -199,7 +199,6 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
       _lockTimer?.cancel();
       setState(() {
         _success = 'Account verified! Redirecting to Sign In...';
-        _otpSent = false;
       });
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) context.go('/valuation/login');
