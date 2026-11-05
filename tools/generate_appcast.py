@@ -110,6 +110,8 @@ def main():
     ap.add_argument('--exe', default=None,
                     help='override the installer path (default: the one '
                          'named after the pubspec version)')
+    ap.add_argument('--channel', default='',
+                    help='write an isolated feed under this channel name')
     args = ap.parse_args()
 
     version, build = read_pubspec_version()
@@ -139,7 +141,10 @@ def main():
     # aware UTC datetime so the offset is always written explicitly.
     pub_date = format_datetime(datetime.now(timezone.utc))
 
-    url = '%s/%s' % (BUCKET_BASE, os.path.basename(exe))
+    channel = re.sub(r'[^a-z0-9._-]+', '-', args.channel.lower()).strip('-')
+    base_url = BUCKET_BASE + (('/' + channel) if channel else '')
+    channel_out = os.path.join(OUT_DIR, channel) if channel else OUT_DIR
+    url = '%s/%s' % (base_url, os.path.basename(exe))
     notes = args.notes.strip() or ('Version %s of the SR Management System.'
                                    % version)
 
@@ -221,8 +226,8 @@ def main():
         'size': size,
     }
 
-    out = os.path.join(OUT_DIR, 'appcast.xml')
-    os.makedirs(OUT_DIR, exist_ok=True)
+    out = os.path.join(channel_out, 'appcast.xml')
+    os.makedirs(channel_out, exist_ok=True)
     with open(out, 'w', encoding='utf-8', newline='\n') as f:
         f.write(xml)
 
@@ -260,7 +265,7 @@ def main():
             }
         ],
     }
-    out_json = os.path.join(OUT_DIR, 'latest.json')
+    out_json = os.path.join(channel_out, 'latest.json')
     with open(out_json, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(latest, f, indent=2)
         f.write('\n')

@@ -29,6 +29,15 @@ installer\output\SLCustoms-SR-Setup-<version>-GL1-Office.exe
 
 The installer writes a first-install `.env` beside the executable with `PG_PROFILE=office`, the GL1 server address, `Customs_SR_DB`, and the supplied credentials. An existing deliberate `.env` is preserved.
 
+The GL1 build uses the isolated `gl1-office` update channel. Upload the installer first, then upload these two generated files to the `gl1-office/` folder in the public `updates` bucket:
+
+```text
+installer\output\gl1-office\appcast.xml
+installer\output\gl1-office\latest.json
+```
+
+Cloud releases use the root `updates/` folder. Never upload a Cloud feed into `gl1-office/`, or a GL1 feed into the root folder.
+
 ## Build the cloud installer
 
 ```powershell

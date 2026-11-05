@@ -100,9 +100,7 @@ if ($Deployment -eq 'gl1-office') {
   $dbSslVerify = 'false'
   $dbRootCert = ''
   $setupSuffix = 'GL1-Office'
-  # Never let an office build consume the shared cloud installer feed.
-  # An update from that feed could silently move GL1 back to Supabase.
-  $NoUpdateFeed = $true
+  $feedChannel = 'gl1-office'
 } else {
   if (-not $DbPassword) { throw '-DbPassword is required for -Deployment cloud.' }
   $dbProfile = 'supabase'
@@ -114,7 +112,11 @@ if ($Deployment -eq 'gl1-office') {
   $dbSslVerify = 'true'
   $dbRootCert = 'supabase-root-2021.crt'
   $setupSuffix = 'Cloud'
+  $feedChannel = ''
 }
+
+$FeedUrl = "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/appcast.xml'
+$ManifestUrl = "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/latest.json'
 
 function Step($n, $text) {
   Write-Host ''
@@ -302,7 +304,8 @@ if (-not $python) {
   exit 1
 }
 
-$g = @('tools\generate_appcast.py')
+$g = @('tools\generate_appcast.py', '--exe', $setupExe)
+if ($feedChannel) { $g += @('--channel', $feedChannel) }
 if ($Notes) { $g += @('--notes', $Notes) }
 & $python @g
 if ($LASTEXITCODE -ne 0) { throw 'appcast generation failed' }
@@ -315,9 +318,9 @@ Write-Host ('=' * 74) -ForegroundColor DarkGray
 Write-Host '  DONE' -ForegroundColor Green
 Write-Host ('=' * 74) -ForegroundColor DarkGray
 Write-Host ''
-Write-Host "  SLCustoms-SR-Setup-$version.exe   ($mb MB)"
-Write-Host '  appcast.xml'
-Write-Host '  latest.json'
+Write-Host "  $setupExe   ($mb MB)"
+$displayChannel = if ($feedChannel) { $feedChannel } else { 'cloud' }
+Write-Host "  feed channel: $displayChannel"
 Write-Host ''
 if (-not $SkipFlutter) {
   Write-Host ("  debug symbols: build\symbols\{0}+{1}\" -f $version, $build) -ForegroundColor DarkGray
@@ -325,7 +328,7 @@ if (-not $SkipFlutter) {
   Write-Host '  the symbols from this exact build.' -ForegroundColor DarkGray
   Write-Host ''
 }
-Write-Host '  all three in installer\output\' -ForegroundColor DarkGray
+Write-Host '  upload the installer and matching feed folder to the selected channel.' -ForegroundColor DarkGray
 Write-Host ''
 Write-Host '  UPLOAD to Supabase -> Storage -> updates' -ForegroundColor Cyan
 Write-Host ''
