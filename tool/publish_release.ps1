@@ -77,6 +77,12 @@ param(
   #
   # Never committed, same as -DbPassword.
   [string]$GmailPassword = '',
+
+  # Optional public update URLs. Set these to GitHub Pages/raw and GitHub
+  # Release URLs to remove Supabase from update hosting.
+  [string]$UpdateFeedUrl = '',
+  [string]$UpdateManifestUrl = '',
+  [string]$UpdateArtifactBaseUrl = '',
   [switch]$NoUpdateFeed,
   [switch]$SkipFlutter
 )
@@ -115,8 +121,12 @@ if ($Deployment -eq 'gl1-office') {
   $feedChannel = ''
 }
 
-$FeedUrl = "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/appcast.xml'
-$ManifestUrl = "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/latest.json'
+$FeedUrl = if ($UpdateFeedUrl) { $UpdateFeedUrl } else {
+  "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/appcast.xml'
+}
+$ManifestUrl = if ($UpdateManifestUrl) { $UpdateManifestUrl } else {
+  "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/latest.json'
+}
 
 function Step($n, $text) {
   Write-Host ''
@@ -306,6 +316,7 @@ if (-not $python) {
 
 $g = @('tools\generate_appcast.py', '--exe', $setupExe)
 if ($feedChannel) { $g += @('--channel', $feedChannel) }
+if ($UpdateArtifactBaseUrl) { $g += @('--artifact-base-url', $UpdateArtifactBaseUrl) }
 if ($Notes) { $g += @('--notes', $Notes) }
 & $python @g
 if ($LASTEXITCODE -ne 0) { throw 'appcast generation failed' }
@@ -330,7 +341,7 @@ if (-not $SkipFlutter) {
 }
 Write-Host '  upload the installer and matching feed folder to the selected channel.' -ForegroundColor DarkGray
 Write-Host ''
-Write-Host '  UPLOAD to Supabase -> Storage -> updates' -ForegroundColor Cyan
+Write-Host '  Upload the installer and matching feed files to the configured public host.' -ForegroundColor Cyan
 Write-Host ''
 Write-Host '    1. the .exe        FIRST' -ForegroundColor Yellow
 Write-Host '    2. appcast.xml     (overwrite)'
@@ -340,10 +351,7 @@ Write-Host '  ORDER MATTERS. The moment a feed names a new version, every' -Fore
 Write-Host '  running copy starts offering it. If the .exe is not uploaded' -ForegroundColor Yellow
 Write-Host '  yet, each officer gets a failed download instead.' -ForegroundColor Yellow
 Write-Host ''
-Write-Host '  First time only - create the bucket:'
-Write-Host '    Supabase SQL Editor -> postgres\supabase_updates_bucket.sql'
-Write-Host ''
-Write-Host '  Then prove both are public (a private bucket answers 400):'
+Write-Host '  Verify both feed URLs are public before notifying officers:'
 Write-Host "    curl.exe -I $ManifestUrl"
 Write-Host "    curl.exe -I $FeedUrl"
 Write-Host ''

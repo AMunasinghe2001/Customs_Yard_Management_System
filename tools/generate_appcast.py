@@ -112,6 +112,8 @@ def main():
                          'named after the pubspec version)')
     ap.add_argument('--channel', default='',
                     help='write an isolated feed under this channel name')
+    ap.add_argument('--artifact-base-url', default=BUCKET_BASE,
+                    help='public URL prefix containing the installer asset')
     args = ap.parse_args()
 
     version, build = read_pubspec_version()
@@ -144,7 +146,8 @@ def main():
     channel = re.sub(r'[^a-z0-9._-]+', '-', args.channel.lower()).strip('-')
     base_url = BUCKET_BASE + (('/' + channel) if channel else '')
     channel_out = os.path.join(OUT_DIR, channel) if channel else OUT_DIR
-    url = '%s/%s' % (base_url, os.path.basename(exe))
+    artifact_base = args.artifact_base_url.rstrip('/')
+    url = '%s/%s' % (artifact_base, os.path.basename(exe))
     notes = args.notes.strip() or ('Version %s of the SR Management System.'
                                    % version)
 
@@ -216,7 +219,7 @@ def main():
   </channel>
 </rss>
 ''' % {
-        'base': BUCKET_BASE,
+        'base': base_url,
         'version': escape(version),
         'build': escape(build),
         'exe_version': escape(exe_version),

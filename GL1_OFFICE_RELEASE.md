@@ -38,6 +38,24 @@ installer\output\gl1-office\latest.json
 
 Cloud releases use the root `updates/` folder. Never upload a Cloud feed into `gl1-office/`, or a GL1 feed into the root folder.
 
+## GitHub-only updates
+
+The database and update hosting can both avoid Supabase. The repository must be public, or the PCs need authenticated access; a private repository's raw files and release assets return `404` to the app.
+
+Use a public `gh-pages` branch for the two feed files and a GitHub Release for the installer asset. For version `1.7.0`, create a release tag such as `gl1-office-v1.7.0`, upload the installer there, then build the feeds with:
+
+```powershell
+.\tool\publish_release.ps1 `
+  -Deployment gl1-office `
+  -DbPassword '<GL1 yard_app password>' `
+  -GmailPassword '<Gmail app password>' `
+  -UpdateFeedUrl 'https://raw.githubusercontent.com/AMunasinghe2001/Customs_Yard_Management_System/gh-pages/gl1-office/appcast.xml' `
+  -UpdateManifestUrl 'https://raw.githubusercontent.com/AMunasinghe2001/Customs_Yard_Management_System/gh-pages/gl1-office/latest.json' `
+  -UpdateArtifactBaseUrl 'https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl1-office-v1.7.0'
+```
+
+Upload the generated `installer\output\gl1-office\appcast.xml` and `latest.json` to the same paths in the public `gh-pages` branch. The next GL1 build uses a new tag and the same feed paths. Cloud builds use their own feed path and release tag.
+
 ## Build the cloud installer
 
 ```powershell
