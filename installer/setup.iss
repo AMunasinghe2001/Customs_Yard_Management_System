@@ -289,13 +289,10 @@ Type: filesandordirs; Name: "{app}\data"
 Type: filesandordirs; Name: "{app}\env-templates"
 
 ; ⚠️ AND THE FOLDER ITSELF, last.
-;
-; `dirifempty` and not a blanket delete, deliberately: if anything the
-; installer does not know about is still in there -- an export somebody
-; saved next to the program, a note -- it stays, and so does the folder.
-; Removing a directory by wildcard would take those with it, and an
-; uninstaller has no business deleting files it never created.
-Type: dirifempty; Name: "{app}"
+; Clean up the entire app folder and parent brand folder on uninstall so
+; nothing is left behind in Program Files.
+Type: filesandordirs; Name: "{app}"
+Type: dirifempty; Name: "{autopf}\SL Customs"
 
 [Code]
 //  ⚠️ WRITE A .env ON A FIRST INSTALL, AND ONLY THEN.
@@ -450,4 +447,24 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
     WriteDefaultEnv();
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppDir, ParentDir, LocalAppDataDir: string;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    AppDir := ExpandConstant('{app}');
+    if DirExists(AppDir) then
+      DelTree(AppDir, True, True, True);
+
+    ParentDir := ExpandConstant('{autopf}\SL Customs');
+    if DirExists(ParentDir) then
+      RemoveDir(ParentDir);
+
+    LocalAppDataDir := ExpandConstant('{localappdata}\SLCustomsSR');
+    if DirExists(LocalAppDataDir) then
+      DelTree(LocalAppDataDir, True, True, True);
+  end;
 end;
