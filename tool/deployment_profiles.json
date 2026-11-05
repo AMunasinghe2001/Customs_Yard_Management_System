@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Multi-Yard Deployment Profiles for Sri Lanka Customs Yard Management System",
+  "defaultProfile": "cloud",
+  "github": {
+    "owner": "AMunasinghe2001",
+    "repo": "Customs_Yard_Management_System",
+    "ghPagesBranch": "gh-pages"
+  },
+  "profiles": {
+    "cloud": {
+      "name": "Cloud (Central Supabase)",
+      "profileType": "supabase",
+      "dbHost": "aws-0-ap-south-1.pooler.supabase.com",
+      "dbPort": 5432,
+      "dbName": "postgres",
+      "dbUser": "yard_app.knqpwufqpcoevjaxuihp",
+      "dbSsl": "true",
+      "dbSslVerify": "true",
+      "dbRootCert": "supabase-root-2021.crt",
+      "setupSuffix": "Cloud",
+      "feedChannel": "",
+      "tagPrefix": "v"
+    },
+    "gl1-office": {
+      "name": "GL1 Yard Office Server",
+      "profileType": "office",
+      "dbHost": "10.10.71.39",
+      "dbPort": 5432,
+      "dbName": "Customs_SR_DB",
+      "dbUser": "yard_app",
+      "dbSsl": "true",
+      "dbSslVerify": "false",
+      "dbRootCert": "",
+      "setupSuffix": "GL1-Office",
+      "feedChannel": "gl1-office",
+      "tagPrefix": "gl1-office-v"
+    },
+    "gl2-office": {
+      "name": "GL2 Yard Office Server",
+      "profileType": "office",
+      "dbHost": "10.10.72.39",
+      "dbPort": 5432,
+      "dbName": "Customs_SR_DB",
+      "dbUser": "yard_app",
+      "dbSsl": "true",
+      "dbSslVerify": "false",
+      "dbRootCert": "",
+      "setupSuffix": "GL2-Office",
+      "feedChannel": "gl2-office",
+      "tagPrefix": "gl2-office-v"
+    },
+    "gl3-office": {
+      "name": "GL3 Yard Office Server",
+      "profileType": "office",
+      "dbHost": "10.10.73.39",
+      "dbPort": 5432,
+      "dbName": "Customs_SR_DB",
+      "dbUser": "yard_app",
+      "dbSsl": "true",
+      "dbSslVerify": "false",
+      "dbRootCert": "",
+      "setupSuffix": "GL3-Office",
+      "feedChannel": "gl3-office",
+      "tagPrefix": "gl3-office-v"
+    },
+    "rct-office": {
+      "name": "RCT Yard Office Server",
+      "profileType": "office",
+      "dbHost": "10.10.74.39",
+      "dbPort": 5432,
+      "dbName": "Customs_SR_DB",
+      "dbUser": "yard_app",
+      "dbSsl": "true",
+      "dbSslVerify": "false",
+      "dbRootCert": "",
+      "setupSuffix": "RCT-Office",
+      "feedChannel": "rct-office",
+      "tagPrefix": "rct-office-v"
+    }
+  }
+}
+

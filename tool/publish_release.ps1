@@ -1,85 +1,69 @@
 <#
 .SYNOPSIS
-  Build a release and the two update feeds, ready to upload to Supabase.
+  Build a release and the two update feeds for any yard deployment profile.
 
 .DESCRIPTION
   One command from source to publishable files:
+    1. Reads deployment profile from tool\deployment_profiles.json (e.g. gl1-office, gl2-office, cloud, etc.)
+    2. flutter build windows --release, with the compiled-in database and update URLs
+    3. Inno Setup  -> installer\output\SLCustoms-SR-Setup-<version>-<suffix>.exe
+    4. Feeds       -> installer\output\<channel>\appcast.xml   (WinSparkle)
+                      installer\output\<channel>\latest.json    (In-app banner)
 
-    1. flutter build windows --release, with the update URLs compiled in
-    2. Inno Setup  -> installer\output\SLCustoms-SR-Setup-<version>.exe
-    3. the feeds   -> installer\output\appcast.xml   (WinSparkle)
-                      installer\output\latest.json   (the in-app banner)
+  Supports automated GitHub Releases & gh-pages feed URLs out of the box when -UseGitHubUpdates is specified.
 
-  It does NOT bump the version. `tool\release.ps1 -Version x.y.z` does that,
-  across pubspec.yaml, installer\setup.iss and lib\core\update_check.dart at
-  once; run it first when the version is changing.
+.PARAMETER Deployment
+  The deployment profile key defined in tool\deployment_profiles.json (e.g. 'cloud', 'gl1-office', 'gl2-office', 'gl3-office', 'rct-office').
+  Or provide a custom name and specify -OfficeHost.
 
-  ⚠️ TWO UPDATE PATHS, TWO FEEDS. The app carries both and they are
-  independent:
+.PARAMETER DbPassword
+  The yard_app / postgres database password. Required.
 
-    lib\core\update_check.dart   reads JSON, shows the in-app strip
-                                 (widgets\update_banner.dart)
-    lib\core\app_updater.dart    reads appcast.xml, drives WinSparkle's
-                                 own download-and-install prompt
+.PARAMETER GmailPassword
+  The Gmail App Password that sends officer sign-in verification OTPs.
 
-  Publishing both files keeps them agreeing. Publishing only one leaves half
-  the officers on a version the other half is not offered.
-
-  ⚠️ WHY SUPABASE AND NOT GITHUB. update_check.dart defaults to the GitHub
-  Releases API for this repo, but the repo is PRIVATE -- the API answers 404
-  to an officer's PC, so that path can never have shown anybody an update.
-  Supabase Storage serves the same JSON publicly over https.
+.PARAMETER UseGitHubUpdates
+  Automatically construct public GitHub Pages feeds and GitHub Release artifact download URLs
+  based on repository settings in deployment_profiles.json.
 
 .PARAMETER Notes
-  One line shown in the update prompt. Officers read it.
-
-.PARAMETER NoUpdateFeed
-  Build with update checking OFF. Correct for a one-off or hand-installed
-  build; the app then never contacts anything.
+  Release notes displayed in the update banner and WinSparkle dialog.
 
 .PARAMETER SkipFlutter
-  Reuse the existing build\...\Release output. For rebuilding just the
-  installer or the feeds.
+  Skip Flutter compilation and reuse existing Release build output (for packaging installer/feeds only).
+
+.PARAMETER NoUpdateFeed
+  Disable update checks completely for this build.
 
 .EXAMPLE
-  .\tool\publish_release.ps1 -Notes "Fixes the ICT OTP resend"
+  # Build GL1 office release using GitHub Releases & gh-pages feeds:
+  .\tool\publish_release.ps1 -Deployment gl1-office -DbPassword 'secret' -GmailPassword 'app-pw' -UseGitHubUpdates -Notes "GL1 update"
 
 .EXAMPLE
-  .\tool\release.ps1 -Version 1.3.0
-  .\tool\publish_release.ps1 -Notes "Adds rates and taxes to the ICT portal"
+  # Build GL2 office release with custom host override:
+  .\tool\publish_release.ps1 -Deployment gl2-office -OfficeHost 10.10.72.39 -DbPassword 'secret' -GmailPassword 'app-pw' -UseGitHubUpdates
 #>
 param(
   [string]$Notes = '',
 
-  [ValidateSet('cloud', 'gl1-office')]
   [string]$Deployment = 'cloud',
 
-  # The GL1 PostgreSQL server. Used only with -Deployment gl1-office.
-  [string]$OfficeHost = '10.10.71.39',
-  [int]$OfficePort = 5432,
-  [string]$OfficeDatabase = 'Customs_SR_DB',
-  [string]$OfficeUser = 'yard_app',
+  # Optional overrides for database connection
+  [string]$OfficeHost = '',
+  [int]$OfficePort = 0,
+  [string]$OfficeDatabase = '',
+  [string]$OfficeUser = '',
 
-  # The Supabase `yard_app` password, baked into this build so an officer
-  # can install and sign in with no file to edit.
-  #
-  # ⚠️ NEVER COMMITTED, and never written into a source file. It is
-  # compiled into the binary and into the .env the installer writes, both of
-  # which ship -- so it is only as secret as the installer is. Left out, the
-  # build carries no credential and the officer supplies a .env, as before.
+  # Secrets (never committed)
   [string]$DbPassword = '',
-
-  # The Gmail App Password that sends the sign-in codes.
-  #
-  # ⚠️ Without it a fresh install reaches the database and then
-  # stops at "E-mail is not configured" -- sign-in sends a one-time
-  # code, so no mail means nobody can get in at all.
-  #
-  # Never committed, same as -DbPassword.
   [string]$GmailPassword = '',
 
-  # Optional public update URLs. Set these to GitHub Pages/raw and GitHub
-  # Release URLs to remove Supabase from update hosting.
+  # GitHub Updates automation
+  [switch]$UseGitHubUpdates,
+  [string]$GitHubOwner = '',
+  [string]$GitHubRepo = '',
+
+  # Manual override for update URLs
   [string]$UpdateFeedUrl = '',
   [string]$UpdateManifestUrl = '',
   [string]$UpdateArtifactBaseUrl = '',
@@ -91,70 +75,91 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$BucketBase = 'https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates'
-$FeedUrl     = "$BucketBase/appcast.xml"
-$ManifestUrl = "$BucketBase/latest.json"
+# ── Load Deployment Profiles ──────────────────────────────────────────────────
+$profilesFile = Join-Path $PSScriptRoot 'deployment_profiles.json'
+if (-not (Test-Path $profilesFile)) {
+  throw "Profiles configuration file not found at $profilesFile"
+}
+$config = Get-Content $profilesFile -Raw -Encoding UTF8 | ConvertFrom-Json
 
-if ($Deployment -eq 'gl1-office') {
-  if (-not $DbPassword) { throw '-DbPassword is required for -Deployment gl1-office.' }
-  $dbProfile = 'office'
-  $dbHost = $OfficeHost
-  $dbPort = $OfficePort
-  $dbName = $OfficeDatabase
-  $dbUser = $OfficeUser
-  $dbSsl = 'true'
-  $dbSslVerify = 'false'
-  $dbRootCert = ''
-  $setupSuffix = 'GL1-Office'
-  $feedChannel = 'gl1-office'
-} else {
-  if (-not $DbPassword) { throw '-DbPassword is required for -Deployment cloud.' }
-  $dbProfile = 'supabase'
-  $dbHost = 'aws-0-ap-south-1.pooler.supabase.com'
-  $dbPort = 5432
-  $dbName = 'postgres'
-  $dbUser = 'yard_app.knqpwufqpcoevjaxuihp'
-  $dbSsl = 'true'
-  $dbSslVerify = 'true'
-  $dbRootCert = 'supabase-root-2021.crt'
-  $setupSuffix = 'Cloud'
-  $feedChannel = ''
+$depKey = $Deployment.ToLower().Trim()
+$profile = $config.profiles.$depKey
+
+if (-not $profile) {
+  # Fallback for dynamic/custom yard profile names like 'gl4-office'
+  Write-Host "Notice: Deployment '$Deployment' not predefined in deployment_profiles.json. Using dynamic template." -ForegroundColor Yellow
+  $yardTag = ($depKey -replace '-office$', '').ToUpper()
+  $profile = [PSCustomObject]@{
+    name          = "$yardTag Yard Office Server"
+    profileType   = 'office'
+    dbHost        = if ($OfficeHost) { $OfficeHost } else { '127.0.0.1' }
+    dbPort        = if ($OfficePort -gt 0) { $OfficePort } else { 5432 }
+    dbName        = if ($OfficeDatabase) { $OfficeDatabase } else { 'Customs_SR_DB' }
+    dbUser        = if ($OfficeUser) { $OfficeUser } else { 'yard_app' }
+    dbSsl         = 'true'
+    dbSslVerify   = 'false'
+    dbRootCert    = ''
+    setupSuffix   = "$yardTag-Office"
+    feedChannel   = $depKey
+    tagPrefix     = "$depKey-v"
+  }
 }
 
-$FeedUrl = if ($UpdateFeedUrl) { $UpdateFeedUrl } else {
-  "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/appcast.xml'
-}
-$ManifestUrl = if ($UpdateManifestUrl) { $UpdateManifestUrl } else {
-  "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/latest.json'
+# Apply explicit overrides if supplied via CLI
+$dbProfile   = $profile.profileType
+$dbHost      = if ($OfficeHost) { $OfficeHost } else { $profile.dbHost }
+$dbPort      = if ($OfficePort -gt 0) { $OfficePort } else { $profile.dbPort }
+$dbName      = if ($OfficeDatabase) { $OfficeDatabase } else { $profile.dbName }
+$dbUser      = if ($OfficeUser) { $OfficeUser } else { $profile.dbUser }
+$dbSsl       = $profile.dbSsl
+$dbSslVerify = $profile.dbSslVerify
+$dbRootCert  = $profile.dbRootCert
+$setupSuffix = $profile.setupSuffix
+$feedChannel = $profile.feedChannel
+$tagPrefix   = if ($profile.tagPrefix) { $profile.tagPrefix } else { 'v' }
+
+# Read default passwords from .env if not explicitly passed
+if (-not $DbPassword -and (Test-Path '.env')) {
+  $envContent = Get-Content '.env' -Raw
+  if ($depKey -eq 'gl1-office') {
+    if ($envContent -match '(?m)^PG_PASSWORD__gl1=(.*)$') {
+      $DbPassword = $Matches[1].Trim().Trim('"').Trim("'")
+    } elseif ($envContent -match '(?m)^PG_PASSWORD__office=(.*)$') {
+      $DbPassword = $Matches[1].Trim().Trim('"').Trim("'")
+    }
+  } elseif ($depKey -eq 'cloud') {
+    if ($envContent -match '(?m)^PG_PASSWORD__supabase=(.*)$') {
+      $DbPassword = $Matches[1].Trim().Trim('"').Trim("'")
+    }
+  }
 }
 
-function Step($n, $text) {
-  Write-Host ''
-  Write-Host ('=' * 74) -ForegroundColor DarkGray
-  Write-Host ("  [$n/3] $text") -ForegroundColor Cyan
-  Write-Host ('=' * 74) -ForegroundColor DarkGray
+if (-not $GmailPassword -and (Test-Path '.env')) {
+  $envContent = Get-Content '.env' -Raw
+  if ($envContent -match '(?m)^GMAIL_APP_PASSWORD=(.*)$') {
+    $GmailPassword = $Matches[1].Trim().Trim('"').Trim("'")
+  }
 }
 
-# ── The three version strings must agree, checked BEFORE the long build ───
-#
-# ⚠️ A drift here is invisible until it misbehaves in the worst way: an app
-# whose kAppVersion trails the published one offers the same update forever;
-# one that leads it never offers anything. tool\release.ps1 writes all three
-# from a single argument -- this only verifies.
-$pubspec = Get-Content 'pubspec.yaml' -Raw
+if (-not $DbPassword) {
+  throw "-DbPassword is required for Deployment '$Deployment'."
+}
+
+# ── Read Versions ─────────────────────────────────────────────────────────────
+$pubspec = Get-Content 'pubspec.yaml' -Raw -Encoding UTF8
 if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$') {
   throw 'pubspec.yaml has no "version: X.Y.Z+N" line.'
 }
 $version = $Matches[1]
 $build   = $Matches[2]
 
-$iss = Get-Content 'installer\setup.iss' -Raw
+$iss = Get-Content 'installer\setup.iss' -Raw -Encoding UTF8
 if ($iss -notmatch '(?m)^#define\s+AppVersion\s+"([^"]+)"') {
   throw 'installer\setup.iss has no "#define AppVersion".'
 }
 $issVersion = $Matches[1]
 
-$uc = Get-Content 'lib\core\update_check.dart' -Raw
+$uc = Get-Content 'lib\core\update_check.dart' -Raw -Encoding UTF8
 if ($uc -notmatch "defaultValue:\s*'(\d+\.\d+\.\d+)'") {
   throw 'lib\core\update_check.dart has no kAppVersion default.'
 }
@@ -171,45 +176,74 @@ if ($issVersion -ne $version -or $dartVersion -ne $version) {
   exit 1
 }
 
-Write-Host ''
-Write-Host "Version : $version (build $build)" -ForegroundColor Green
-Write-Host "Target  : $Deployment" -ForegroundColor Green
-if ($NoUpdateFeed) {
-  Write-Host 'Updates : OFF for this build' -ForegroundColor Yellow
-} else {
-  Write-Host "Feeds   : $BucketBase/{appcast.xml, latest.json}" -ForegroundColor Green
+# ── Configure Update URLs (GitHub Pages vs Supabase Storage) ──────────────────
+$ghOwner = if ($GitHubOwner) { $GitHubOwner } else { $config.github.owner }
+$ghRepo  = if ($GitHubRepo) { $GitHubRepo } else { $config.github.repo }
+$ghBranch = if ($config.github.ghPagesBranch) { $config.github.ghPagesBranch } else { 'gh-pages' }
+$BucketBase = 'https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates'
+
+if ($UseGitHubUpdates) {
+  $channelFolder = if ($feedChannel) { "$feedChannel/" } else { '' }
+  $ghReleaseTag = "$tagPrefix$version"
+  
+  if (-not $UpdateFeedUrl) {
+    $UpdateFeedUrl = "https://raw.githubusercontent.com/$ghOwner/$ghRepo/$ghBranch/${channelFolder}appcast.xml"
+  }
+  if (-not $UpdateManifestUrl) {
+    $UpdateManifestUrl = "https://raw.githubusercontent.com/$ghOwner/$ghRepo/$ghBranch/${channelFolder}latest.json"
+  }
+  if (-not $UpdateArtifactBaseUrl) {
+    $UpdateArtifactBaseUrl = "https://github.com/$ghOwner/$ghRepo/releases/download/$ghReleaseTag"
+  }
 }
 
-# ── 1. The app ────────────────────────────────────────────────────────────
+$FeedUrl = if ($UpdateFeedUrl) { $UpdateFeedUrl } else {
+  "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/appcast.xml'
+}
+$ManifestUrl = if ($UpdateManifestUrl) { $UpdateManifestUrl } else {
+  "$BucketBase" + $(if ($feedChannel) { "/$feedChannel" } else { '' }) + '/latest.json'
+}
+
+function Step($n, $text) {
+  Write-Host ''
+  Write-Host ('=' * 74) -ForegroundColor DarkGray
+  Write-Host ("  [$n/3] $text") -ForegroundColor Cyan
+  Write-Host ('=' * 74) -ForegroundColor DarkGray
+}
+
+Write-Host ''
+Write-Host "Version    : $version (build $build)" -ForegroundColor Green
+Write-Host "Deployment : $Deployment ($($profile.name))" -ForegroundColor Green
+Write-Host "DB Target  : ${dbHost}:${dbPort}/${dbName} ($dbUser)" -ForegroundColor Gray
+Write-Host "Suffix     : $setupSuffix" -ForegroundColor Gray
+if ($NoUpdateFeed) {
+  Write-Host 'Updates    : OFF for this build' -ForegroundColor Yellow
+} else {
+  Write-Host "Feed URL   : $FeedUrl" -ForegroundColor Green
+  Write-Host "Manifest   : $ManifestUrl" -ForegroundColor Green
+  if ($UpdateArtifactBaseUrl) {
+    Write-Host "Artifact   : $UpdateArtifactBaseUrl" -ForegroundColor Green
+  }
+}
+
+# ── 1. The app ────────────────────────────────────────────────────────────────
 if ($SkipFlutter) {
   Write-Host ''
   Write-Host '  [1/3] flutter build ... SKIPPED (-SkipFlutter)' -ForegroundColor Yellow
 } else {
-  Step 1 'flutter build windows --release'
+  Step 1 "flutter build windows --release [$Deployment]"
 
-  # ⚠️ Compiled IN, not read from .env at runtime. These URLs decide which
-  # .exe the app downloads and RUNS as administrator, so they must not be
-  # changeable by a file sitting next to the app.
-  # ⚠️ OBFUSCATED, and the symbols kept.
-  #
-  # --obfuscate renames Dart classes, methods and fields in the compiled
-  # output, so the binary no longer hands a reader the app's structure.
-  # It matters more here than in most apps, because this build carries
-  # the database and Gmail passwords as compiled-in constants.
-  #
-  # ⚠️ IT DOES NOT HIDE THOSE PASSWORDS. Obfuscation renames SYMBOLS;
-  # a compiled-in string is still recoverable with `strings` on the .exe.
-  # It raises the effort, it does not remove the exposure. The real fix
-  # is per-user database accounts instead of one shared yard_app
-  # password in every binary -- deferred deliberately, not overlooked.
-  #
-  # ⚠️ --split-debug-info is what makes --obfuscate usable. Without
-  # it the symbol map is simply GONE, and a crash from a shipped build
-  # can never be turned back into a stack trace anyone can read. With
-  # it the map is written out of the binary and into the folder below,
-  # which must be KEPT: symbols only decode the build they came from.
-  $symbolDir = Join-Path $root "build\symbols\$version+$build"
+  $symbolDir = Join-Path $root "build\symbols\$version+$build-$setupSuffix"
   New-Item -ItemType Directory -Force -Path $symbolDir | Out-Null
+
+  $flutterCmd = (Get-Command flutter -ErrorAction SilentlyContinue).Source
+  if (-not $flutterCmd) {
+    if (Test-Path "C:\Users\user\flutter\bin\flutter.bat") {
+      $flutterCmd = "C:\Users\user\flutter\bin\flutter.bat"
+    } else {
+      $flutterCmd = 'flutter'
+    }
+  }
 
   $a = @('build', 'windows', '--release',
          '--obfuscate', "--split-debug-info=$symbolDir")
@@ -217,7 +251,6 @@ if ($SkipFlutter) {
     $a += "--dart-define=UPDATE_FEED_URL=$FeedUrl"
     $a += "--dart-define=UPDATE_MANIFEST_URL=$ManifestUrl"
   } else {
-    # An explicit empty define overrides the app's cloud default.
     $a += '--dart-define=UPDATE_FEED_URL='
     $a += '--dart-define=UPDATE_MANIFEST_URL='
   }
@@ -235,15 +268,13 @@ if ($SkipFlutter) {
   if ($GmailPassword) {
     $a += "--dart-define=GMAIL_APP_PASSWORD=$GmailPassword"
   }
-  & flutter @a
+
+  & $flutterCmd @a
   if ($LASTEXITCODE -ne 0) { throw 'flutter build failed' }
 
-  # ⚠️ A build that produced no symbol file is an obfuscated
-  # binary nobody can ever debug. Better to fail here than to find
-  # out months later, holding a crash report and no way to read it.
   $syms = Get-ChildItem $symbolDir -File -ErrorAction SilentlyContinue
   if (-not $syms) {
-    throw "the build wrote no debug symbols to $symbolDir - a crash from this build could not be decoded"
+    throw "the build wrote no debug symbols to $symbolDir"
   }
   Write-Host ("  symbols -> {0}  ({1} file(s))" -f $symbolDir, $syms.Count) -ForegroundColor DarkGray
 }
@@ -252,8 +283,8 @@ if (-not (Test-Path 'build\windows\x64\runner\Release\cus_yard_management.exe'))
   throw 'the built app is not in build\windows\x64\runner\Release'
 }
 
-# ── 2. The installer ──────────────────────────────────────────────────────
-Step 2 'Inno Setup - the installer'
+# ── 2. The installer ──────────────────────────────────────────────────────────
+Step 2 "Inno Setup - SLCustoms-SR-Setup-$version-$setupSuffix.exe"
 
 $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
 if (-not $iscc) {
@@ -266,12 +297,12 @@ if (-not $iscc) {
   throw 'ISCC.exe (Inno Setup 6) not found - https://jrsoftware.org/isdl.php'
 }
 
-$isccArgs = @()
+# Compile to a clean staging directory to prevent antivirus/file locks on installer\output
+$tempOutDir = Join-Path ([System.IO.Path]::GetTempPath()) "iscc_stage_$([System.Guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Force -Path $tempOutDir | Out-Null
+
+$isccArgs = @("/O$tempOutDir")
 if ($DbPassword) {
-  # ⚠️ Quoted as ONE argument. An office password containing `#` or a
-  # space would otherwise be split, and ISCC reports it as "You may not
-  # specify more than one script filename" -- which says nothing about the
-  # password. Measured with a `#` in it.
   $isccArgs += "/DDbPassword=$DbPassword"
 }
 $isccArgs += "/DDbProfile=$dbProfile"
@@ -291,26 +322,35 @@ $isccArgs += 'installer\setup.iss'
 & $iscc @isccArgs
 if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
 
-$setupExe = "installer\output\SLCustoms-SR-Setup-$version-$setupSuffix.exe"
-if (-not (Test-Path $setupExe)) { throw "installer not found at $setupExe" }
+$targetExeName = "SLCustoms-SR-Setup-$version-$setupSuffix.exe"
+$stagedExe = Join-Path $tempOutDir $targetExeName
+$setupExe = "installer\output\$targetExeName"
 
-# ── 3. The feeds ──────────────────────────────────────────────────────────
+if (-not (Test-Path $stagedExe)) { throw "installer not found at $stagedExe" }
+New-Item -ItemType Directory -Force -Path 'installer\output' | Out-Null
+Copy-Item -Path $stagedExe -Destination $setupExe -Force
+Remove-Item -Path $tempOutDir -Recurse -Force -ErrorAction SilentlyContinue
+
+# ── 3. The feeds ──────────────────────────────────────────────────────────────
 if ($NoUpdateFeed) {
   Write-Host ''
   Write-Host '  [3/3] feeds SKIPPED - this build never checks for updates.' -ForegroundColor Yellow
   Write-Host ''
-  Write-Host "  $setupExe" -ForegroundColor Green
-  Write-Host ''
+  Write-Host "  Installer generated: $setupExe" -ForegroundColor Green
   exit 0
 }
 
-Step 3 'appcast.xml + latest.json'
+Step 3 "appcast.xml + latest.json (Channel: $(if ($feedChannel) { $feedChannel } else { 'cloud' }))"
 
 $python = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $python) { $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
 if (-not $python) {
-  Write-Host 'python not found - the installer built, but the feeds did not.' -ForegroundColor Red
-  Write-Host 'Generate them with:  python tools\generate_appcast.py'
+  if (Test-Path "C:\Python314\python.exe") {
+    $python = "C:\Python314\python.exe"
+  }
+}
+if (-not $python) {
+  Write-Host 'python not found - installer built, but feeds could not be generated.' -ForegroundColor Red
   exit 1
 }
 
@@ -321,37 +361,28 @@ if ($Notes) { $g += @('--notes', $Notes) }
 & $python @g
 if ($LASTEXITCODE -ne 0) { throw 'appcast generation failed' }
 
-# ── How to publish ────────────────────────────────────────────────────────
+# ── Publishing Summary ────────────────────────────────────────────────────────
 $mb = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
+$channelSubDir = if ($feedChannel) { "installer\output\$feedChannel" } else { 'installer\output' }
 
 Write-Host ''
 Write-Host ('=' * 74) -ForegroundColor DarkGray
-Write-Host '  DONE' -ForegroundColor Green
+Write-Host '  RELEASE PACKAGE COMPLETE' -ForegroundColor Green
 Write-Host ('=' * 74) -ForegroundColor DarkGray
 Write-Host ''
-Write-Host "  $setupExe   ($mb MB)"
-$displayChannel = if ($feedChannel) { $feedChannel } else { 'cloud' }
-Write-Host "  feed channel: $displayChannel"
+Write-Host "  Installer : $setupExe ($mb MB)" -ForegroundColor Green
+Write-Host "  Feed Dir  : $channelSubDir" -ForegroundColor Green
+Write-Host "  Channel   : $(if ($feedChannel) { $feedChannel } else { 'cloud' })" -ForegroundColor Green
 Write-Host ''
-if (-not $SkipFlutter) {
-  Write-Host ("  debug symbols: build\symbols\{0}+{1}\" -f $version, $build) -ForegroundColor DarkGray
-  Write-Host '  KEEP THESE. An obfuscated crash report cannot be read without' -ForegroundColor DarkGray
-  Write-Host '  the symbols from this exact build.' -ForegroundColor DarkGray
-  Write-Host ''
+Write-Host "Publishing Checklist:" -ForegroundColor Cyan
+if ($UseGitHubUpdates) {
+  Write-Host "  1. GitHub Release Tag  : $tagPrefix$version" -ForegroundColor Yellow
+  Write-Host "     -> Upload Asset     : $setupExe"
+  Write-Host "  2. GitHub Pages Branch : $ghBranch" -ForegroundColor Yellow
+  Write-Host "     -> Commit & Push    : $channelSubDir\appcast.xml"
+  Write-Host "     -> Commit & Push    : $channelSubDir\latest.json"
+} else {
+  Write-Host "  1. Upload installer to target release host." -ForegroundColor Yellow
+  Write-Host "  2. Overwrite appcast.xml & latest.json in storage channel ($channelSubDir)." -ForegroundColor Yellow
 }
-Write-Host '  upload the installer and matching feed folder to the selected channel.' -ForegroundColor DarkGray
-Write-Host ''
-Write-Host '  Upload the installer and matching feed files to the configured public host.' -ForegroundColor Cyan
-Write-Host ''
-Write-Host '    1. the .exe        FIRST' -ForegroundColor Yellow
-Write-Host '    2. appcast.xml     (overwrite)'
-Write-Host '    3. latest.json     (overwrite)'
-Write-Host ''
-Write-Host '  ORDER MATTERS. The moment a feed names a new version, every' -ForegroundColor Yellow
-Write-Host '  running copy starts offering it. If the .exe is not uploaded' -ForegroundColor Yellow
-Write-Host '  yet, each officer gets a failed download instead.' -ForegroundColor Yellow
-Write-Host ''
-Write-Host '  Verify both feed URLs are public before notifying officers:'
-Write-Host "    curl.exe -I $ManifestUrl"
-Write-Host "    curl.exe -I $FeedUrl"
 Write-Host ''

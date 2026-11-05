@@ -1,7 +1,7 @@
 name: cus_yard_management
 description: Sri Lanka Customs Yard Management System
 publish_to: 'none'
-version: 1.7.0+22
+version: 1.8.0+23
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
