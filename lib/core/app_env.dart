@@ -104,7 +104,8 @@ class AppEnv {
   }
 
   /// Which named block of the `.env` is in force, e.g. `supabase` or
-  /// `local`. Empty means the plain, unsuffixed keys.
+  /// `local`. Any non-empty yard code is accepted; it is not a hard-coded
+  /// list. Empty means the plain, unsuffixed keys.
   ///
   /// ⚠️ ONE FILE, SEVERAL SERVERS. Before this, switching between the
   /// Supabase project and the local database meant commenting out one block
@@ -113,12 +114,13 @@ class AppEnv {
   /// password, which fails as an authentication error and looks like a wrong
   /// password rather than a half-applied change.
   ///
-  /// Now every server keeps its own suffixed keys and only this one line
-  /// moves:
+  /// A deployment may either keep several suffixed server blocks and move
+  /// only this line, or use the plain unsuffixed keys in each yard's own
+  /// `.env` file. The latter means a newly created yard needs no code change:
   ///
-  ///     PG_PROFILE=supabase
-  ///     PG_HOST__supabase=aws-0-....pooler.supabase.com
-  ///     PG_HOST__local=localhost
+  ///     PG_PROFILE=kat
+  ///     PG_HOST=10.10.71.50
+  ///     PG_DATABASE=Customs_SR_DB
   ///
   /// ⚠️ A double underscore, not a single one. `PG_SSL_VERIFY` already
   /// contains underscores, so `PG_SSL_VERIFY_local` could not be told from a
