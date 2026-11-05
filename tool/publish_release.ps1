@@ -127,6 +127,16 @@ if (-not $DbPassword -and (Test-Path '.env')) {
     } elseif ($envContent -match '(?m)^PG_PASSWORD__office=(.*)$') {
       $DbPassword = $Matches[1].Trim().Trim('"').Trim("'")
     }
+  } elseif ($depKey -eq 'gl2-office') {
+    if ($envContent -match '(?m)^PG_PASSWORD__gl2=(.*)$') {
+      $candidate = $Matches[1].Trim().Trim('"').Trim("'")
+      if ($candidate -and $candidate -ne 'CHANGE_ME_GL2_PASSWORD') {
+        $DbPassword = $candidate
+      }
+    }
+    if (-not $DbPassword -and $envContent -match '(?m)^PG_PASSWORD__office=(.*)$') {
+      $DbPassword = $Matches[1].Trim().Trim('"').Trim("'")
+    }
   } elseif ($depKey -eq 'cloud') {
     if ($envContent -match '(?m)^PG_PASSWORD__supabase=(.*)$') {
       $DbPassword = $Matches[1].Trim().Trim('"').Trim("'")
