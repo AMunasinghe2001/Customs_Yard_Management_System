@@ -544,10 +544,18 @@ class _DetainedPackagesScreenState
                           ],
                           rows: rows.map((row) {
                             final outcome = appealOutcomes[row.item.id];
-                            // Sale / Destroy only once the window has closed
-                            // or the directorate has ruled — the same gate the
-                            // Goods Actions sheet applies.
+                            // Sale / Destroy only once the 30-day window has
+                            // closed or the Appeal Directorate has ruled.
                             final canDispose = _isActionable(row, outcome);
+                            // Show the Final Disposition button unless goods
+                            // are on appeal hold — within the window, Release
+                            // / Re-export / Other remain immediately available.
+                            final onHold = outcome?.onHold ?? false;
+                            final inWindow = isWithinAppealWindow(
+                                    row.package.entryDate ??
+                                        row.package.createdAt) &&
+                                !(outcome?.isDecided ?? false);
+                            final showDisp = !onHold;
                             return DataRow(cells: [
                               DataCell(TooltipText(row.package.srNumber,
                                   style: TextStyle(
@@ -597,9 +605,17 @@ class _DetainedPackagesScreenState
                                           (outcome?.isDecided ?? false)
                                               ? outcome!.decision
                                               : null,
-                                      forceFinalDisposition: canDispose,
-                                      allowFinalDisposition: canDispose,
-                                      onSaleOrDestroyRequest: canDispose
+                                      isDetained: true,
+                                      inAppealWindow: inWindow,
+                                      forceFinalDisposition: showDisp,
+                                      allowFinalDisposition: showDisp,
+                                      // Always wire up the Sale/Destroy callback
+                                      // for detained goods so the button shows
+                                      // even within the 30-day window (Release /
+                                      // Re-export / Other need the button too).
+                                      // The dialog itself blocks Sale + Destroy
+                                      // while inAppealWindow is true.
+                                      onSaleOrDestroyRequest: showDisp
                                           ? (disposition) =>
                                               _requestSingleDisposal(
                                                   row.package, disposition,

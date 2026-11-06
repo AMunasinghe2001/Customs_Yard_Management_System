@@ -1430,6 +1430,15 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // The Update action itself remains admin-only regardless of this flag.
   final bool allowEdit;
 
+  // When true, the Final Disposition dialog is for a Detained item and must
+  // apply different gating: Release / Re-export / Other are always available;
+  // Sale and Destroy require the 30-day window to pass or an appeal decision.
+  final bool isDetained;
+  // True while the goods are still within the 30-day appeal window and no
+  // Appeal Directorate decision has been issued. Passed to _FinalDispositionDialog
+  // so it can disable Destroy (and Sale is already disabled via _requestActions).
+  final bool inAppealWindow;
+
   const PackageDetailsDialog({
     super.key,
     required this.package,
@@ -1464,6 +1473,8 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.forceFinalDisposition = false,
     this.isSoldPage = false,
     this.allowEdit = false,
+    this.isDetained = false,
+    this.inAppealWindow = false,
     this.srFinancials,
     this.handover,
   });
@@ -2073,6 +2084,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         isOfficer: isOfficer,
         // Restrict the enabled action to the Appeal Directorate's decision.
         decisionCode: widget.appealDecisionCode,
+        isDetained: widget.isDetained,
+        inAppealWindow: widget.inAppealWindow,
         // When a Sale/Destroy request handler is supplied (Forfeited screen),
         // those two route to the Central Disposal request flow instead of
         // writing a [FINAL:…] entry directly.
@@ -9335,6 +9348,10 @@ class _FinalDispositionDialog extends StatefulWidget {
   // Appeal Directorate decision code — when set, ONLY the matching action is
   // enabled (the yard must proceed exactly as decided).
   final String? decisionCode;
+  // Detained goods within the 30-day window: Release/Re-export/Other are
+  // allowed immediately; Destroy is blocked until 30 days pass or a decision.
+  final bool isDetained;
+  final bool inAppealWindow;
 
   const _FinalDispositionDialog({
     required this.item,
@@ -9343,6 +9360,8 @@ class _FinalDispositionDialog extends StatefulWidget {
     required this.onConfirm,
     this.onRequestDisposal,
     this.decisionCode,
+    this.isDetained = false,
+    this.inAppealWindow = false,
   });
 
   @override
@@ -9440,6 +9459,12 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
     final code = widget.decisionCode;
     if (code != null && code.trim().isNotEmpty) {
       return a.type == _typeForDecision(code);
+    }
+    // Detained goods within the 30-day appeal window: Destroy is also blocked
+    // (Sale is already blocked above via _requestActions). Release / Re-export
+    // / Other are always available immediately for detained goods.
+    if (widget.isDetained && widget.inAppealWindow) {
+      if (a.type == 'DESTROYED') return false;
     }
     return true;
   }
@@ -9596,6 +9621,15 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                         const Gap(6),
                         Text(
                           'Final disposition is restricted to SDDC / DDC officers.',
+                          style: material.TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic),
+                        ),
+                      ] else if (widget.isDetained && widget.inAppealWindow) ...[
+                        const Gap(6),
+                        Text(
+                          'Goods are within the 30-day appeal window. Release, Re-export and Other may be recorded now. Sale and Destroy require the window to pass or an Appeal Directorate decision.',
                           style: material.TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
