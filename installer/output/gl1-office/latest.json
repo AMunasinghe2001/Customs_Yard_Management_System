@@ -3,12 +3,12 @@
   "name": "1.8.0",
   "draft": false,
   "prerelease": false,
-  "body": "Sri Lanka Customs GL1 Office Release v1.8.0",
-  "published_at": "2026-11-05T07:39:51Z",
+  "body": "Version 1.8.0 of the SR Management System.",
+  "published_at": "2026-11-05T10:38:01Z",
   "assets": [
     {
       "name": "SLCustoms-SR-Setup-1.8.0-GL1-Office.exe",
-      "size": 16195293,
+      "size": 16197209,
       "browser_download_url": "https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl1-office-v1.8.0/SLCustoms-SR-Setup-1.8.0-GL1-Office.exe",
       "content_type": "application/octet-stream"
     }
