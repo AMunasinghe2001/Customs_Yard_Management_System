@@ -99,7 +99,7 @@ void configureWinSparkleAuthHeader([String? token]) {
 
     malloc.free(namePtr);
     malloc.free(valPtr);
-    AppLog.info('Configured WinSparkle with GitHub Authorization header',
+    AppLog.debug('Configured WinSparkle with GitHub Authorization header',
         tag: 'update');
   } catch (e) {
     AppLog.warn('Could not set WinSparkle HTTP header: $e', tag: 'update');
