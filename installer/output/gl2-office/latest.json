@@ -3,13 +3,13 @@
   "name": "1.9.0",
   "draft": false,
   "prerelease": false,
-  "body": "Detained goods: Release/Re-export/Other enabled within 30-day window; IC post added to Yard Staff",
-  "published_at": "2026-11-06T07:24:02Z",
+  "body": "GL2 office release v1.9.0 with PAT authentication",
+  "published_at": "2026-11-06T09:41:04Z",
   "assets": [
     {
       "name": "SLCustoms-SR-Setup-1.9.0-GL2-Office.exe",
-      "size": 16187712,
-      "browser_download_url": "https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl2-office-v1.9.0/SLCustoms-SR-Setup-1.9.0-GL2-Office.exe",
+      "size": 16197523,
+      "browser_download_url": "https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/SLCustoms-SR-Setup-1.9.0-GL2-Office.exe",
       "content_type": "application/octet-stream"
     }
   ]

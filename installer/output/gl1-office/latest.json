@@ -3,13 +3,13 @@
   "name": "1.9.0",
   "draft": false,
   "prerelease": false,
-  "body": "Private repo updates enabled with PAT",
-  "published_at": "2026-11-06T09:21:05Z",
+  "body": "GL1 office release v1.9.0 with PAT authentication",
+  "published_at": "2026-11-06T09:34:08Z",
   "assets": [
     {
       "name": "SLCustoms-SR-Setup-1.9.0-GL1-Office.exe",
-      "size": 16197490,
-      "browser_download_url": "https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl1-office-v1.9.0/SLCustoms-SR-Setup-1.9.0-GL1-Office.exe",
+      "size": 16197768,
+      "browser_download_url": "https://knqpwufqpcoevjaxuihp.supabase.co/storage/v1/object/public/updates/SLCustoms-SR-Setup-1.9.0-GL1-Office.exe",
       "content_type": "application/octet-stream"
     }
   ]
