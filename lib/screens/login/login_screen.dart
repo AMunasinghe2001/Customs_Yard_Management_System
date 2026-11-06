@@ -233,7 +233,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             flex: 5,
             child: BrandPanel(
               accent: context.colors.accentLightBlue,
-              badgeLabel: 'SC / DSC / ASC Portal',
+              badgeLabel: 'SC / DSC / ASC / IC Portal',
               badgeIcon: Icons.person_outline_rounded,
             ),
           ),
@@ -258,7 +258,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Text('SC / DSC / ASC Sign In',
+                                  Text('SC / DSC / ASC / IC Sign In',
                                           style: Theme.of(context)
                                               .textTheme
                                               .headlineMedium)

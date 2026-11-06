@@ -1439,8 +1439,9 @@ const Map<String, String> kDirectorateRoleNames = {
 ///                         Customs). These run the yard. There is no plain
 ///                         DC in a yard; that post belongs to the
 ///                         directorates.
-///   Yard Staff          — SC, DSC and ASC (Superintendent of Customs and
-///                         its deputy and assistant grades).
+///   Yard Staff          — SC, DSC, ASC and IC (Superintendent of Customs,
+///                         its deputy, assistant grades and Inspector of
+///                         Customs).
 ///
 /// The administration posts share the 'admin' permission role and the staff
 /// posts share 'officer', so the role alone cannot tell any of them apart --
@@ -1463,6 +1464,7 @@ const Map<String, String> kPostTitles = {
   'sc': 'SC (Superintendent of Customs)',
   'dsc': 'DSC (Deputy Superintendent of Customs)',
   'asc': 'ASC (Assistant Superintendent of Customs)',
+  'ic': 'IC (Inspector of Customs)',
   // ⚠️ Legacy. Live accounts still store this; it is not offered for new
   // ones (see [kAssignablePostKeys]) but must keep rendering.
   'officer': 'Officer',
@@ -1477,6 +1479,7 @@ const Map<String, String> kPostShortTitles = {
   'sc': 'SC',
   'dsc': 'DSC',
   'asc': 'ASC',
+  'ic': 'IC',
   'officer': 'Officer',
 };
 
@@ -1487,6 +1490,7 @@ const Map<String, String> kPostRoles = {
   'sc': 'officer',
   'dsc': 'officer',
   'asc': 'officer',
+  'ic': 'officer',
   'officer': 'officer',
 };
 
@@ -1497,7 +1501,7 @@ const List<String> kYardAdminPostKeys = ['sddc', 'dc'];
 ///
 /// ⚠️ 'officer' is absent on purpose: it is the legacy key, still rendered
 /// for the accounts that carry it but no longer offered for a new one.
-const List<String> kYardStaffPostKeys = ['sc', 'dsc', 'asc'];
+const List<String> kYardStaffPostKeys = ['sc', 'dsc', 'asc', 'ic'];
 
 /// Everything ICT may assign to a NEW yard account, administration first.
 const List<String> kAssignablePostKeys = [

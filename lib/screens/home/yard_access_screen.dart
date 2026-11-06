@@ -63,10 +63,10 @@ class YardAccessScreen extends ConsumerWidget {
                         // Officer tile
                         _RoleTile(
                           icon: Icons.badge_rounded,
-                          title: 'SC / DSC / ASC',
+                          title: 'SC / DSC / ASC / IC',
                           subtitle:
-                              'Superintendent of Customs and deputy / assistant '
-                              'grades',
+                              'Superintendent of Customs, deputy / assistant '
+                              'grades and Inspectors',
                           tag: 'Yard Staff',
                           accent: context.colors.accentLightBlue,
                           onSignIn: () => context.go('/login'),
