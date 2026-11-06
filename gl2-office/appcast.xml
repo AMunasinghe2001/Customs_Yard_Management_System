@@ -14,13 +14,13 @@
     <description>Updates for the SR Management System</description>
     <language>en</language>
     <item>
-      <title>Version 1.8.0</title>
-      <description><![CDATA[<html><head><meta charset="utf-8"><style>html,body{margin:0;padding:12px 14px;background:#ffffff;color:#1a1a1a;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.55;}h1,h2,h3{font-size:14px;margin:0 0 8px;color:#111111;}ul{margin:6px 0 0 18px;padding:0;}li{margin:3px 0;}p{margin:0 0 8px;}a{color:#0b5cad;}::selection{background:#cfe3f7;color:#1a1a1a;}</style></head><body><p>Version 1.8.0 of the SR Management System.</p></body></html>]]></description>
-      <pubDate>Thu, 05 Nov 2026 10:38:41 +0000</pubDate>
-      <enclosure url="https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl2-office-v1.8.0/SLCustoms-SR-Setup-1.8.0-GL2-Office.exe"
-                 sparkle:version="1.8.0+23"
-                 sparkle:shortVersionString="1.8.0"
-                 length="16196207"
+      <title>Version 1.9.0</title>
+      <description><![CDATA[<html><head><meta charset="utf-8"><style>html,body{margin:0;padding:12px 14px;background:#ffffff;color:#1a1a1a;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.55;}h1,h2,h3{font-size:14px;margin:0 0 8px;color:#111111;}ul{margin:6px 0 0 18px;padding:0;}li{margin:3px 0;}p{margin:0 0 8px;}a{color:#0b5cad;}::selection{background:#cfe3f7;color:#1a1a1a;}</style></head><body><p>Detained goods: Release/Re-export/Other enabled within 30-day window; IC post added to Yard Staff</p></body></html>]]></description>
+      <pubDate>Fri, 06 Nov 2026 07:24:02 +0000</pubDate>
+      <enclosure url="https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl2-office-v1.9.0/SLCustoms-SR-Setup-1.9.0-GL2-Office.exe"
+                 sparkle:version="1.9.0+24"
+                 sparkle:shortVersionString="1.9.0"
+                 length="16187712"
                  type="application/octet-stream" />
     </item>
   </channel>

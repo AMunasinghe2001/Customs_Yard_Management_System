@@ -1,15 +1,15 @@
 {
-  "tag_name": "v1.8.0",
-  "name": "1.8.0",
+  "tag_name": "v1.9.0",
+  "name": "1.9.0",
   "draft": false,
   "prerelease": false,
-  "body": "Version 1.8.0 of the SR Management System.",
-  "published_at": "2026-11-05T10:38:41Z",
+  "body": "Detained goods: Release/Re-export/Other enabled within 30-day window; IC post added to Yard Staff",
+  "published_at": "2026-11-06T07:24:02Z",
   "assets": [
     {
-      "name": "SLCustoms-SR-Setup-1.8.0-GL2-Office.exe",
-      "size": 16196207,
-      "browser_download_url": "https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl2-office-v1.8.0/SLCustoms-SR-Setup-1.8.0-GL2-Office.exe",
+      "name": "SLCustoms-SR-Setup-1.9.0-GL2-Office.exe",
+      "size": 16187712,
+      "browser_download_url": "https://github.com/AMunasinghe2001/Customs_Yard_Management_System/releases/download/gl2-office-v1.9.0/SLCustoms-SR-Setup-1.9.0-GL2-Office.exe",
       "content_type": "application/octet-stream"
     }
   ]
