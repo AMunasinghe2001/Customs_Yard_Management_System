@@ -1,8 +1,11 @@
-import 'package:flutter/material.dart';
+import 'dart:ffi';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:auto_updater/auto_updater.dart';
+import 'package:ffi/ffi.dart';
 
 import 'app_log.dart';
+import 'update_check.dart';
 /// Where the installer and the `appcast.xml` feed are published.
 ///
 /// This used to be derived from the Supabase project URL, because the feed
@@ -71,6 +74,38 @@ bool _feedAllowed() {
   return false;
 }
 
+typedef _WinSparkleSetHttpHeaderC = Void Function(
+    Pointer<Utf8> name, Pointer<Utf8> value);
+typedef _WinSparkleSetHttpHeaderDart = void Function(
+    Pointer<Utf8> name, Pointer<Utf8> value);
+
+/// Configures WinSparkle with an HTTP Authorization header if a GitHub PAT is available.
+void configureWinSparkleAuthHeader([String? token]) {
+  if (!Platform.isWindows) return;
+  final pat = token ?? getGitHubPat();
+  if (pat.isEmpty) return;
+
+  try {
+    final dylib = DynamicLibrary.open('WinSparkle.dll');
+    final setHeader = dylib.lookupFunction<
+        _WinSparkleSetHttpHeaderC,
+        _WinSparkleSetHttpHeaderDart>('win_sparkle_set_http_header');
+
+    final namePtr = 'Authorization'.toNativeUtf8();
+    final authVal = formatGitHubAuthHeader(pat);
+    final valPtr = authVal.toNativeUtf8();
+
+    setHeader(namePtr, valPtr);
+
+    malloc.free(namePtr);
+    malloc.free(valPtr);
+    AppLog.info('Configured WinSparkle with GitHub Authorization header',
+        tag: 'update');
+  } catch (e) {
+    AppLog.warn('Could not set WinSparkle HTTP header: $e', tag: 'update');
+  }
+}
+
 /// Wires up background auto-updates. Desktop-only (Windows/macOS via WinSparkle/
 /// Sparkle). Safe to call unconditionally — every failure is swallowed so a
 /// missing feed / offline machine / unsupported platform never blocks startup.
@@ -80,22 +115,7 @@ Future<void> initAutoUpdater() async {
   if (updateFeedUrl.isEmpty) return;
   if (!_feedAllowed()) return;
   try {
-    // ⚠️ THE FEED IS SET, BUT NO AUTOMATIC CHECK IS STARTED.
-    //
-    // WinSparkle draws its own native Win32 window -- grey, with its own
-    // sun icon and its own fonts. Nothing in this package exposes its
-    // colours or layout, because the dialog belongs to a C library rather
-    // than to Flutter.
-    //
-    // The app already has a themed strip for this
-    // (widgets/update_banner.dart), fed by core/update_check.dart. Running
-    // both meant the officer got the native window ON TOP of the app's own
-    // notice, which is the one that matches everything else they use.
-    //
-    // So the feed is registered -- that is what makes the "Check for
-    // Updates" button work, and WinSparkle's window is reasonable when
-    // somebody ASKED for it -- but the unattended check stays off, and
-    // the strip is what appears by itself.
+    configureWinSparkleAuthHeader();
     await autoUpdater.setFeedURL(updateFeedUrl);
   } catch (e) {
     AppLog.warn('auto-updater init failed', error: e, tag: 'update');
@@ -139,6 +159,7 @@ Future<UpdateCheckOutcome> checkForUpdatesNow() async {
   if (updateFeedUrl.isEmpty) return UpdateCheckOutcome.notConfigured;
   if (!_feedAllowed()) return UpdateCheckOutcome.feedRefused;
   try {
+    configureWinSparkleAuthHeader();
     await autoUpdater.setFeedURL(updateFeedUrl);
     await autoUpdater.checkForUpdates();
     return UpdateCheckOutcome.started;

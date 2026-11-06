@@ -57,6 +57,8 @@ param(
   # Secrets (never committed)
   [string]$DbPassword = '',
   [string]$GmailPassword = '',
+  [string]$GitHubToken = '',
+  [string]$GitHubPat = '',
 
   # GitHub Updates automation
   [switch]$UseGitHubUpdates,
@@ -151,6 +153,22 @@ if (-not $GmailPassword -and (Test-Path '.env')) {
   }
 }
 
+if (-not $GitHubToken -and $GitHubPat) {
+  $GitHubToken = $GitHubPat
+}
+if (-not $GitHubToken -and (Test-Path '.env')) {
+  $envContent = Get-Content '.env' -Raw
+  if ($envContent -match '(?m)^GITHUB_PAT=(.*)$') {
+    $GitHubToken = $Matches[1].Trim().Trim('"').Trim("'")
+  } elseif ($envContent -match '(?m)^GITHUB_TOKEN=(.*)$') {
+    $GitHubToken = $Matches[1].Trim().Trim('"').Trim("'")
+  }
+}
+if (-not $GitHubToken) {
+  if ($env:GITHUB_PAT) { $GitHubToken = $env:GITHUB_PAT }
+  elseif ($env:GITHUB_TOKEN) { $GitHubToken = $env:GITHUB_TOKEN }
+}
+
 if (-not $DbPassword) {
   throw "-DbPassword is required for Deployment '$Deployment'."
 }
@@ -234,6 +252,11 @@ if ($NoUpdateFeed) {
   if ($UpdateArtifactBaseUrl) {
     Write-Host "Artifact   : $UpdateArtifactBaseUrl" -ForegroundColor Green
   }
+  if ($GitHubToken) {
+    Write-Host "GitHub PAT : Configured (Private Repo Updates Enabled)" -ForegroundColor Green
+  } else {
+    Write-Host "GitHub PAT : None (Public repos only, or set GITHUB_PAT in .env)" -ForegroundColor DarkGray
+  }
 }
 
 # ── 1. The app ────────────────────────────────────────────────────────────────
@@ -277,6 +300,9 @@ if ($SkipFlutter) {
   $a += "--dart-define=PG_SSL_ROOT_CERT=$dbRootCert"
   if ($GmailPassword) {
     $a += "--dart-define=GMAIL_APP_PASSWORD=$GmailPassword"
+  }
+  if ($GitHubToken) {
+    $a += "--dart-define=GITHUB_PAT=$GitHubToken"
   }
 
   & $flutterCmd @a
@@ -326,6 +352,9 @@ $isccArgs += "/DDbRootCert=$dbRootCert"
 $isccArgs += "/DSetupSuffix=$setupSuffix"
 if ($GmailPassword) {
   $isccArgs += "/DGmailPassword=$GmailPassword"
+}
+if ($GitHubToken) {
+  $isccArgs += "/DGitHubToken=$GitHubToken"
 }
 $isccArgs += 'installer\setup.iss'
 

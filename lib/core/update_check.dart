@@ -3,7 +3,50 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'app_env.dart';
 import 'app_log.dart';
+
+/// The GitHub Personal Access Token (PAT) used to access private repository
+/// update manifests (`latest.json`) and release assets.
+///
+/// Precedence:
+/// 1. Compile-time `--dart-define=GITHUB_PAT=...` (or `GITHUB_TOKEN=...`)
+/// 2. `.env` file beside the executable / in project root (`GITHUB_PAT=...` or `GITHUB_TOKEN=...`)
+/// 3. OS environment variable `GITHUB_PAT` or `GITHUB_TOKEN`
+String getGitHubPat() {
+  const dartDefine = String.fromEnvironment(
+    'GITHUB_PAT',
+    defaultValue: String.fromEnvironment('GITHUB_TOKEN', defaultValue: ''),
+  );
+  if (dartDefine.isNotEmpty) return dartDefine;
+
+  try {
+    AppEnv.load();
+    final pat = AppEnv.read('GITHUB_PAT', dartDefine: '', fallback: '');
+    if (pat.isNotEmpty) return pat;
+    final token = AppEnv.read('GITHUB_TOKEN', dartDefine: '', fallback: '');
+    if (token.isNotEmpty) return token;
+  } catch (_) {}
+
+  try {
+    final osPat = Platform.environment['GITHUB_PAT'] ??
+        Platform.environment['GITHUB_TOKEN'];
+    if (osPat != null && osPat.trim().isNotEmpty) return osPat.trim();
+  } catch (_) {}
+
+  return '';
+}
+
+/// Formats the Authorization header value for GitHub.
+/// Prepends 'Bearer ' if no scheme prefix is present.
+String formatGitHubAuthHeader(String token) {
+  final t = token.trim();
+  if (t.toLowerCase().startsWith('bearer ') ||
+      t.toLowerCase().startsWith('token ')) {
+    return t;
+  }
+  return 'Bearer $t';
+}
 
 /// The version this build IS.
 ///
@@ -120,24 +163,40 @@ Map<String, dynamic>? pickWindowsInstaller(List<dynamic> assets) {
 Future<AvailableUpdate?> fetchAvailableUpdate({
   String currentVersion = kAppVersion,
   String manifestUrl = kUpdateManifestUrl,
+  String? gitHubToken,
   http.Client? client,
   Duration timeout = const Duration(seconds: 8),
 }) async {
   if (!Platform.isWindows) return null;
   if (manifestUrl.trim().isEmpty) return null;
 
+  final token = (gitHubToken != null && gitHubToken.isNotEmpty)
+      ? gitHubToken
+      : getGitHubPat();
+
   final owned = client == null;
   final c = client ?? http.Client();
   try {
+    final uri = Uri.parse(manifestUrl);
+    final isGitHub = uri.host.contains('github.com') ||
+        uri.host.contains('githubusercontent.com');
+
+    final headers = <String, String>{
+      'Accept': 'application/vnd.github+json, application/json, text/plain, */*',
+      if (token.isNotEmpty && (isGitHub || manifestUrl.contains('github')))
+        'Authorization': formatGitHubAuthHeader(token),
+    };
+
     final res = await c.get(
-      Uri.parse(manifestUrl),
-      // GitHub asks for this; without it the API can answer with a redirect
-      // to a page rather than the JSON.
-      headers: const {'Accept': 'application/vnd.github+json'},
+      uri,
+      headers: headers,
     ).timeout(timeout);
 
     if (res.statusCode != 200) {
-      AppLog.warn('update check: HTTP ${res.statusCode}', tag: 'update');
+      AppLog.warn(
+        'update check: HTTP ${res.statusCode} from ${uri.host} (auth: ${token.isNotEmpty})',
+        tag: 'update',
+      );
       return null;
     }
 

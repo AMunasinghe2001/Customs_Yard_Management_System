@@ -53,6 +53,13 @@
   #define GmailFromName "SL Customs"
 #endif
 
+; ⚠️ GITHUB PERSONAL ACCESS TOKEN (for Private Repo Updates)
+; Passed at COMPILE time:
+;     ISCC.exe /DGitHubToken="..." installer\setup.iss
+#ifndef GitHubToken
+  #define GitHubToken ""
+#endif
+
 ; Database settings are supplied by tool\publish_release.ps1. The same
 ; installer packages either the GL1 office build or the cloud build.
 #ifndef DbProfile
@@ -390,7 +397,7 @@ begin
   //  reports "password authentication failed", which sends the reader to
   //  the server instead of to this line. Quoting every password rather
   //  than only the awkward ones leaves no rule to remember.
-  SetArrayLength(Lines, 19);
+  SetArrayLength(Lines, 22);
   Lines[0] := '# Written by the installer on first install.';
   Lines[1] := '# Edit this file to point this PC at another server, then';
   Lines[2] := '# restart the app. An upgrade keeps it, unless it still';
@@ -434,6 +441,9 @@ begin
   Lines[16] := 'GMAIL_USER={#GmailUser}';
   Lines[17] := 'GMAIL_APP_PASSWORD="' + GmailPw + '"';
   Lines[18] := 'GMAIL_FROM_NAME={#GmailFromName}';
+  Lines[19] := '';
+  Lines[20] := '# GitHub PAT for private repo update feeds & releases.';
+  Lines[21] := 'GITHUB_PAT="{#GitHubToken}"';
 
   //  ⚠️ Written WITHOUT a BOM. Innos UTF-8 mode prefixes one, and
   //  dotenv reads those three bytes as part of the first key -- so
