@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Build a release and the two update feeds for any yard deployment profile.
 
@@ -325,7 +325,9 @@ Step 2 "Inno Setup - SLCustoms-SR-Setup-$version-$setupSuffix.exe"
 $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
 if (-not $iscc) {
   foreach ($c in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-                   "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
+                   "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+                   "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
+                   "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe")) {
     if (Test-Path $c) { $iscc = $c; break }
   }
 }
