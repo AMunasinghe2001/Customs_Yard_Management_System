@@ -59,7 +59,7 @@ String formatGitHubAuthHeader(String token) {
 /// Overridable at build time so a test build can pretend to be older:
 ///     --dart-define=APP_VERSION=1.0.0
 const String kAppVersion =
-    String.fromEnvironment('APP_VERSION', defaultValue: '1.9.0');
+    String.fromEnvironment('APP_VERSION', defaultValue: '1.10.0');
 
 /// Where the published release lives.
 ///
