@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Build a release and the two update feeds for any yard deployment profile.
 
