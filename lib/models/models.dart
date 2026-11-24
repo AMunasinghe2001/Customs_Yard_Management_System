@@ -1035,24 +1035,18 @@ class ProfileModel {
   /// user provisioning, administration, and system management. Institutional, never auto-expires.
   bool get isIct => role == 'ict';
 
-  /// True once the account is past its 8-month lifetime. Directorate accounts
-  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC, ICT) are institutional and
-  /// never auto-expire (officers transfer in/out of the post).
-  bool get isExpired =>
-      !isDisposal &&
-      !isAppeal &&
-      !isValuation &&
-      !isExecutive &&
-      !isIct &&
-      DateTime.now().isAfter(expiresAt);
+  /// Auto-expiration temporarily disabled per administrator request.
+  /// Accounts remain active indefinitely regardless of age/inactivity.
+  /// (Previous logic checked: !isDisposal && !isAppeal && !isValuation && !isExecutive && !isIct && DateTime.now().isAfter(expiresAt))
+  bool get isExpired => false;
 
   /// Whether the account may currently sign in: explicitly active AND not
   /// past its 8-month auto-deactivation window.
   bool get isEffectivelyActive => isActive && !isExpired;
 
   /// Whole days until the account auto-deactivates (its 8-month lifetime).
-  /// Negative once already expired. null for institutional directorate
-  /// accounts that never auto-expire.
+  /// Returns null while auto-expiration is disabled.
+  int? get daysUntilExpiration => null;
   int? get daysUntilExpiry {
     if (isDisposal || isAppeal || isValuation || isExecutive || isIct) {
       return null;
